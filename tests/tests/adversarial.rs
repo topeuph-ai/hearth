@@ -8,7 +8,7 @@
 //! missed: link creation and deletes were entirely unvalidated.
 
 use aboutme_integrity::{AboutMe, CircleProperties, Invitation};
-use hdk::prelude::*;
+use holochain::prelude::*;
 use holochain::sweettest::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
