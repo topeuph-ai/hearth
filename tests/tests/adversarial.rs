@@ -73,7 +73,7 @@ async fn join(
     )]);
 
     let app = conductor
-        .clone()
+        .raw_handle()
         .install_app_bundle(InstallAppPayload {
             source: AppBundleSource::Bytes(bundle.pack()?.into()),
             agent_key: Some(agent.clone()),
