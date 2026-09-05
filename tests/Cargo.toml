@@ -8,7 +8,10 @@ license = "Apache-2.0"
 [dependencies]
 
 [dev-dependencies]
-holochain = { version = "0.7.0", features = ["test_utils"] }
+# default features include "encryption", which pulls SQLCipher and then a
+# vendored OpenSSL build. That needs a perl toolchain Windows does not have.
+# "sweettest" is the supported feature for this kind of test.
+holochain = { version = "0.7.0", default-features = false, features = ["sweettest", "schema", "wasmer-sys-cranelift"] }
 holochain_types = "0.7.0"
 holochain_zome_types = "0.7.0"
 hdk = "0.7.0"

@@ -1,0 +1,64 @@
+name: tests
+
+# The adversarial suite cannot run on Windows: holochain_keystore pulls
+# lair_keystore with SQLCipher and a vendored OpenSSL build, which needs a full
+# Perl toolchain that Git for Windows does not ship. Linux has it as standard,
+# so the rules are verified here on every push instead.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  HOLOCHAIN_VERSION: 0.7.0
+
+jobs:
+  adversarial:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            tests/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build zomes
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Fetch the hc CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bin
+          gh release download "holochain-${HOLOCHAIN_VERSION}" \
+            --repo holochain/holochain \
+            --pattern "hc-x86_64-unknown-linux-gnu" \
+            --output bin/hc
+          chmod +x bin/hc
+          ./bin/hc --version
+
+      - name: Pack the DNA and hApp
+        run: |
+          ./bin/hc dna pack dnas/aboutme/workdir
+          ./bin/hc app pack workdir
+
+      # Every rule this project claims is a rule only if something rejects when
+      # it is broken.
+      - name: Run the adversarial suite
+        working-directory: tests
+        run: cargo test --test adversarial -- --nocapture --test-threads=2
