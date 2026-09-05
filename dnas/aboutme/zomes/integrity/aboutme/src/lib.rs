@@ -216,8 +216,13 @@ fn validate_create_link(
             if !is_the_person(author)? {
                 return invalid("Only the person may publish an About Me to their circle");
             }
+            // `Path::ensure` builds the anchor tree with links of this same
+            // type, and those point at Path entries rather than at records.
+            // Rejecting them broke every write, including the person's own.
+            // They are structural, and readers ignore anything that is not an
+            // action hash.
             let Some(target) = as_action_hash(&action.target_address) else {
-                return invalid("Circle index must point at an action");
+                return Ok(ValidateCallbackResult::Valid);
             };
             match about_me_author(&target)? {
                 Some(a) if &a == author => Ok(ValidateCallbackResult::Valid),
