@@ -1,0 +1,20 @@
+[workspace]
+members = ["dnas/*/zomes/coordinator/*", "dnas/*/zomes/integrity/*"]
+resolver = "2"
+
+[workspace.dependencies]
+# Pinned to the Holochain 0.7.0 release line.
+# Verified from crates/hdk/Cargo.toml and crates/hdi/Cargo.toml at tag holochain-0.7.0.
+hdi = "=0.8.0"
+hdk = "=0.7.0"
+serde = { version = "1", features = ["derive"] }
+# Required by the hdk_entry_helper macro expansion. Version taken from hdi 0.8.0.
+holochain_serialized_bytes = "=0.0.57"
+
+[profile.release]
+opt-level = "z"
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

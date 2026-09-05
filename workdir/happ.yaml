@@ -1,0 +1,17 @@
+manifest_version: "1"
+name: aboutme
+description: "About Me, held by the person. One circle per person."
+roles:
+  # clone_limit is high on purpose: the architecture is one cloned cell
+  # (one isolated network) per person's circle.
+  - name: aboutme
+    provisioning:
+      strategy: create
+      deferred: false
+    dna:
+      bundled: "../dnas/aboutme/workdir/aboutme.dna"
+      modifiers:
+        network_seed: null
+        properties: null
+      installed_hash: ~
+      clone_limit: 1000
