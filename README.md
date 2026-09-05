@@ -146,6 +146,29 @@ Design note for later: `target_arc_factor: 0` gives a node that participates
 without storing. Wrong for a home device, right for a phone — full arc on a
 machine at home, zero arc on the phone in a pocket.
 
+## Design principle: offline is not a failure state
+
+Everyone being offline mostly means everyone is busy living, not that anything is
+broken — and if nobody is online, nobody is trying to read it either. The concern
+largely cancels itself out.
+
+This has a consequence that is easy to lose by accident, because every UI
+convention we have inherited comes from cloud software, where offline genuinely
+does mean broken. Those defaults are all anxiety: reconnecting banners, sync
+spinners, staleness warnings, notifications nagging you back.
+
+**None of that applies, and none of it should be built.** A member's copy is
+complete. When they open the app it is simply there. There is nothing to
+reconnect to.
+
+For these users this is not a nicety. A carer who is already exhausted does not
+need software implying she has fallen behind on something.
+
+**Rule: no interface element may suggest that being away is a problem.** No sync
+status, no "you are offline" bar, no last-updated warnings. Information that
+arrived while someone was away is shown as new, never as a backlog they are late
+on.
+
 ### Mobile
 
 Not a blocker any more, but not free either.
