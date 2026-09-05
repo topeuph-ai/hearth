@@ -127,9 +127,18 @@ stay full regardless. **This works on 0.7.0 as shipped, with no dependency on an
 unreleased feature** — which is a far stronger position for a funding application
 than "viable in a future release."
 
-Residual risk: a circle whose devices are all genuinely off overnight, at exactly
-the hour an emergency department wants the record. Mitigation is one always-on
-device per circle — a home laptop or a tablet on charge. Note that such a device
+Residual risk is narrower still, because reading is local. A member already holds
+a complete copy: they read from their own device, needing no network and no other
+member online. Writing is local too. So an existing member is never blocked by
+anyone else being offline.
+
+The only case needing a live peer is *joining* — a newly invited member, or an
+existing member on a replacement phone, has no copy yet and someone must hand them
+one. The realistic worst case is a professional invited into the circle at 3am who
+cannot receive anything because no existing member is reachable.
+
+Mitigation is one always-on device per circle — a home laptop or a tablet on
+charge — whose job is specifically to make joining possible at any hour. Note that such a device
 holds a full readable copy like any other member, so contents should be encrypted
 to circle members at application level regardless.
 

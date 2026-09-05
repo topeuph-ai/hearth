@@ -103,9 +103,15 @@ So this is not a redundancy problem. There is no scenario where the data is thin
 
 **DHT sharding does not change this, and is not needed.** Sharding is planned for Holochain 0.9.x (currently an epic at 0%, behind a compile-time flag since 0.4.x). It exists for large networks where holding everything becomes burdensome. At the scale of a family circle, arcs stay full regardless. **The availability story works on 0.7.0 as shipped and does not depend on any unreleased feature.**
 
-**Residual risk:** a circle where every device is genuinely off — for example a family whose phones are all asleep overnight, at precisely the hour an emergency department wants the record.
+**And the residual risk is narrower still, because reading is local.**
 
-**Mitigation:** one always-on device per circle, such as a home laptop or a tablet left on charge. Note the consequence: that device holds a full readable copy like any other member, so contents should be encrypted to circle members at application level regardless.
+A circle member already holds a complete copy. They read from their own device and need no network and no other member online. Writing is also local: an entry is authored to the member's own chain and gossips out when connectivity returns. So an existing member is never blocked by anyone else being offline.
+
+**The only case that needs a live peer is joining.** Someone with nothing on their device yet — a newly invited member, or an existing member setting up a replacement phone — has no copy, so somebody must hand them one.
+
+The realistic worst case is therefore not a family member unable to read the record. It is **a professional being invited into the circle at 3am** who cannot receive anything because no existing member is reachable.
+
+**Mitigation:** one always-on device per circle, such as a home laptop or a tablet left on charge. Its purpose is specifically to make *joining* possible at any hour, not to prop up availability generally. Note the consequence: that device holds a full readable copy like any other member, so contents should be encrypted to circle members at application level regardless.
 
 **Design note for later.** `target_arc_factor: 0` produces a node that participates without storing. That is the wrong setting for a home device but the right one for a phone — full arc on a machine at home, zero arc on the phone in a pocket.
 
