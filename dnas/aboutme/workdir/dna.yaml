@@ -1,14 +1,14 @@
-manifest_version: "1"
+manifest_version: "0"
 name: aboutme
 integrity:
   network_seed: null
   properties: null
   zomes:
     - name: aboutme_integrity
-      bundled: "../../../target/wasm32-unknown-unknown/release/aboutme_integrity.wasm"
+      path: "../../../target/wasm32-unknown-unknown/release/aboutme_integrity.wasm"
 coordinator:
   zomes:
     - name: aboutme
-      bundled: "../../../target/wasm32-unknown-unknown/release/aboutme.wasm"
+      path: "../../../target/wasm32-unknown-unknown/release/aboutme.wasm"
       dependencies:
         - name: aboutme_integrity

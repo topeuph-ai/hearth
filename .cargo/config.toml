@@ -1,0 +1,12 @@
+# Zome WASM build flags, taken from how Holochain builds its own test zomes
+# (crates/test_utils/wasm/build.rs at tag holochain-0.7.0).
+#
+# getrandom_backend="custom" is required: hdk registers its own
+# __getrandom_v03_custom backend that asks the host conductor for
+# randomness. Without this flag getrandom 0.3 refuses to build for
+# wasm32-unknown-unknown and the error looks unrelated.
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "-C", "link-arg=--import-undefined",
+  "--cfg", "getrandom_backend=\"custom\"",
+]

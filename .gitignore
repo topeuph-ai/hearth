@@ -1,7 +1,9 @@
-target/
 *.dna
 *.happ
 *.webhapp
-node_modules/
-.cargo/
+.hc
+.hc_live*
+bin/
 dist/
+node_modules/
+target/
