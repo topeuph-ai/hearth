@@ -34,7 +34,7 @@ fn an_about_me(name: &str) -> AboutMe {
 /// A circle whose founder is `founder`, built from the real packed DNA.
 async fn circle_dna(founder: &AgentPubKey) -> DnaFile {
     let properties = CircleProperties {
-        founder: founder.clone(),
+        founder: founder.to_string(),
     };
     SweetDnaFile::from_bundle_with_overrides(
         &dna_path(),

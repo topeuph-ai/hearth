@@ -107,7 +107,7 @@ which is how you would create a participating non-storing node.
 
 ## Gotchas already paid for
 
-Five things cost time. They're fixed here; don't rediscover them.
+Six things cost time. They are fixed here; do not rediscover them.
 
 1. **`getrandom` refuses to build for wasm32.** hdk registers its own
    `__getrandom_v03_custom` backend that asks the host conductor for randomness,
@@ -126,6 +126,14 @@ Five things cost time. They're fixed here; don't rediscover them.
    like a placeholder.
 5. **Manifests use `path:`, not `bundled:`.** Most tutorials online say
    `bundled`. That was an older format and `hc` 0.7 rejects it outright.
+6. **DNA properties must be YAML-representable.** A properties struct holding
+   an `AgentPubKey` serialises to a byte array, and anything that converts a
+   `DnaFile` back into a bundle then fails with *"DnaDef properties were not
+   YAML-deserializable: invalid type: byte array"*. Hold hashes as base64
+   strings instead — `holo_hash` with the `encoding` feature converts both
+   ways, and `Display` and `TryFrom<&str>` round-trip. This only surfaces when
+   something round-trips a DNA, such as a test harness, so it can hide for a
+   long time.
 
 `.cargo/config.toml` **must be committed.** A stock `.gitignore` containing
 `.cargo/` will silently exclude it and the project then fails to build for

@@ -12,6 +12,9 @@ hdk = "=0.7.0"
 serde = { version = "1", features = ["derive"] }
 # Required by the hdk_entry_helper macro expansion. Version taken from hdi 0.8.0.
 holochain_serialized_bytes = "=0.0.57"
+# "encoding" gives AgentPubKey <-> base64 string, so DNA properties can hold a
+# founder key as YAML-safe text rather than raw bytes.
+holo_hash = { version = "0.7.0", features = ["encoding"] }
 
 [profile.release]
 opt-level = "z"

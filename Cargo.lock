@@ -17,6 +17,7 @@ name = "aboutme_integrity"
 version = "0.1.0"
 dependencies = [
  "hdi",
+ "holo_hash",
  "holochain_serialized_bytes",
  "serde",
 ]

@@ -73,8 +73,14 @@ fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
 /// anyone's access control list.
 #[derive(Serialize, Deserialize, Debug, Clone, SerializedBytes)]
 pub struct CircleProperties {
-    /// The person whose circle this is, or whoever acts for them.
-    pub founder: AgentPubKey,
+    /// The person whose circle this is, or whoever acts for them, as a base64
+    /// agent key (`uhCAk...`).
+    ///
+    /// A string rather than raw key bytes for two reasons. DNA properties must
+    /// be YAML-representable and a byte array is not. And in a real deployment
+    /// a person or an interface writes this value, and nobody hand-writes a
+    /// byte array.
+    pub founder: String,
 }
 
 /// What an invited person presents when they join.
@@ -95,10 +101,14 @@ pub struct Invitation {
 /// before the software is put in front of anyone.
 fn founder() -> ExternResult<Option<AgentPubKey>> {
     let properties = dna_info()?.modifiers.properties;
-    match CircleProperties::try_from(properties) {
-        Ok(p) => Ok(Some(p.founder)),
-        Err(_) => Ok(None),
-    }
+    let Ok(p) = CircleProperties::try_from(properties) else {
+        return Ok(None);
+    };
+    // A property that is present but unreadable is an error, not an open
+    // circle. Only its complete absence means development mode.
+    AgentPubKey::try_from(p.founder.as_str())
+        .map(Some)
+        .map_err(|_| wasm_error!("This circle's founder property is not a valid agent key"))
 }
 
 fn check_membrane(
