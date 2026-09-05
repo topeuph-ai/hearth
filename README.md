@@ -105,17 +105,37 @@ don't control.
 
 ## Open questions
 
-**The one that decides whether this is a product.** If every device in a
-six-person circle is asleep, does the record exist? Holochain's redundancy story
-assumes enough peers, and a small circle on phones the OS suspends is the
-pathological case. The documentation does not address it.
+### Availability — resolved, and better than expected
 
-The obvious fix is one always-on device per circle. But peers holding data on the
-network can read it — so a helper node reads everything unless contents are
-encrypted to circle members at the application level.
+An earlier draft treated this as the question that decides whether the project is
+viable. That was wrong, and the correction is worth keeping.
 
-**This is a question for Holochain's developers, not the docs.** Resolve it before
-building further.
+Every agent in Holochain 0.7.0 joins with a **full storage arc**: in
+`holochain_p2p`, an agent joining a space is constructed with `DhtArc::FULL`, and
+the conductor config documents `target_arc_factor`'s default of 1 as normal
+operation. **Every member of a circle holds a complete copy of that circle.** Six
+members means six complete copies.
+
+So there is no redundancy problem — no scenario where data is thinly spread or
+partly lost. What remains is *liveness*: if nobody is online, nobody answers.
+True of any peer-to-peer system, and a much narrower claim.
+
+**Sharding is irrelevant here and is not needed.** It is planned for 0.9.x (an
+epic at 0%, behind a compile-time flag since 0.4.x) and exists for large networks
+where holding everything becomes burdensome. At the scale of a family circle arcs
+stay full regardless. **This works on 0.7.0 as shipped, with no dependency on an
+unreleased feature** — which is a far stronger position for a funding application
+than "viable in a future release."
+
+Residual risk: a circle whose devices are all genuinely off overnight, at exactly
+the hour an emergency department wants the record. Mitigation is one always-on
+device per circle — a home laptop or a tablet on charge. Note that such a device
+holds a full readable copy like any other member, so contents should be encrypted
+to circle members at application level regardless.
+
+Design note for later: `target_arc_factor: 0` gives a node that participates
+without storing. Wrong for a home device, right for a phone — full arc on a
+machine at home, zero arc on the phone in a pocket.
 
 ### Mobile
 

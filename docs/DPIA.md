@@ -85,7 +85,7 @@ This is the section everything else depends on.
 
 | Risk | Likelihood | Severity | Notes |
 |---|---|---|---|
-| **Data unavailable when needed** — small circle, all devices asleep, information needed at 3am | Medium | High | The most serious risk. See below |
+| **Nobody online when the record is needed** — every device in the circle asleep at 3am | Low–Medium | High | A liveness problem, not a redundancy one. See below |
 | A member's device is lost or stolen and readable | Medium | High | Device encryption; keep the local store encrypted at rest |
 | A member holding a copy reads content not meant for them | Medium | Medium | Encrypt contents to circle members at application level |
 | Someone is admitted who should not have been | Low | High | Only the person or their proxy can admit |
@@ -95,11 +95,19 @@ This is the section everything else depends on.
 
 ### The availability risk
 
-If every device in a six-person circle is off, the circle is unreachable. Holochain's redundancy assumes enough peers are online, and a small circle on sleeping phones is the hardest case for that assumption. The documentation does not address it.
+**This is smaller than it first appears, and the reason matters.**
 
-This is unresolved, and it is the question that decides whether this becomes a product. Adding an always-on device per circle would fix it — but that device would be able to read everything unless contents are encrypted to circle members first.
+Every agent in Holochain 0.7.0 joins with a **full storage arc** — verified in `holochain_p2p`, where an agent joining a space is constructed with `DhtArc::FULL`, and in the conductor config, where `target_arc_factor` documents its default of 1 as normal operation. Every member of a circle therefore holds a complete copy of that circle. A six-person circle has six complete copies.
 
-**Nothing should be built on top of this until it is answered.**
+So this is not a redundancy problem. There is no scenario where the data is thinly spread or partially lost. It is a **liveness** problem: if nobody is online, nobody answers. That is true of any peer-to-peer system and is a far narrower claim.
+
+**DHT sharding does not change this, and is not needed.** Sharding is planned for Holochain 0.9.x (currently an epic at 0%, behind a compile-time flag since 0.4.x). It exists for large networks where holding everything becomes burdensome. At the scale of a family circle, arcs stay full regardless. **The availability story works on 0.7.0 as shipped and does not depend on any unreleased feature.**
+
+**Residual risk:** a circle where every device is genuinely off — for example a family whose phones are all asleep overnight, at precisely the hour an emergency department wants the record.
+
+**Mitigation:** one always-on device per circle, such as a home laptop or a tablet left on charge. Note the consequence: that device holds a full readable copy like any other member, so contents should be encrypted to circle members at application level regardless.
+
+**Design note for later.** `target_arc_factor: 0` produces a node that participates without storing. That is the wrong setting for a home device but the right one for a phone — full arc on a machine at home, zero arc on the phone in a pocket.
 
 ### The erasure tension
 
@@ -121,8 +129,8 @@ Entries are held on other members' devices, so "delete everything" is not a sing
 
 **To do, in order**
 
-1. Resolve the availability question with Holochain's developers
-2. Encrypt entry contents to circle members, so a device holding a copy cannot read it
+1. Encrypt entry contents to circle members, so a device holding a copy cannot read it
+2. Document the always-on-device pattern for circles that need overnight availability
 3. Build to WCAG 2.2 AA from the first screen — these users include people with cognitive impairment and exhausted carers
 4. Write down how proxy decision-making works where someone lacks capacity
 5. Ask NHS England how a no-operator system should be assessed under DTAC
