@@ -185,3 +185,10 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
     }
     Ok(records)
 }
+
+/// Delete a record. Validation permits this only to the record's own author,
+/// so a member cannot erase the person's About Me.
+#[hdk_extern]
+pub fn delete_about_me(action_hash: ActionHash) -> ExternResult<ActionHash> {
+    delete_entry(action_hash)
+}

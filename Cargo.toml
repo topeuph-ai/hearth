@@ -1,6 +1,8 @@
 [workspace]
 members = ["dnas/*/zomes/coordinator/*", "dnas/*/zomes/integrity/*"]
 resolver = "2"
+# The test crate builds natively, not to wasm, so it is not a member here.
+exclude = ["tests"]
 
 [workspace.dependencies]
 # Pinned to the Holochain 0.7.0 release line.
