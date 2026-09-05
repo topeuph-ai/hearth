@@ -41,6 +41,10 @@ Directly between the devices of circle members. There is no cloud service, no da
 
 Only people the person, or whoever acts for them, has admitted. Membership is not open.
 
+This is enforced in code, not merely stated. The person's public key is written into the DNA properties, which form part of the DNA hash — so each circle is a cryptographically separate network, and circles cannot see one another. An invitation is that person's signature over the invitee's own key, verified independently by every existing member before the joiner is accepted. Nobody is asked for permission, because there is nobody to ask.
+
+**One caveat while this is a prototype:** a circle created without a founder property is currently open to anyone. That exists only so the base cell is installable during development. It must be made to fail closed before the software is used by anybody, and is marked as such in the source.
+
 ---
 
 ## 3. Who is responsible for what

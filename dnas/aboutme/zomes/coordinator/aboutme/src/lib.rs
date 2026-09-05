@@ -14,6 +14,22 @@ fn circle_path() -> ExternResult<TypedPath> {
     Path::from(CIRCLE_ANCHOR).typed(LinkTypes::CircleToAboutMe)
 }
 
+/// Issue an invitation to join this circle.
+///
+/// Only meaningful when called by the founder: anyone else can call it, but the
+/// signature will not verify and the invitation will not let anybody in. There
+/// is no permission check here because there is nowhere to enforce one — the
+/// enforcement lives in every peer's copy of the validation rules.
+///
+/// The result is handed to the invitee out of band (a link, a QR code, read
+/// aloud over the phone) and presented as their membrane proof on joining.
+#[hdk_extern]
+pub fn invite(invitee: AgentPubKey) -> ExternResult<Invitation> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let signature = sign(me, invitee)?;
+    Ok(Invitation { signature })
+}
+
 #[hdk_extern]
 pub fn create_about_me(about_me: AboutMe) -> ExternResult<Record> {
     let action_hash = create_entry(EntryTypes::AboutMe(about_me))?;

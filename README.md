@@ -184,10 +184,7 @@ Young: 4 stars, no licence file. But first-party and on our version.
 
 Four Holochain capabilities this design wants and does not yet use:
 
-1. **Membrane proof** — how a circle controls who joins. The DNA currently has no
-   membrane, so "the person decides who is in" is a claim in the DPIA that the
-   code does not yet back. **Highest priority, because it is the gap between the
-   document and the software.**
+1. ~~**Membrane proof**~~ — **done.** See below.
 2. **Capability grants** — a professional's access as a revocable, assignable
    grant rather than plain membership. Gives real revocation, which speaks
    directly to the open erasure question.
@@ -198,6 +195,43 @@ Four Holochain capabilities this design wants and does not yet use:
 
 Not needed: countersigning (nothing here requires atomic multi-party agreement)
 and warrants (automatic).
+
+## The membrane: who gets into a circle
+
+The founder's public key is written into the DNA **properties**, which are part
+of the DNA hash. So a different founder produces a different DNA hash, which
+produces a genuinely separate network. **Circles cannot see each other, and that
+is a fact about the maths rather than about anyone's access control list.** This
+is why one clone per person works.
+
+An **invitation** is the founder's signature over the invitee's public key. The
+invitee presents it as their membrane proof when joining. Every peer verifies it
+independently against the founder key baked into the DNA. Nobody is asked for
+permission, because there is nobody to ask.
+
+Signing over the invitee's *own* key means an invitation cannot be passed on to
+somebody else.
+
+Checked in two places:
+- `genesis_self_check` runs locally before joining, so a bad invitation fails
+  immediately with a readable reason instead of being silently rejected later.
+- `FlatOp::CreateRecord(OpRecord::AgentValidationPkg { .. })` in `validate` is
+  the real enforcement, done by the network.
+
+`invite()` in the coordinator issues one. There is deliberately no permission
+check on it: anyone may call it, and a non-founder's signature simply will not
+verify. **There is nowhere to enforce a permission, because there is no server —
+enforcement lives in every peer's copy of the rules.** That is the whole
+architecture in one function.
+
+### Known sharp edge — must be closed before real use
+
+**A DNA with no founder property is an open circle that anyone may join.** That
+exists so the base cell is installable in development, where no founder key is
+known in advance. Every real circle is a clone that sets the property.
+
+This must be made to fail closed before the software goes in front of anybody.
+It is marked in `founder()` in the integrity zome.
 
 ## Open questions
 
