@@ -323,3 +323,7 @@ bring it back — it reconciles.
 
 > There's no account, no server, and no company. If I'm hit by a bus tomorrow,
 > this carries on working.
+
+## Licence
+
+Apache License 2.0. See [LICENSE](LICENSE).
