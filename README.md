@@ -1,5 +1,7 @@
 # About Me, held by the person
 
+[![tests](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml/badge.svg)](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml)
+
 A person-centred record that spans organisations which will never share a system,
 with **no server and no operator**.
 
@@ -276,6 +278,47 @@ bookkeeping.
 
 **The lesson worth keeping: a validation function that ends in a permissive
 catch-all is a security hole with a comment on it.** Enumerate what you allow.
+
+### What the tests actually proved
+
+`tests/tests/adversarial.rs` — nine tests, run in CI on every push. **Verified,
+not asserted:**
+
+- an uninvited agent cannot join
+- an invitation signed over one person's key does not admit anybody else
+- a member can call `invite()`, and their signature admits nobody
+- the person can write their own About Me
+- **a member cannot write the person's About Me** — the red-team finding
+- a member cannot extend the person's update chain
+- a member cannot delete the person's record
+- a member can acknowledge a record
+- nobody can acknowledge their own record
+
+**And the run that mattered was the one before green.** Four passed and five
+failed, and among the failures was *the person can write their own About Me*.
+Alice could not write either — so *a member cannot write* had been passing
+because **nobody** could write. A green test proving nothing.
+
+The cause was the link rule added to close the red-team hole: it demanded that
+every `CircleToAboutMe` link point at an About Me, and `Path::ensure` builds the
+anchor tree with links of that same type pointing at Path entries. The security
+fix had broken every write in the application.
+
+Reading the code would not have found that. Running it did.
+
+### Still untested
+
+Do not mistake nine green tests for a proven system. These rules have no
+coverage yet:
+
+- an About Me must have a display name
+- acknowledgements cannot be edited
+- only the agent who created a link may remove it
+- **that two peers with identically-timestamped updates converge on the same
+  version** — the tiebreak is written but never exercised
+- **that a production configuration with no founder property fails closed** —
+  currently the deliberate development escape hatch, and the most dangerous
+  thing on this list
 
 ### Known sharp edge — must be closed before real use
 
