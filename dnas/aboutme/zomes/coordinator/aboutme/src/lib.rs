@@ -85,24 +85,60 @@ pub fn get_circle_about_me(_: ()) -> ExternResult<Vec<ActionHash>> {
         .collect())
 }
 
-/// Follow the update chain and return the current version.
+/// Every version of an About Me, oldest first.
+///
+/// There is no global clock and no total order. Two people editing while apart
+/// both produce valid versions, and neither "won" — so the honest primitive is
+/// the list, and anything that picks one is a display choice layered on top.
 #[hdk_extern]
-pub fn get_latest_about_me(original_action_hash: ActionHash) -> ExternResult<Option<Record>> {
-    let links = get_links(
+pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<Vec<ActionHash>> {
+    let mut links = get_links(
         LinkQuery::try_new(original_action_hash.clone(), LinkTypes::AboutMeUpdates)?,
         GetStrategy::Network,
     )?;
 
-    // Latest by link timestamp. Note there is no global clock and no total
-    // order here: two people editing while apart can both be valid. This
-    // picks one deterministically rather than pretending there was a winner.
-    let latest = links
-        .into_iter()
-        .max_by(|a, b| a.timestamp.cmp(&b.timestamp))
-        .and_then(|l| l.target.into_action_hash())
-        .unwrap_or(original_action_hash);
+    // Sort by timestamp, then by target hash. The hash tiebreak is not
+    // decoration: two links can carry the same timestamp, and `get_links` makes
+    // no promise that peers see links in the same order. Without a tiebreaker,
+    // two devices could disagree about which version is current.
+    links.sort_by(|a, b| {
+        a.timestamp
+            .cmp(&b.timestamp)
+            .then_with(|| a.target.cmp(&b.target))
+    });
 
-    get(latest, GetOptions::default())
+    let mut versions = vec![original_action_hash];
+    versions.extend(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash()),
+    );
+    Ok(versions)
+}
+
+/// The version to show, and whether showing one is misleading.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CurrentAboutMe {
+    pub record: Option<Record>,
+    /// How many versions exist in total. More than one means edits were made
+    /// while devices were apart, and the interface should say so rather than
+    /// quietly picking a winner.
+    pub version_count: usize,
+}
+
+#[hdk_extern]
+pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<CurrentAboutMe> {
+    let versions = get_about_me_versions(original_action_hash)?;
+    let version_count = versions.len();
+    let newest = versions
+        .last()
+        .cloned()
+        .ok_or_else(|| wasm_error!("An About Me always has at least its original version"))?;
+
+    Ok(CurrentAboutMe {
+        record: get(newest, GetOptions::default())?,
+        version_count,
+    })
 }
 
 #[derive(Serialize, Deserialize, Debug)]

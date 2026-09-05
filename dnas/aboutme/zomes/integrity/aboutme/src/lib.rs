@@ -142,11 +142,122 @@ pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCa
     check_membrane(&data.agent_key, &data.membrane_proof)
 }
 
-fn validate_about_me(about_me: &AboutMe) -> ExternResult<ValidateCallbackResult> {
+/// Is this agent the person whose circle this is?
+///
+/// In a development circle with no founder property, everyone is. See the note
+/// on `founder`.
+fn is_the_person(agent: &AgentPubKey) -> ExternResult<bool> {
+    Ok(match founder()? {
+        Some(f) => &f == agent,
+        None => true,
+    })
+}
+
+/// The author of `hash`, if `hash` is an About Me entry. `None` otherwise.
+fn about_me_author(hash: &ActionHash) -> ExternResult<Option<AgentPubKey>> {
+    let action = must_get_action(hash.clone())?;
+    let Some(entry_hash) = action.action().entry_hash() else {
+        return Ok(None);
+    };
+    let entry = must_get_entry(entry_hash.clone())?;
+    if AboutMe::try_from(entry.content.clone()).is_ok() {
+        Ok(Some(action.action().author().clone()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn as_action_hash(hash: &AnyLinkableHash) -> Option<ActionHash> {
+    hash.clone().into_action_hash()
+}
+
+fn validate_about_me(
+    about_me: &AboutMe,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    // Only the person may speak as the person. Membership of a circle lets you
+    // read it and acknowledge it; it does not let you author somebody else's
+    // account of themselves.
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may write their About Me");
+    }
     if about_me.display_name.trim().is_empty() {
         return invalid("About Me must have a display name");
     }
     Ok(ValidateCallbackResult::Valid)
+}
+
+/// Links carry meaning here, so they need rules of their own.
+///
+/// Without this, a member could create an `AboutMeUpdates` link from the
+/// person's own record to an entry of their own, and every reader following the
+/// update chain would be shown the impostor's content as the person's current
+/// record — without ever updating the person's entry, and so without tripping
+/// the update-author rule.
+fn validate_create_link(
+    link_type: &LinkTypes,
+    action: &TypedAction<CreateLinkData>,
+) -> ExternResult<ValidateCallbackResult> {
+    let author = action.author();
+
+    match link_type {
+        // Only the person publishes their record to the circle index.
+        LinkTypes::CircleToAboutMe => {
+            if !is_the_person(author)? {
+                return invalid("Only the person may publish an About Me to their circle");
+            }
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("Circle index must point at an action");
+            };
+            match about_me_author(&target)? {
+                Some(a) if &a == author => Ok(ValidateCallbackResult::Valid),
+                Some(_) => invalid("Circle index must point at the linker's own About Me"),
+                None => invalid("Circle index must point at an About Me"),
+            }
+        }
+
+        // The update chain. Both ends must be the person's own records, and
+        // only the person may extend it.
+        LinkTypes::AboutMeUpdates => {
+            if !is_the_person(author)? {
+                return invalid("Only the person may extend their own update chain");
+            }
+            let (Some(base), Some(target)) = (
+                as_action_hash(&action.base_address),
+                as_action_hash(&action.target_address),
+            ) else {
+                return invalid("Update links must join two actions");
+            };
+            match (about_me_author(&base)?, about_me_author(&target)?) {
+                (Some(b), Some(t)) if &b == author && &t == author => {
+                    Ok(ValidateCallbackResult::Valid)
+                }
+                (Some(_), Some(_)) => {
+                    invalid("An update chain may only join the person's own About Me records")
+                }
+                _ => invalid("Update links must join two About Me records"),
+            }
+        }
+
+        // You may only attach your own acknowledgement.
+        LinkTypes::AboutMeToAcknowledgement => {
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("Acknowledgement link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only link your own acknowledgement");
+            }
+            let Some(entry_hash) = target_action.action().entry_hash() else {
+                return invalid("Acknowledgement link must point at an entry");
+            };
+            let entry = must_get_entry(entry_hash.clone())?;
+            if Acknowledgement::try_from(entry.content.clone()).is_err() {
+                return invalid("Acknowledgement link must point at an acknowledgement");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+    }
 }
 
 fn validate_acknowledgement(
@@ -185,7 +296,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         }) => check_membrane(action.author(), &membrane_proof),
 
         FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => match app_entry {
-            EntryTypes::AboutMe(about_me) => validate_about_me(&about_me),
+            EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, action.author()),
             EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
@@ -197,12 +308,42 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                 if original.action().author() != action.author() {
                     return invalid("Only the original author may update an About Me");
                 }
-                validate_about_me(&about_me)
+                validate_about_me(&about_me, action.author())
             }
             EntryTypes::Acknowledgement(_) => {
                 invalid("Acknowledgements cannot be updated; write a new one")
             }
         },
+
+        FlatOp::Link(OpLink::CreateLink {
+            link_type, action, ..
+        }) => validate_create_link(&link_type, &action),
+
+        // Only the agent who made a link may remove it.
+        FlatOp::Link(OpLink::DeleteLink {
+            original_action,
+            action,
+            ..
+        }) => {
+            if original_action.author() != action.author() {
+                return invalid("Only the agent who created a link may remove it");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the author of an entry may delete it. Without this, any member
+        // could erase the person's own record.
+        FlatOp::Delete(OpDelete { action }) => {
+            let deleted = must_get_action(action.deletes_address.clone())?;
+            if deleted.action().author() != action.author() {
+                return invalid("Only the author of a record may delete it");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Everything left is Holochain's own bookkeeping (chain opens and
+        // closes, init markers, agent activity). Nothing app-specific rides on
+        // these, so there is nothing for this app to rule on.
         _ => Ok(ValidateCallbackResult::Valid),
     }
 }

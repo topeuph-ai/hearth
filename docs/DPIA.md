@@ -57,7 +57,9 @@ This is the section everything else depends on.
 | A family carer | Controller (possibly exempt — see below) | What they write |
 | A professional's employing organisation | Controller | That professional's contribution and acknowledgements |
 | A circle member whose device stores a copy | Processor | Storing and passing on data faithfully; deciding nothing |
-| **The project / the developer** | **Neither** | **Nothing. Determines no purpose, sees no data, operates no service** |
+| **The project / the developer** | **Argued to be neither** | Determines no purpose, sees no data, operates no service |
+
+**This last row is an argument, not a settled fact.** The architecture makes the developer's role very small — there is no service, no storage and no decision about anyone's data. But whether that amounts to "neither controller nor processor" is a legal conclusion, and architecture does not get to decide legal classification. It is stated here as the position to be tested, not as an answer. **[DECISION: qualified review.]**
 
 **Reasoning, and the published sources it rests on:**
 

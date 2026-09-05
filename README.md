@@ -36,11 +36,28 @@ a specific version. Cheap for them; it's the thing families currently have no wa
 of knowing.
 
 Validation rules enforced by every peer independently:
+- **only the person may write or revise their own About Me** — membership lets
+  you read a circle and acknowledge it, never author somebody else's account of
+  themselves
 - an About Me must have a display name
-- only the original author may revise an About Me
-- you cannot acknowledge your own About Me
+- only the person may extend their own update chain, and only between their own
+  records
+- only the person may publish an About Me to the circle index
+- you may only attach your own acknowledgement, and never to your own record
 - an acknowledgement must reference a real About Me entry
 - acknowledgements cannot be edited
+- only the agent who created a link may remove it
+- only the author of a record may delete it
+
+### What an acknowledgement does and does not prove
+
+It proves **this key asserted it had read this exact version**. `role` is free
+text and is not a credential — nobody checks that "district nurse" is true.
+
+**This distinction must survive into the interface.** Show *"Read by \<identity\>,
+role claimed: District Nurse"*, never *"✓ Read by District Nurse"*. The second
+implies a verification that does not exist, and a family could reasonably rely
+on it.
 
 ## Versions (verified, not assumed)
 
@@ -223,6 +240,34 @@ check on it: anyone may call it, and a non-founder's signature simply will not
 verify. **There is nowhere to enforce a permission, because there is no server —
 enforcement lives in every peer's copy of the rules.** That is the whole
 architecture in one function.
+
+### Two boundaries, not one
+
+An external red-team review found the central mistake in the first version:
+**"closed circle" had been implemented far more strongly than "person-owned
+record".** Those are different boundaries.
+
+Who may **enter** was enforced by the membrane. Who may **write** was not
+enforced at all — any admitted member could author an About Me and publish it
+to the circle index, so a circle could hold several competing accounts of the
+same person, each legitimately maintained by whoever invented it.
+
+Worse, and missed by that review: the validation function ended in a catch-all
+that returned Valid for everything it did not name, which included **all link
+creation and all deletes**. That allowed a sharper attack than a competing
+record. A member could create an `AboutMeUpdates` link from the person's own
+original record to an entry of their own; any reader following the update chain
+would then be shown the impostor's content **as the person's current record** —
+without ever touching the person's entry, and so without tripping the
+update-author rule. The same hole let any member delete the person's record
+outright.
+
+Both are now closed. Links carry meaning in this design, so they have rules of
+their own, and the catch-all is documented as covering only Holochain's internal
+bookkeeping.
+
+**The lesson worth keeping: a validation function that ends in a permissive
+catch-all is a security hole with a comment on it.** Enumerate what you allow.
 
 ### Known sharp edge — must be closed before real use
 
