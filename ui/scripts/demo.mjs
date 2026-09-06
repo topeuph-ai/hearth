@@ -11,7 +11,7 @@
  * cost an hour once. This script puts ../bin on PATH so it cannot happen again.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,12 +36,47 @@ if (missing.length) {
 if (!existsSync(happ)) {
   console.error(
     `No hApp at ${happ}\n\n` +
-      `Build and pack it first:\n` +
-      `  cargo build --target wasm32-unknown-unknown --release\n` +
-      `  ./bin/hc dna pack dnas/aboutme/workdir\n` +
-      `  ./bin/hc app pack workdir`,
+      `Build it first:\n` +
+      `  cargo build --target wasm32-unknown-unknown --release`,
   );
   process.exit(1);
+}
+
+/*
+ * Always re-pack before launching.
+ *
+ * The bundle is a snapshot of the wasm, and rebuilding the wasm does not
+ * update it. A stale bundle fails in the cruellest possible way — the app
+ * connects, the interface loads, and then a function you can see in the source
+ * "doesn't exist". CI packs fresh every run, so the tests stay green while the
+ * thing on your disk quietly rots.
+ *
+ * Packing takes about a second. Never skip it to save that second.
+ */
+const wasm = resolve(here, "..", "..", "target", "wasm32-unknown-unknown", "release");
+for (const name of ["aboutme.wasm", "aboutme_integrity.wasm"]) {
+  if (!existsSync(join(wasm, name))) {
+    console.error(
+      `Missing ${name}. Build the zomes first:\n` +
+        `  cargo build --target wasm32-unknown-unknown --release`,
+    );
+    process.exit(1);
+  }
+}
+
+const hc = join(bin, process.platform === "win32" ? "hc.exe" : "hc");
+const dnaWorkdir = resolve(here, "..", "..", "dnas", "aboutme", "workdir");
+const happWorkdir = resolve(here, "..", "..", "workdir");
+
+for (const [what, where] of [
+  ["dna", dnaWorkdir],
+  ["app", happWorkdir],
+]) {
+  const packed = spawnSync(hc, [what, "pack", where], { stdio: "inherit" });
+  if (packed.status !== 0) {
+    console.error(`Could not pack the ${what}.`);
+    process.exit(packed.status ?? 1);
+  }
 }
 
 const agents = process.argv[2] ?? "2";
