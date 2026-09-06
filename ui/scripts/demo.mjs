@@ -86,11 +86,42 @@ const portIsOpen = () =>
     socket.once("error", () => (socket.destroy(), resolve(false)));
   });
 
+/*
+ * Closing the windows does not always take the conductors with them, and a
+ * stray conductor then blocks the next run. Clearing up on the way in is more
+ * reliable than remembering to on the way out.
+ *
+ * **Only processes started from this project's bin/.** Killing every
+ * holochain.exe would take down conductors belonging to entirely different
+ * projects on the same machine, which is a rude thing for a demo script to do.
+ */
+function clearLeftovers() {
+  if (!isWindows) return;
+
+  const ours = bin.replace(/\\/g, "\\\\");
+  const script =
+    `Get-CimInstance Win32_Process | ` +
+    `Where-Object { $_.ExecutablePath -like '${ours}*' } | ` +
+    `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+
+  spawnSync("powershell", ["-NoProfile", "-Command", script], {
+    stdio: "ignore",
+  });
+}
+
 if (await portIsOpen()) {
-  die(
-    `Something is already using port ${UI_PORT}.\n` +
-      `Close the other demo (or dev server) and try again.`,
-  );
+  console.log("Clearing a previous run...");
+  clearLeftovers();
+  await new Promise((r) => setTimeout(r, 2000));
+
+  if (await portIsOpen()) {
+    die(
+      `Port ${UI_PORT} is still in use by something that is not a previous\n` +
+        `demo. Close it and try again.`,
+    );
+  }
+} else {
+  clearLeftovers();
 }
 
 console.log("Starting the interface...");
