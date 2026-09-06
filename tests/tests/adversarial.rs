@@ -429,37 +429,34 @@ async fn an_about_me_needs_a_display_name() {
 // Circles are separate networks, not separate labels
 // ---------------------------------------------------------------------------
 
-/// A circle is a cloned cell whose properties name the person it belongs to.
-/// Because properties form part of the DNA hash, two people's circles are
-/// different networks — which is what makes "one circle per person" a fact
-/// about the maths rather than an access rule someone could get wrong.
+/// A circle is a cloned cell whose properties name its holder. Because
+/// properties form part of the DNA hash, two holders' circles are different
+/// networks — which is what makes "one circle per person" a fact about the
+/// maths rather than an access rule someone could get wrong.
 #[tokio::test(flavor = "multi_thread")]
-async fn two_peoples_circles_are_different_networks() {
-    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
-
-    let alice = alice_cell.agent_pubkey().clone();
-    let someone_else = SweetAgents::one(conductor.keystore()).await;
+async fn two_holders_circles_are_different_networks() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
 
     let hers: ClonedCell = conductor
         .call(
             &zome(&alice_cell),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: alice.clone(),
+                founder: alice_cell.agent_pubkey().clone(),
                 name: "Alice".to_string(),
                 network_seed: "shared-seed".to_string(),
             },
         )
         .await;
 
-    // Same seed, same everything except who it is about.
-    let theirs: ClonedCell = conductor
+    // Same seed, same everything except who holds it.
+    let his: ClonedCell = conductor
         .call(
-            &zome(&alice_cell),
+            &zome(&bob_cell),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: someone_else,
-                name: "Someone else".to_string(),
+                founder: bob_cell.agent_pubkey().clone(),
+                name: "Bob".to_string(),
                 network_seed: "shared-seed".to_string(),
             },
         )
@@ -467,13 +464,46 @@ async fn two_peoples_circles_are_different_networks() {
 
     assert_ne!(
         hers.cell_id.dna_hash(),
-        theirs.cell_id.dna_hash(),
-        "circles for different people must be different networks, even with the same seed"
+        his.cell_id.dna_hash(),
+        "circles with different holders must be different networks, even with the same seed"
     );
     assert_ne!(
         hers.cell_id.dna_hash(),
         alice_cell.dna_hash(),
         "a circle must be its own network, not the cell it was cloned from"
+    );
+}
+
+/// You cannot conjure a circle in somebody else's name.
+///
+/// Creating a circle means joining it, and joining runs the membrane check. An
+/// agent who names someone else as holder, and has no invitation from them, is
+/// refused at genesis.
+///
+/// **This is what settles the proxy question.** The holder is whoever will
+/// administer the circle — a daughter, a case manager — not necessarily the
+/// person the record describes. Who the record is *about* is content;
+/// who holds it is the membrane.
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_can_create_a_circle_in_another_persons_name() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let someone_else = SweetAgents::one(conductor.keystore()).await;
+
+    let result: Result<ClonedCell, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: someone_else,
+                name: "Not mine to make".to_string(),
+                network_seed: "seed".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "naming someone else as holder must not let you into the circle you just made"
     );
 }
 

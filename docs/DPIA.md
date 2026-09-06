@@ -73,6 +73,16 @@ This is the section everything else depends on.
 
 **Possible exemption, unverified.** A family member keeping notes about their own relative may fall under the household-purposes exemption and outside UK GDPR entirely. Once professionals join, the circle is probably no longer purely domestic. **[DECISION: ask, do not assume. Do not rely on this.]**
 
+### Holder and subject are different roles
+
+Building the circle-creation code settled something this document had left open.
+
+A circle's DNA properties name its **holder** — the key that controls admissions. Creating a circle means joining it, and joining runs the membrane check, so **nobody can create a circle in another person's name**: name someone else as holder and you are refused entry to the thing you just made. That is enforced, and tested.
+
+So the holder is whoever will actually administer the circle. Often the person themselves. Where they cannot, it is the daughter, the case manager, the deputy. **Who the record is about is content; who holds it is the membrane.** The two need not be the same person and the software does not pretend otherwise.
+
+What this does *not* settle is the part that was never software: how a proxy comes to be the right proxy, what happens when family members disagree, and what a deputy's authority means here. Those are Mental Capacity Act questions and they need a qualified answer. The software's contribution is narrower and worth stating plainly: **it makes the holder explicit, singular and cryptographic, rather than leaving "who is in charge of Mum's information" as an unwritten understanding.**
+
 ---
 
 ## 4. Is it necessary and proportionate
@@ -96,7 +106,7 @@ This is the section everything else depends on.
 | A member holding a copy reads content not meant for them | Medium | Medium | Encrypt contents to circle members at application level |
 | Someone is admitted who should not have been | Low | High | Only the person or their proxy can admit |
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
-| A person lacks capacity to decide who joins | Medium | High | Proxy arrangements needed. **[DECISION]** |
+| A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |
 | Content is wrong or out of date and someone relies on it | Medium | Medium | Acknowledgements record which version was read |
 
 ### The availability risk
