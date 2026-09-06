@@ -38,6 +38,23 @@ const bytesToBase64 = (bytes) =>
 const base64ToBytes = (text) =>
   Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
+
+/*
+ * Two long strings pass between people and they look identical to a human: an
+ * identifier (uhCAk...) and an invitation (base64 of a small bundle). Pasting
+ * one where the other belongs is the obvious mistake, and the obvious mistake
+ * deserves a sentence that explains the flow rather than "could not be read".
+ */
+const looksLikeAnIdentifier = (text) => /^uhCAk[A-Za-z0-9_-]{40,}$/.test(text.trim());
+
+function looksLikeAnInvitation(text) {
+  try {
+    return typeof JSON.parse(atob(text.trim()))?.founder === "string";
+  } catch {
+    return false;
+  }
+}
+
 function invitationToToken(bundle) {
   return btoa(
     JSON.stringify({
@@ -346,6 +363,21 @@ $("invite-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const invitee = $("invitee").value.trim();
+
+    if (looksLikeAnInvitation(invitee)) {
+      throw new Error(
+        "That is an invitation, not an identifier. This box wants the long " +
+          "line beginning uhCAk that they copied from their own Hearth.",
+      );
+    }
+    if (!looksLikeAnIdentifier(invitee)) {
+      throw new Error(
+        "That does not look like an identifier. It is one long line beginning " +
+          "uhCAk, which they copy from “Your identifier” at the top of their " +
+          "own Hearth. It is not their name.",
+      );
+    }
+
     const invitation = await call("invite", invitee, circle.cellId);
     const output = $("invitation-output");
     output.hidden = false;
@@ -591,7 +623,17 @@ $("introduce-form").addEventListener("submit", async (event) => {
 $("join-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const bundle = tokenToInvitation($("invitation-in").value);
+    const pasted = $("invitation-in").value.trim();
+
+    if (looksLikeAnIdentifier(pasted)) {
+      throw new Error(
+        "That is an identifier, not an invitation — it may even be your own. " +
+          "Send it to the person whose circle you want to join. They put it " +
+          "into their Hearth, and send you back the invitation it produces.",
+      );
+    }
+
+    const bundle = tokenToInvitation(pasted);
     const label = $("join-label").value.trim() || bundle.about || "Circle";
 
     const cell = await call("join_circle", {
