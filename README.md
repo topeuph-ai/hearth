@@ -209,19 +209,54 @@ Young: 4 stars, no licence file. But first-party and on our version.
 
 ## Build order
 
-Four Holochain capabilities this design wants and does not yet use:
-
-1. ~~**Membrane proof**~~ — **done.** See below.
-2. **Capability grants** — a professional's access as a revocable, assignable
-   grant rather than plain membership. Gives real revocation, which speaks
-   directly to the open erasure question.
-3. **Cloned cells** — `clone_limit: 1000` is set but nothing creates a clone. One
-   circle per person is the architecture and it is not implemented.
-4. **Remote signals** — "someone read your record", without polling and without a
-   server.
+1. ~~**Membrane proof**~~ — **done.**
+2. ~~**Cloned cells**~~ — **done.** Circles are clones; see below.
+3. ~~**Capability grants for revocation**~~ — **wrong item.** See *Revocation*.
+4. **Remote signals** — "someone read your record", without polling and without
+   a server. Still to do.
 
 Not needed: countersigning (nothing here requires atomic multi-party agreement)
 and warrants (automatic).
+
+## Revocation
+
+There are three different things people mean by this, and conflating them
+produces software that lies:
+
+| | |
+|---|---|
+| **Membership revocation** | Stop someone writing to the circle in future |
+| **Access revocation** | Stop someone reading what they already hold |
+| **Erasure** | Remove data from their device |
+
+**Validation cannot enforce membership revocation.** `must_get_agent_activity`
+needs a known `chain_top`, so to ask "has the founder removed this person?" a
+validator would need the founder's *current* chain head — mutable, unknown at
+validation time, and different for each validator. Deterministic validation
+cannot see it. Letting the writer cite the head themselves does not help: a
+removed member simply cites an older one.
+
+**Capability grants do not fix this.** They gate remote calls into your own
+cell. They say nothing about what somebody already holds, or about what the DHT
+will serve them. Listing them as the revocation mechanism was a mistake in an
+earlier version of this file.
+
+**The sound answer falls out of the architecture: revocation is re-forming the
+circle.** A circle is a clone, and clones are nearly free. To remove someone,
+make a new circle with a new network seed and invite everyone except them. They
+are excluded by mathematics rather than by a rule someone has to enforce, and
+the cost is one clone.
+
+What that does *not* do — and nothing can — is retrieve what they already have.
+Once a person has legitimately received plaintext, it is theirs. **Access
+revocation and erasure are not achievable against someone who has already read
+the data**, on this architecture or any other, and the DPIA says so rather than
+implying otherwise.
+
+Best-effort removal within an existing circle (the founder records a departure,
+other members' apps stop showing that person and stop sharing new material with
+them) is worth building for the ordinary case of a professional leaving. It is
+a courtesy, not a control, and must never be described as one.
 
 ## The membrane: who gets into a circle
 

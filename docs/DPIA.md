@@ -131,6 +131,18 @@ The realistic worst case is therefore not a family member unable to read the rec
 
 **Design note for later.** `target_arc_factor: 0` produces a node that participates without storing. That is the wrong setting for a home device but the right one for a phone — full arc on a machine at home, zero arc on the phone in a pocket.
 
+### Revocation: what is possible and what is not
+
+Three different things get called revocation, and conflating them produces software that lies about what it does.
+
+**Stopping someone writing in future** cannot be enforced by validation. Checking "has this person been removed?" would require a validator to know the holder's current chain head, which is mutable and differs between validators, and deterministic validation cannot see it. Capability grants do not solve this either — they gate calls into one's own cell, not what the network will serve.
+
+**The sound answer is to re-form the circle.** A circle is a cheap clone, so removing someone means creating a new circle with a new network seed and inviting everyone except them. They are excluded by mathematics rather than by a rule somebody has to enforce.
+
+**Stopping someone reading what they already hold is not achievable.** Once a person has legitimately received the plaintext, it is theirs. This is true of this architecture and of every other, including systems that claim otherwise by deleting a copy they control while the reader's screenshot survives. **[DECISION: this must be said plainly to families, not buried. A circle member is a person you have told something to.]**
+
+Best-effort removal inside an existing circle — the holder records a departure, and other members' software stops displaying that person and stops sharing new material with them — is worth building for the ordinary case of a professional leaving a case. It is a courtesy, not a control, and must never be presented as one.
+
 ### The erasure tension
 
 Entries are held on other members' devices, so "delete everything" is not a single action anyone can take. This is a real limitation and must not be glossed over. Two partial mitigations: hold as little as possible in the first place, and encrypt contents so that withdrawing access renders remaining copies unreadable.
