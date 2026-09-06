@@ -194,3 +194,42 @@ output {
     transition: none !important;
   }
 }
+
+select {
+  width: 100%;
+  padding: 0.7rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: 6px;
+}
+
+/* A suggestion is somebody's contribution, not a row in a table. */
+.suggestion {
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+  list-style: none;
+}
+
+.suggestion .who {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.suggestion .because {
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+.suggestion .outcome {
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+#suggestions-list {
+  padding-left: 0;
+}

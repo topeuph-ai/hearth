@@ -156,6 +156,20 @@ async function loadCircle() {
     circle.cellId,
   );
   renderReaders(readers);
+
+  await loadSuggestions();
+}
+
+async function loadSuggestions() {
+  const amHolder = holder && me && holder.toString() === me.toString();
+
+  // The person whose circle it is edits the record directly; everyone else
+  // offers. Both see the list, so a carer can tell that what she noticed was
+  // used.
+  $("suggest-section").hidden = amHolder;
+
+  suggestions = await call("get_suggestions", null, circle.cellId);
+  renderSuggestions();
 }
 
 function fillForm() {
@@ -304,7 +318,153 @@ async function start() {
       announce(`Someone read this. They said they are: ${payload.role}`);
       if (circle) await loadCircle();
     }
+    if (payload?.kind === "Suggested") {
+      announce("Someone has suggested something for the record.");
+      if (circle) await loadCircle();
+    }
   });
 }
 
 start().catch(problem);
+
+// ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
+
+const FIELD_LABELS = {
+  WhatMattersToMe: ["what_matters_to_me", "What matters to me"],
+  HowToCommunicateWithMe: ["how_to_communicate_with_me", "How to talk with me"],
+  HowToSupportMe: ["how_to_support_me", "How to help me feel at ease"],
+  PeopleWhoMatter: ["people_who_matter", "People who matter to me"],
+};
+
+let suggestions = [];
+
+function renderSuggestions() {
+  const list = $("suggestions-list");
+  list.replaceChildren();
+  $("suggestions-section").hidden = suggestions.length === 0;
+
+  const amHolder = holder && me && holder.toString() === me.toString();
+
+  for (const item of suggestions) {
+    const entry = item.suggestion?.entry?.Present?.entry;
+    if (!entry) continue;
+
+    const author = item.suggestion.signed_action.hashed.content.author;
+    const mine = author.toString() === me.toString();
+    const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
+
+    const li = document.createElement("li");
+    li.className = "suggestion";
+
+    const who = document.createElement("p");
+    who.className = "who";
+    // No names exist in this build. Saying "someone" is honest; inventing a
+    // name would not be.
+    who.textContent = mine
+      ? `You suggested this for “${label}”`
+      : `Someone in the circle suggested this for “${label}”`;
+    li.append(who);
+
+    const text = document.createElement("p");
+    text.textContent = entry.text;
+    li.append(text);
+
+    if (entry.because?.trim()) {
+      const because = document.createElement("p");
+      because.className = "because";
+      because.textContent = entry.because;
+      li.append(because);
+    }
+
+    const outcome = item.outcome?.entry?.Present?.entry;
+    if (outcome) {
+      const decided = document.createElement("p");
+      decided.className = "outcome";
+      // Set aside is shown, never hidden. Somebody took the trouble to notice
+      // something; letting it vanish silently is how people stop noticing.
+      decided.textContent = outcome.accepted
+        ? "Added to the record."
+        : "Set aside for now. Thank you for offering it.";
+      li.append(decided);
+    } else if (amHolder) {
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const accept = document.createElement("button");
+      accept.type = "button";
+      accept.textContent = "Add this";
+      accept.addEventListener("click", () =>
+        decide(item, entry, true).catch(problem),
+      );
+
+      const setAside = document.createElement("button");
+      setAside.type = "button";
+      setAside.className = "secondary";
+      setAside.textContent = "Not this one";
+      setAside.addEventListener("click", () =>
+        decide(item, entry, false).catch(problem),
+      );
+
+      actions.append(accept, setAside);
+      li.append(actions);
+    } else {
+      const waiting = document.createElement("p");
+      waiting.className = "who";
+      waiting.textContent = "Not looked at yet.";
+      li.append(waiting);
+    }
+
+    list.append(li);
+  }
+}
+
+/** Accept or set aside. Accepting also puts the words into the record. */
+async function decide(item, entry, accepted) {
+  const hash = item.suggestion.signed_action.hashed.hash;
+
+  await call("decide_on_suggestion", { suggestion: hash, accepted }, circle.cellId);
+
+  if (accepted && record) {
+    const [key] = FIELD_LABELS[entry.field] ?? [];
+    const current = record.current.record.entry.Present.entry;
+    const existing = current[key]?.trim();
+
+    await call(
+      "update_about_me",
+      {
+        original_action_hash: record.original,
+        previous_action_hash: record.current.record.signed_action.hashed.hash,
+        about_me: {
+          ...current,
+          [key]: existing ? `${existing}\n${entry.text}` : entry.text,
+        },
+      },
+      circle.cellId,
+    );
+  }
+
+  announce(accepted ? "Added to the record." : "Set aside.");
+  await loadCircle();
+}
+
+$("suggest-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await call(
+      "suggest",
+      {
+        field: $("suggest-field").value,
+        text: $("suggest-text").value.trim(),
+        because: $("suggest-because").value.trim(),
+      },
+      circle.cellId,
+    );
+    $("suggest-form").reset();
+    announce("Offered. The person who holds this circle will see it.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});

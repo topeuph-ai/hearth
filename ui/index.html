@@ -124,6 +124,53 @@
           <ul id="readers-list"></ul>
         </section>
 
+        <section id="suggestions-section" hidden>
+          <h3>Suggestions</h3>
+          <ul id="suggestions-list"></ul>
+        </section>
+
+        <section id="suggest-section" hidden>
+          <h3>Suggest something</h3>
+          <p>
+            You cannot change the record yourself — it is in
+            <span id="suggest-whose">their</span> own words. But if you know
+            something that would help, offer it here.
+          </p>
+          <form id="suggest-form">
+            <div class="field">
+              <label for="suggest-field">What is it about?</label>
+              <select id="suggest-field" name="suggest-field">
+                <option value="WhatMattersToMe">What matters to me</option>
+                <option value="HowToCommunicateWithMe">
+                  How to talk with me
+                </option>
+                <option value="HowToSupportMe">
+                  How to help me feel at ease
+                </option>
+                <option value="PeopleWhoMatter">People who matter to me</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="suggest-text">What should it say?</label>
+              <textarea id="suggest-text" name="suggest-text" rows="3" required></textarea>
+            </div>
+            <div class="field">
+              <label for="suggest-because">How do you know?</label>
+              <p id="because-hint" class="hint">
+                Often the more useful part. “She talked about her allotment all
+                summer.”
+              </p>
+              <textarea
+                id="suggest-because"
+                name="suggest-because"
+                rows="2"
+                aria-describedby="because-hint"
+              ></textarea>
+            </div>
+            <button type="submit">Offer this</button>
+          </form>
+        </section>
+
         <section id="invite-section" hidden>
           <h3>Invite someone</h3>
           <p>
