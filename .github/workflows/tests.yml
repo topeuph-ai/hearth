@@ -40,6 +40,12 @@ jobs:
       - name: Build zomes
         run: cargo build --target wasm32-unknown-unknown --release
 
+      # Pure logic that cannot be exercised through a conductor — chiefly
+      # `order_versions`, where a timestamp collision cannot be provoked on
+      # demand. Runs natively and in seconds.
+      - name: Unit tests
+        run: cargo test -p aboutme_integrity
+
       - name: Fetch the hc CLI
         env:
           GH_TOKEN: ${{ github.token }}
