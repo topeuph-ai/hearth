@@ -94,13 +94,21 @@ function announce(message) {
 }
 
 /** The screen to return to when something goes wrong. Never "problem". */
-let lastGoodScreen = "no-circle";
+let lastGoodScreen = "choose";
 
 function show(...ids) {
   if (!ids.includes("problem") && !ids.includes("starting")) {
     lastGoodScreen = ids[0];
   }
-  for (const id of ["starting", "no-circle", "circles", "circle", "problem"]) {
+  for (const id of [
+    "starting",
+    "choose",
+    "create",
+    "join",
+    "circles",
+    "circle",
+    "problem",
+  ]) {
     $(id).hidden = !ids.includes(id);
   }
 }
@@ -742,8 +750,7 @@ async function loadCircles() {
     .map((c) => ({ cellId: c.cell_id, name: c.name || "Circle" }));
 
   if (circles.length === 0) {
-    show("no-circle");
-    $("person-name").focus();
+    show("choose");
     return;
   }
 
@@ -792,8 +799,7 @@ $("back-to-circles").addEventListener("click", () => {
 });
 
 $("add-circle").addEventListener("click", () => {
-  show("no-circle");
-  $("person-name").focus();
+  show("choose");
 });
 
 wireCopyButton(
@@ -817,3 +823,23 @@ $("person-name").addEventListener("input", () => {
   const name = $("person-name").value.trim();
   $("call-them-whom").textContent = name || "them";
 });
+
+// ---------------------------------------------------------------------------
+// Choosing what to do
+// ---------------------------------------------------------------------------
+
+$("choose-create").addEventListener("click", () => {
+  show("create");
+  $("person-name").focus();
+});
+
+$("choose-join").addEventListener("click", () => {
+  show("join");
+  $("invitation-in").focus();
+});
+
+// Every form has a way out. Getting somewhere by accident should cost one
+// press to undo, not a restart.
+for (const button of document.querySelectorAll(".back-to-choose")) {
+  button.addEventListener("click", () => show("choose"));
+}
