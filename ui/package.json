@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "demo": "node scripts/demo.mjs"
+    "demo": "node scripts/demo.mjs",
+    "webhapp": "node scripts/webhapp.mjs"
   },
   "dependencies": {
     "@holochain/client": "^0.21.0"

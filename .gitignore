@@ -1,3 +1,4 @@
+
 *.dna
 *.happ
 *.webhapp
@@ -8,3 +9,5 @@ dist/
 node_modules/
 target/
 tests/target/
+workdir/*.webhapp
+workdir/ui.zip

@@ -1,0 +1,8 @@
+manifest_version: "0"
+name: hearth
+ui:
+  # Built by `npm run webhapp` in ui/. Kangaroo requires an icon.png of at
+  # least 256x256 at the root of these assets.
+  path: "./ui.zip"
+happ:
+  path: "./aboutme.happ"
