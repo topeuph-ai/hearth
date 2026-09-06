@@ -395,3 +395,60 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         _ => Ok(ValidateCallbackResult::Valid),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Deterministic ordering of versions
+// ---------------------------------------------------------------------------
+
+/// Order update links so that every peer agrees which version is newest.
+///
+/// Sorting by timestamp alone is not enough. Two links can carry the same
+/// timestamp, and `get_links` makes no promise that peers receive links in the
+/// same order — so without a tiebreak two devices could show different versions
+/// of the same person's record and both believe they were current.
+///
+/// The action hash is the tiebreak: arbitrary, but identical everywhere.
+pub fn order_versions(mut versions: Vec<(Timestamp, ActionHash)>) -> Vec<ActionHash> {
+    versions.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    versions.into_iter().map(|(_, hash)| hash).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hash(byte: u8) -> ActionHash {
+        ActionHash::from_raw_36(vec![byte; 36])
+    }
+
+    /// The case that would otherwise be invisible: identical timestamps,
+    /// different arrival order. Every peer must still agree.
+    #[test]
+    fn identical_timestamps_still_order_identically() {
+        let t = Timestamp::from_micros(1_000);
+        let one_peer = order_versions(vec![(t, hash(1)), (t, hash(2)), (t, hash(3))]);
+        let another = order_versions(vec![(t, hash(3)), (t, hash(1)), (t, hash(2))]);
+        let a_third = order_versions(vec![(t, hash(2)), (t, hash(3)), (t, hash(1))]);
+
+        assert_eq!(one_peer, another);
+        assert_eq!(another, a_third);
+        assert_eq!(one_peer.last(), Some(&hash(3)));
+    }
+
+    #[test]
+    fn later_timestamps_win_regardless_of_hash() {
+        let earlier = Timestamp::from_micros(1_000);
+        let later = Timestamp::from_micros(2_000);
+
+        // The later version has the lower hash, so a hash-only sort would
+        // put it first.
+        let ordered = order_versions(vec![(earlier, hash(9)), (later, hash(1))]);
+        assert_eq!(ordered.last(), Some(&hash(1)));
+    }
+
+    #[test]
+    fn a_single_version_is_returned_unchanged() {
+        let ordered = order_versions(vec![(Timestamp::from_micros(1), hash(7))]);
+        assert_eq!(ordered, vec![hash(7)]);
+    }
+}

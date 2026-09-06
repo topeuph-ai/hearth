@@ -306,19 +306,24 @@ fix had broken every write in the application.
 
 Reading the code would not have found that. Running it did.
 
+### Also proven
+
+- a circle with no founder configured admits nobody
+- a circle with a malformed founder admits nobody
+- an About Me must have a display name
+- **two peers with identically-timestamped updates converge on the same
+  version** — `order_versions` is a pure function in the integrity crate,
+  unit tested directly, because a timestamp collision cannot be provoked
+  through a conductor on demand. The coordinator calls that same function, so
+  the tested code is the running code.
+
 ### Still untested
 
-Do not mistake nine green tests for a proven system. These rules have no
-coverage yet:
+Twelve green integration tests and three unit tests are not a proven system.
+These rules have no coverage:
 
-- an About Me must have a display name
 - acknowledgements cannot be edited
 - only the agent who created a link may remove it
-- **that two peers with identically-timestamped updates converge on the same
-  version** — the tiebreak is written but never exercised
-- **that a production configuration with no founder property fails closed** —
-  currently the deliberate development escape hatch, and the most dangerous
-  thing on this list
 
 ### Known sharp edge — must be closed before real use
 

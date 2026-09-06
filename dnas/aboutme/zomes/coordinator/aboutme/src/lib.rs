@@ -92,27 +92,22 @@ pub fn get_circle_about_me(_: ()) -> ExternResult<Vec<ActionHash>> {
 /// the list, and anything that picks one is a display choice layered on top.
 #[hdk_extern]
 pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<Vec<ActionHash>> {
-    let mut links = get_links(
+    let links = get_links(
         LinkQuery::try_new(original_action_hash.clone(), LinkTypes::AboutMeUpdates)?,
         GetStrategy::Network,
     )?;
 
-    // Sort by timestamp, then by target hash. The hash tiebreak is not
-    // decoration: two links can carry the same timestamp, and `get_links` makes
-    // no promise that peers see links in the same order. Without a tiebreaker,
-    // two devices could disagree about which version is current.
-    links.sort_by(|a, b| {
-        a.timestamp
-            .cmp(&b.timestamp)
-            .then_with(|| a.target.cmp(&b.target))
-    });
+    // The ordering lives in the integrity crate as a pure function so it can be
+    // unit tested directly — in particular the tie case, which cannot be
+    // provoked through a conductor because timestamps cannot be made to collide
+    // on demand. See `order_versions`.
+    let updates: Vec<(Timestamp, ActionHash)> = links
+        .into_iter()
+        .filter_map(|l| l.target.into_action_hash().map(|hash| (l.timestamp, hash)))
+        .collect();
 
     let mut versions = vec![original_action_hash];
-    versions.extend(
-        links
-            .into_iter()
-            .filter_map(|l| l.target.into_action_hash()),
-    );
+    versions.extend(order_versions(updates));
     Ok(versions)
 }
 
