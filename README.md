@@ -212,11 +212,23 @@ Young: 4 stars, no licence file. But first-party and on our version.
 1. ~~**Membrane proof**~~ — **done.**
 2. ~~**Cloned cells**~~ — **done.** Circles are clones; see below.
 3. ~~**Capability grants for revocation**~~ — **wrong item.** See *Revocation*.
-4. **Remote signals** — "someone read your record", without polling and without
-   a server. Still to do.
+   They turned out to belong to signals instead: `init` grants access to
+   `recv_remote_signal` so members can deliver into this cell.
+4. ~~**Remote signals**~~ — **done.** When a professional acknowledges, their
+   device tells the holder's device directly. No polling, no server, no
+   notification service in the middle — which is how a family finds out that
+   somebody actually read it.
+
+   Sent fire-and-forget and deliberately unable to fail the write. The
+   acknowledgement on the chain is the evidence; the signal is only the nudge.
+   A family should never lose the record that somebody read the notes because
+   a phone happened to be off.
 
 Not needed: countersigning (nothing here requires atomic multi-party agreement)
 and warrants (automatic).
+
+**The build order is empty.** What the back end does not have is a face: there
+is no interface, and the demo needs one. That is the critical path now.
 
 ## Revocation
 
@@ -342,6 +354,13 @@ fix had broken every write in the application.
 Reading the code would not have found that. Running it did.
 
 ### Also proven
+
+- a circle is a cloned cell, and circles with different holders are different
+  networks even with an identical seed
+- nobody can create a circle in another person's name
+- anyone may enter the lobby, nobody may write in it, and a real circle cloned
+  from it does accept the holder's own record
+- **the holder is told, by the reader's own device, when their record is read**
 
 - a circle with no founder configured admits nobody
 - a circle with a malformed founder admits nobody
