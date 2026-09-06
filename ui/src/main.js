@@ -19,7 +19,8 @@ const ROLE = "aboutme";
 const ZOME = "aboutme";
 
 let client;
-let circle = null; // { cellId, roleName } of the cloned cell we are showing
+let circle = null; // the cloned cell we are showing
+let circles = []; // every circle this person is in
 let me = null; // our AgentPubKey
 let holder = null; // whose circle this is
 let record = null; // the current About Me record
@@ -32,7 +33,7 @@ function announce(message) {
 }
 
 function show(...ids) {
-  for (const id of ["starting", "no-circle", "circle", "problem"]) {
+  for (const id of ["starting", "no-circle", "circles", "circle", "problem"]) {
     $(id).hidden = !ids.includes(id);
   }
 }
@@ -221,6 +222,8 @@ $("create-circle-form").addEventListener("submit", async (event) => {
       circle.cellId,
     );
 
+    circles.push({ cellId: circle.cellId, name: label });
+    $("back-to-circles").hidden = circles.length < 2;
     show("circle");
     announce(`Circle made for ${fullName}.`);
     await loadCircle();
@@ -320,21 +323,7 @@ async function start() {
   me = info.agent_pub_key;
   $("my-identifier").textContent = me.toString();
 
-  // Circles are clones. The provisioned cell is only a lobby.
-  const cells = info.cell_info[ROLE] ?? [];
-  const clone = cells.find((c) => c.type === "cloned" || c.cloned);
-  const cloned = clone?.value ?? clone?.cloned;
-
-  if (cloned) {
-    circle = { cellId: cloned.cell_id };
-    holder = me; // this build only shows circles you hold
-    $("circle-heading").textContent = cloned.name || "Circle";
-    show("circle");
-    await loadCircle();
-  } else {
-    show("no-circle");
-    $("person-name").focus();
-  }
+  await loadCircles();
 
   // Someone read the record. Told to us by their device, not by a server.
   client.on("signal", async (signal) => {
@@ -569,6 +558,8 @@ $("join-form").addEventListener("submit", async (event) => {
     circle = { cellId: cell.cell_id };
     holder = bundle.founder;
     $("circle-heading").textContent = label;
+    circles.push({ cellId: circle.cellId, name: label });
+    $("back-to-circles").hidden = circles.length < 2;
     show("circle");
     announce(`You have joined ${bundle.about || "the circle"}.`);
     await loadCircle();
@@ -591,4 +582,74 @@ $("copy-identifier").addEventListener("click", async () => {
     // so rather than failing silently.
     announce("Could not copy. Select the text and copy it yourself.");
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// The list of people
+// ---------------------------------------------------------------------------
+
+/** Every circle this person belongs to. Circles are clones of the lobby. */
+async function loadCircles() {
+  const info = await client.appInfo();
+  const cells = info.cell_info[ROLE] ?? [];
+
+  circles = cells
+    .map((c) => c?.value ?? c?.cloned ?? c)
+    .filter((c) => c?.clone_id || c?.original_dna_hash)
+    .map((c) => ({ cellId: c.cell_id, name: c.name || "Circle" }));
+
+  if (circles.length === 0) {
+    show("no-circle");
+    $("person-name").focus();
+    return;
+  }
+
+  renderCircles();
+  show("circles");
+}
+
+function renderCircles() {
+  const list = $("circles-list");
+  list.replaceChildren();
+
+  for (const item of circles) {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "circle-link";
+    // Just their name. No counts, no badges, no "2 new". She is looking
+    // somebody up, not clearing a queue.
+    button.textContent = item.name;
+    button.addEventListener("click", () => openCircle(item).catch(problem));
+    li.append(button);
+    list.append(li);
+  }
+}
+
+async function openCircle(item) {
+  circle = { cellId: item.cellId };
+
+  // The holder is named in the cell's own properties, so a circle you joined
+  // reads correctly rather than assuming you hold everything.
+  try {
+    holder = await call("who_holds_this", null, circle.cellId);
+  } catch {
+    holder = null;
+  }
+
+  $("circle-heading").textContent = item.name;
+  $("back-to-circles").hidden = circles.length < 2;
+  show("circle");
+  await loadCircle();
+}
+
+$("back-to-circles").addEventListener("click", () => {
+  renderCircles();
+  show("circles");
+});
+
+$("add-circle").addEventListener("click", () => {
+  show("no-circle");
+  $("person-name").focus();
 });

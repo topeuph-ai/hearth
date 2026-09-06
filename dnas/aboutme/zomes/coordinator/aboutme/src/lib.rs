@@ -562,3 +562,16 @@ pub fn update_suggestion(input: (ActionHash, Suggestion)) -> ExternResult<Record
     get(updated, GetOptions::default())?
         .ok_or_else(|| wasm_error!("Could not read the corrected suggestion"))
 }
+
+/// Who holds this circle.
+///
+/// Read from the DNA properties rather than assumed. A circle you joined is
+/// held by somebody else, and an interface that assumes otherwise will offer
+/// you buttons that cannot work.
+#[hdk_extern]
+pub fn who_holds_this(_: ()) -> ExternResult<Option<AgentPubKey>> {
+    Ok(match membrane()? {
+        Membrane::Founder(key) => Some(key),
+        _ => None,
+    })
+}

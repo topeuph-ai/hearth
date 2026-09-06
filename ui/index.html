@@ -114,8 +114,32 @@
         </form>
       </section>
 
+      <!--
+        A list of people, never an inbox.
+
+        A district nurse could be in thirty of these. She reads thirty short
+        documents; she does not take part in thirty conversations. So: no
+        unread counts, no badges, no dots, nothing that implies she owes anyone
+        a reply. The moment this looks like a messaging app it becomes another
+        thing nobody opens.
+      -->
+      <section id="circles" hidden>
+        <h2>People</h2>
+        <ul id="circles-list"></ul>
+        <div class="actions">
+          <button type="button" id="add-circle" class="secondary">
+            Join or make another
+          </button>
+        </div>
+      </section>
+
       <!-- Inside a circle -->
       <section id="circle" hidden>
+        <div class="actions">
+          <button type="button" id="back-to-circles" class="secondary" hidden>
+            All people
+          </button>
+        </div>
         <h2 id="circle-heading">Circle</h2>
 
         <div id="no-record" hidden>
