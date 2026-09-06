@@ -625,11 +625,22 @@ $("join-form").addEventListener("submit", async (event) => {
   try {
     const pasted = $("invitation-in").value.trim();
 
+    // Their own identifier is the likeliest paste of all: it is at the top of
+    // this very screen, a few centimetres above the box. Say so exactly rather
+    // than hedging with "it may even be your own".
+    if (pasted === asText(me)) {
+      throw new Error(
+        "That is your own identifier. It does not go here — it goes to the " +
+          "other person. Send it to them, they paste it into their Hearth, " +
+          "and what comes back is what belongs in this box.",
+      );
+    }
+
     if (looksLikeAnIdentifier(pasted)) {
       throw new Error(
-        "That is an identifier, not an invitation — it may even be your own. " +
-          "Send it to the person whose circle you want to join. They put it " +
-          "into their Hearth, and send you back the invitation it produces.",
+        "That is somebody's identifier, not an invitation. An identifier only " +
+          "says who a person is. Send yours to whoever holds the circle, and " +
+          "they will send back an invitation.",
       );
     }
 
