@@ -31,15 +31,30 @@
         </p>
         <form id="create-circle-form">
           <div class="field">
-            <label for="circle-name">Whose circle is this?</label>
+            <label for="person-name">Their full name</label>
+            <p id="person-name-hint" class="hint">
+              As a nurse or social worker would need to see it. Everyone in the
+              circle reads this one.
+            </p>
+            <input
+              id="person-name"
+              name="person-name"
+              type="text"
+              required
+              autocomplete="off"
+              aria-describedby="person-name-hint"
+            />
+          </div>
+          <div class="field">
+            <label for="circle-name">What you call them</label>
             <p id="circle-name-hint" class="hint">
-              A name you will recognise, like “Mum” or “Dad”.
+              Only on your own device — “Mum”, “Dad”. Leave it blank to use
+              their name. Nobody else sees this.
             </p>
             <input
               id="circle-name"
               name="circle-name"
               type="text"
-              required
               autocomplete="off"
               aria-describedby="circle-name-hint"
             />
@@ -68,8 +83,17 @@
           <h3 id="record-form-heading">What people should know</h3>
 
           <div class="field">
-            <label for="display-name">Name</label>
-            <input id="display-name" name="display-name" type="text" required />
+            <label for="display-name">Their full name</label>
+            <p id="display-name-hint" class="hint">
+              The name a professional needs. Not what you call them at home.
+            </p>
+            <input
+              id="display-name"
+              name="display-name"
+              type="text"
+              required
+              aria-describedby="display-name-hint"
+            />
           </div>
 
           <div class="field">

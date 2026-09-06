@@ -188,17 +188,37 @@ function fillForm() {
 $("create-circle-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const name = $("circle-name").value.trim();
+    // Two different names, and conflating them is a real mistake. The full
+    // name is what a nurse or social worker reads and goes in the record.
+    // "Mum" is a private label on this device — the clone's name is set by
+    // each member for themselves, so it never travels.
+    const fullName = $("person-name").value.trim();
+    const label = $("circle-name").value.trim() || fullName;
+
     const cell = await call("create_circle", {
       founder: me,
-      name,
+      name: label,
       network_seed: crypto.randomUUID(),
     });
     circle = { cellId: cell.cell_id };
     holder = me;
-    $("circle-heading").textContent = name;
+    $("circle-heading").textContent = label;
+
+    // Start the record with their name in it, so it is never nameless.
+    await call(
+      "create_about_me",
+      {
+        display_name: fullName,
+        what_matters_to_me: "",
+        how_to_communicate_with_me: "",
+        how_to_support_me: "",
+        people_who_matter: "",
+      },
+      circle.cellId,
+    );
+
     show("circle");
-    announce(`Circle made for ${name}.`);
+    announce(`Circle made for ${fullName}.`);
     await loadCircle();
   } catch (error) {
     problem(error);
@@ -308,7 +328,7 @@ async function start() {
     await loadCircle();
   } else {
     show("no-circle");
-    $("circle-name").focus();
+    $("person-name").focus();
   }
 
   // Someone read the record. Told to us by their device, not by a server.
