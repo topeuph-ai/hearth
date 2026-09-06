@@ -135,6 +135,41 @@ Empty because the *spawn* failed rather than the process, so there is nothing
 to report. `npm run demo` goes through `ui/scripts/demo.mjs`, which puts `bin/`
 on PATH and checks the binaries and the hApp are present before starting.
 
+## The desktop app
+
+`npm run webhapp` in `ui/` produces `workdir/hearth.webhapp` — the zomes, the
+hApp and the interface in one file. That is what
+[`holochain/kangaroo-electron`](https://github.com/holochain/kangaroo-electron)
+turns into an installable desktop app.
+
+```bash
+git clone --depth 1 https://github.com/holochain/kangaroo-electron.git hearth-desktop
+cd hearth-desktop
+# In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth'.
+cp ../aboutme/workdir/hearth.webhapp pouch/
+npx yarn@1 install
+npx yarn@1 setup       # fetches and checksums the Holochain binaries
+npx yarn@1 build:win   # or build:linux, build:mac-arm64, build:mac-x64
+```
+
+Produces `dist/uk.topeuph.hearth-0.1.0-setup.exe`, about 115MB, with
+`holochain 0.7.0` and `lair-keystore` bundled inside it. **Install it on two
+machines, unplug the router, and they still find each other on the local
+network.** That is the demonstration, and it is a different thing from two
+windows on one laptop.
+
+Three things that cost time:
+
+- **The README says `build:windows`. The script is `build:win`.** It fails
+  instantly with `error Command "build:windows" not found`.
+- **`corepack enable` needs administrator rights on Windows.** `npx yarn@1`
+  works without them.
+- **Kangaroo ships pointing at Holochain's dev-test bootstrap and relay
+  servers**, which have no availability guarantee and are for testing only.
+  Fine for a demo. Before anyone real uses this you need your own — and
+  **changing those URLs after deployment partitions the network**, so it is a
+  decision to make before, not after.
+
 ## Gotchas already paid for
 
 Six things cost time. They are fixed here; do not rediscover them.
