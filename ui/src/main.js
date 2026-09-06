@@ -93,7 +93,13 @@ function announce(message) {
   $("announcer").textContent = message;
 }
 
+/** The screen to return to when something goes wrong. Never "problem". */
+let lastGoodScreen = "no-circle";
+
 function show(...ids) {
+  if (!ids.includes("problem") && !ids.includes("starting")) {
+    lastGoodScreen = ids[0];
+  }
   for (const id of ["starting", "no-circle", "circles", "circle", "problem"]) {
     $(id).hidden = !ids.includes(id);
   }
@@ -103,6 +109,8 @@ function problem(error) {
   console.error(error);
   $("problem-detail").textContent = String(error?.message ?? error);
   show("problem");
+  // Focus the way out, so a keyboard user is not hunting for it.
+  $("go-back").focus();
 }
 
 const FIELDS = [
@@ -793,3 +801,19 @@ wireCopyButton(
   () => $("invitation-output").textContent,
   "Invitation copied",
 );
+
+$("go-back").addEventListener("click", () => {
+  // Back to where they were, with whatever they typed still in the fields.
+  // A mistyped character should cost a correction, not a restart.
+  show(lastGoodScreen);
+});
+
+/*
+ * "What you call them" is ambiguous the moment there are two people in the
+ * sentence — the person the circle is about, and whoever holds it. On the
+ * create form we know the name as it is typed, so use it.
+ */
+$("person-name").addEventListener("input", () => {
+  const name = $("person-name").value.trim();
+  $("call-them-whom").textContent = name || "them";
+});

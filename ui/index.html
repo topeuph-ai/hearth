@@ -74,10 +74,12 @@
             />
           </div>
           <div class="field">
-            <label for="circle-name">What you call them</label>
+            <label for="circle-name">
+              What you call <span id="call-them-whom">them</span>
+            </label>
             <p id="circle-name-hint" class="hint">
               Only on your own device — “Mum”, “Dad”. Leave it blank to use
-              their name. Nobody else sees this.
+              their full name. Nobody else sees this.
             </p>
             <input
               id="circle-name"
@@ -138,9 +140,12 @@
             ></textarea>
           </div>
           <div class="field">
-            <label for="join-label">What you call them</label>
+            <label for="join-label">
+              What you call the person this circle is about
+            </label>
             <p id="join-label-hint" class="hint">
-              Only on your own device. Leave it blank to use their name.
+              Only on your own device, and only if you want to. Leave it blank
+              and it uses their full name, which comes with the invitation.
             </p>
             <input
               id="join-label"
@@ -382,9 +387,17 @@
         </section>
       </section>
 
+      <!--
+        Never a dead end. A mistyped field used to leave somebody stranded here
+        with no way back to correct it, which turns a trivial slip into "start
+        the whole thing again".
+      -->
       <section id="problem" hidden>
-        <h2>Something went wrong</h2>
+        <h2>That didn't work</h2>
         <p id="problem-detail"></p>
+        <div class="actions">
+          <button type="button" id="go-back">Go back and try again</button>
+        </div>
       </section>
     </main>
 
