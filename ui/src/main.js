@@ -318,6 +318,7 @@ async function start() {
 
   const info = await client.appInfo();
   me = info.agent_pub_key;
+  $("my-identifier").textContent = me.toString();
 
   // Circles are clones. The provisioned cell is only a lobby.
   const cells = info.cell_info[ROLE] ?? [];
@@ -331,7 +332,6 @@ async function start() {
     show("circle");
     await loadCircle();
   } else {
-    $("my-identifier").textContent = me.toString();
     show("no-circle");
     $("person-name").focus();
   }
@@ -579,5 +579,16 @@ $("join-form").addEventListener("submit", async (event) => {
         ? new Error("That invitation looks incomplete. Copy the whole of it.")
         : error,
     );
+  }
+});
+
+$("copy-identifier").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(me.toString());
+    announce("Copied. Send it to whoever is inviting you.");
+  } catch {
+    // Clipboard access can be refused. Selecting the text still works, so say
+    // so rather than failing silently.
+    announce("Could not copy. Select the text and copy it yourself.");
   }
 });

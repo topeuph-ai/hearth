@@ -255,8 +255,22 @@ Young: 4 stars, no licence file. But first-party and on our version.
 Not needed: countersigning (nothing here requires atomic multi-party agreement)
 and warrants (automatic).
 
-**The build order is empty.** What the back end does not have is a face: there
-is no interface, and the demo needs one. That is the critical path now.
+**Next, and both come from questions the code could not answer for itself:**
+
+1. **A list of circles.** The interface shows one. A district nurse would be
+   in thirty, and cannot currently reach any but the first. It must read as a
+   phone book of people she visits, never as an inbox: no unread counts, no
+   badges, nothing implying she owes anybody a reply. She is a reader of thirty
+   short documents, not a participant in thirty conversations. Getting that
+   wrong is how this becomes another thing nobody opens.
+2. **A QR code for the identifier.** It is 53 characters of base64 and nobody
+   reads that down a phone. The real scene is two people in a kitchen holding
+   phones at each other.
+
+**And one question for Holochain rather than for us:** thirty to fifty cloned
+cells in one conductor, each its own network with its own gossip. Nobody knows
+whether that is fine on a mid-range Android phone or whether it melts. That
+decides feasibility, not polish.
 
 ## Revocation
 

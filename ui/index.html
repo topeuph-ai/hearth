@@ -13,6 +13,26 @@
     <header>
       <h1>Hearth</h1>
       <p class="lead">What matters to me, and how to look after me.</p>
+
+      <!--
+        Always reachable, not just before you join something. Somebody already
+        in one circle who gets invited to another needs this, and hiding it was
+        why the invitation flow could not be completed at all.
+      -->
+      <details id="identifier-details">
+        <summary>Your identifier</summary>
+        <p class="hint">
+          Send this to anyone inviting you. It is safe to text, email or read
+          out — it identifies you and nothing more. It is the same in every
+          circle, so you only ever need to share it once.
+        </p>
+        <output id="my-identifier"></output>
+        <div class="actions">
+          <button type="button" id="copy-identifier" class="secondary">
+            Copy it
+          </button>
+        </div>
+      </details>
     </header>
 
     <main id="main">
@@ -28,8 +48,6 @@
           Send whoever invited you the line below. It is safe to text, email or
           read out — it identifies you and nothing more.
         </p>
-        <output id="my-identifier"></output>
-
         <form id="join-form">
           <div class="field">
             <label for="invitation-in">Paste the invitation they sent back</label>

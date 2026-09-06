@@ -233,3 +233,16 @@ select {
 #suggestions-list {
   padding-left: 0;
 }
+
+#identifier-details {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+#identifier-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  /* Comfortably clickable without hunting for it. */
+  padding: 0.5rem 0;
+}
