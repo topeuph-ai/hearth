@@ -8,7 +8,9 @@ exclude = ["tests"]
 # Pinned to the Holochain 0.7.0 release line.
 # Verified from crates/hdk/Cargo.toml and crates/hdi/Cargo.toml at tag holochain-0.7.0.
 hdi = "=0.8.0"
-hdk = "=0.7.0"
+hdk = { version = "=0.7.0", features = ["properties"] }
+# Clone modifiers arrive as YAML, which is why the founder is a base64 string.
+yaml_serde = "0.10"
 serde = { version = "1", features = ["derive"] }
 # Required by the hdk_entry_helper macro expansion. Version taken from hdi 0.8.0.
 holochain_serialized_bytes = "=0.0.57"

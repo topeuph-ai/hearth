@@ -187,3 +187,98 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
 pub fn delete_about_me(action_hash: ActionHash) -> ExternResult<ActionHash> {
     delete_entry(action_hash)
 }
+
+// ---------------------------------------------------------------------------
+// Circles: one isolated network per person
+// ---------------------------------------------------------------------------
+//
+// This is the architecture rather than a configuration detail. A circle is a
+// cloned cell whose DNA properties name the person it belongs to. Because the
+// properties form part of the DNA hash, a different person means a different
+// hash means a genuinely separate network. Circles cannot see one another as a
+// fact about the maths, not as an access rule someone could get wrong.
+//
+// Creating and joining are the same operation. The only difference is that a
+// joiner presents an invitation.
+
+fn circle_modifiers(
+    founder: &AgentPubKey,
+    network_seed: String,
+) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
+    let properties = CircleProperties {
+        founder: Some(founder.to_string()),
+        open_for_development: false,
+    };
+
+    // Clone modifiers arrive as YAML, which is why the founder is carried as a
+    // base64 string rather than raw key bytes.
+    let yaml = yaml_serde::to_value(&properties).map_err(|e| {
+        wasm_error!(format!(
+            "Could not express the circle's properties as YAML: {e}"
+        ))
+    })?;
+
+    Ok(DnaModifiersOpt::none()
+        .with_network_seed(network_seed)
+        .with_properties(YamlProperties::new(yaml)))
+}
+
+fn this_cell() -> ExternResult<CellId> {
+    Ok(CellId::new(
+        dna_info()?.hash,
+        agent_info()?.agent_initial_pubkey,
+    ))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateCircleInput {
+    /// The person this circle is about. Normally the caller, but a proxy may
+    /// hold the keys for someone who cannot.
+    pub founder: AgentPubKey,
+    /// A human name for this circle, shown in the app. Not part of the DNA
+    /// hash, so two people may safely use the same word.
+    pub name: String,
+    /// Makes this circle distinct from any other for the same person.
+    pub network_seed: String,
+}
+
+/// Bring a new circle into being.
+#[hdk_extern]
+pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
+    create_clone_cell(CreateCloneCellInput {
+        cell_id: this_cell()?,
+        modifiers: circle_modifiers(&input.founder, input.network_seed)?,
+        membrane_proof: None,
+        name: Some(input.name),
+    })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct JoinCircleInput {
+    /// The person whose circle this is. Must match what the inviter used, or
+    /// the DNA hash differs and you land in a different network entirely.
+    pub founder: AgentPubKey,
+    pub name: String,
+    pub network_seed: String,
+    /// From the founder's `invite`, signed over the joiner's own key.
+    pub invitation: Invitation,
+}
+
+/// Join a circle you have been invited to.
+///
+/// Note what is *not* here: no request, no approval step, nobody to ask. The
+/// invitation is the whole of it, and every existing member checks it
+/// independently.
+#[hdk_extern]
+pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
+    let proof = SerializedBytes::try_from(input.invitation)
+        .map(MembraneProof::new)
+        .map_err(|e| wasm_error!(format!("Could not read that invitation: {e:?}")))?;
+
+    create_clone_cell(CreateCloneCellInput {
+        cell_id: this_cell()?,
+        modifiers: circle_modifiers(&input.founder, input.network_seed)?,
+        membrane_proof: Some(proof),
+        name: Some(input.name),
+    })
+}

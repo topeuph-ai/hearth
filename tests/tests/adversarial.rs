@@ -424,3 +424,83 @@ async fn an_about_me_needs_a_display_name() {
         "a record nobody is named in is not a record of anybody"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Circles are separate networks, not separate labels
+// ---------------------------------------------------------------------------
+
+/// A circle is a cloned cell whose properties name the person it belongs to.
+/// Because properties form part of the DNA hash, two people's circles are
+/// different networks — which is what makes "one circle per person" a fact
+/// about the maths rather than an access rule someone could get wrong.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_peoples_circles_are_different_networks() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let alice = alice_cell.agent_pubkey().clone();
+    let someone_else = SweetAgents::one(conductor.keystore()).await;
+
+    let hers: ClonedCell = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.clone(),
+                name: "Alice".to_string(),
+                network_seed: "shared-seed".to_string(),
+            },
+        )
+        .await;
+
+    // Same seed, same everything except who it is about.
+    let theirs: ClonedCell = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: someone_else,
+                name: "Someone else".to_string(),
+                network_seed: "shared-seed".to_string(),
+            },
+        )
+        .await;
+
+    assert_ne!(
+        hers.cell_id.dna_hash(),
+        theirs.cell_id.dna_hash(),
+        "circles for different people must be different networks, even with the same seed"
+    );
+    assert_ne!(
+        hers.cell_id.dna_hash(),
+        alice_cell.dna_hash(),
+        "a circle must be its own network, not the cell it was cloned from"
+    );
+}
+
+/// The same person can hold more than one circle, kept apart by the seed.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_person_can_have_separate_circles() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let alice = alice_cell.agent_pubkey().clone();
+
+    let mut hashes = Vec::new();
+    for seed in ["care", "respite"] {
+        let cell: ClonedCell = conductor
+            .call(
+                &zome(&alice_cell),
+                "create_circle",
+                aboutme::CreateCircleInput {
+                    founder: alice.clone(),
+                    name: seed.to_string(),
+                    network_seed: seed.to_string(),
+                },
+            )
+            .await;
+        hashes.push(cell.cell_id.dna_hash().clone());
+    }
+
+    assert_ne!(
+        hashes[0], hashes[1],
+        "a different seed must give a different network"
+    );
+}
