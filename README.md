@@ -107,6 +107,34 @@ internet, no bootstrap server. This is the demo in its smallest form. Use
 Note `hc sandbox generate network` also exposes `--target-arc-factor` directly,
 which is how you would create a participating non-storing node.
 
+## Running the demo
+
+Two terminals. The first serves the interface, the second starts two agents:
+
+```bash
+cd ui && npm run dev
+```
+
+```bash
+cd ui && npm run demo
+```
+
+**Two windows on one machine is the whole argument**: two separate people, two
+separate stores, talking to each other with nothing in between. Make a circle
+in one, invite the other, watch the acknowledgement arrive.
+
+`hc-spin` shells out to `kitsune2-bootstrap-srv`, `holochain`, `lair-keystore`
+and `hc` **by bare name, and does not bundle them**. If they are not on PATH
+the only symptom is an empty error:
+
+```
+[hc-spin] | [hc run-local-services] ERROR:
+```
+
+Empty because the *spawn* failed rather than the process, so there is nothing
+to report. `npm run demo` goes through `ui/scripts/demo.mjs`, which puts `bin/`
+on PATH and checks the binaries and the hApp are present before starting.
+
 ## Gotchas already paid for
 
 Six things cost time. They are fixed here; do not rediscover them.
