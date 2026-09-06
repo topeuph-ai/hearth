@@ -325,11 +325,24 @@ These rules have no coverage:
 - acknowledgements cannot be edited
 - only the agent who created a link may remove it
 
-### Known sharp edge — must be closed before real use
+### Configuration fails closed
 
-**A DNA with no founder property is an open circle that anyone may join.** That
-exists so the base cell is installable in development, where no founder key is
-known in advance. Every real circle is a clone that sets the property.
+Reading the DNA properties yields one of three states, never an `Option`:
+
+- **`Founder`** — a real circle, closed around one person.
+- **`OpenForDevelopment`** — open, and it must be asked for in writing
+  (`open_for_development: true`). The base DNA in this repo states it, because
+  the base DNA is for development.
+- **`Misconfigured`** — no properties, unreadable properties, or a founder that
+  is not a valid agent key. **Admits nobody and lets nobody write.**
+
+An earlier version treated a missing founder as an open circle, so a typo, a
+missing config or a botched clone would have produced a wide-open circle around
+a vulnerable person, silently. Those same mistakes now produce a circle nobody
+can enter: visibly broken rather than invisibly exposed.
+
+**Absence of configuration must never mean absence of a membrane.** Both failure
+cases are covered by tests.
 
 This must be made to fail closed before the software goes in front of anybody.
 It is marked in `founder()` in the integrity zome.
