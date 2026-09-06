@@ -30,7 +30,9 @@ fn circle_path() -> ExternResult<TypedPath> {
 /// gains a useless blob.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InvitationBundle {
-    pub founder: AgentPubKey,
+    /// Base64, not raw bytes. This bundle is meant to be copied into a text
+    /// message, so every field in it has to survive being text.
+    pub founder: String,
     pub network_seed: String,
     /// Whose circle this is, so the recipient knows what they are accepting
     /// before they accept it. A label, not a claim.
@@ -38,8 +40,16 @@ pub struct InvitationBundle {
     pub invitation: Invitation,
 }
 
+/// `invitee` is their identifier as they sent it to you: base64 text
+/// beginning `uhCAk`, not a name.
 #[hdk_extern]
-pub fn invite(invitee: AgentPubKey) -> ExternResult<InvitationBundle> {
+pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
+    let invitee = AgentPubKey::try_from(invitee.trim()).map_err(|_| {
+        wasm_error!(
+            "That does not look like somebody's identifier. It is a long line of              letters and numbers beginning uhCAk, which they can copy from their              own copy of Hearth. It is not their name."
+        )
+    })?;
+
     let me = agent_info()?.agent_initial_pubkey;
     let signature = sign(me.clone(), invitee)?;
 
@@ -54,7 +64,7 @@ pub fn invite(invitee: AgentPubKey) -> ExternResult<InvitationBundle> {
     };
 
     Ok(InvitationBundle {
-        founder: me,
+        founder: me.to_string(),
         network_seed: dna_info()?.modifiers.network_seed,
         about,
         invitation: Invitation { signature },
@@ -323,9 +333,8 @@ fn this_cell() -> ExternResult<CellId> {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateCircleInput {
-    /// The person this circle is about. Normally the caller, but a proxy may
-    /// hold the keys for someone who cannot.
-    pub founder: AgentPubKey,
+    /// Who will hold this circle, as base64 text. Normally the caller.
+    pub founder: String,
     /// A human name for this circle, shown in the app. Not part of the DNA
     /// hash, so two people may safely use the same word.
     pub name: String,
@@ -336,9 +345,12 @@ pub struct CreateCircleInput {
 /// Bring a new circle into being.
 #[hdk_extern]
 pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
+    let founder = AgentPubKey::try_from(input.founder.trim())
+        .map_err(|_| wasm_error!("That is not a valid identifier for the holder"))?;
+
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&input.founder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.network_seed)?,
         membrane_proof: None,
         name: Some(input.name),
     })
@@ -346,9 +358,10 @@ pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct JoinCircleInput {
-    /// The person whose circle this is. Must match what the inviter used, or
-    /// the DNA hash differs and you land in a different network entirely.
-    pub founder: AgentPubKey,
+    /// The holder, as base64 text out of the invitation. Must match what the
+    /// inviter used, or the DNA hash differs and you land in a different
+    /// network entirely.
+    pub founder: String,
     pub name: String,
     pub network_seed: String,
     /// From the founder's `invite`, signed over the joiner's own key.
@@ -366,9 +379,12 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
         .map(MembraneProof::new)
         .map_err(|e| wasm_error!(format!("Could not read that invitation: {e:?}")))?;
 
+    let founder = AgentPubKey::try_from(input.founder.trim())
+        .map_err(|_| wasm_error!("That invitation is damaged: the holder is unreadable"))?;
+
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&input.founder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.network_seed)?,
         membrane_proof: Some(proof),
         name: Some(input.name),
     })

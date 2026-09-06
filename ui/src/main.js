@@ -13,7 +13,14 @@
  *    every time it appears below.
  */
 
-import { AppWebsocket } from "@holochain/client";
+import { AppWebsocket, encodeHashToBase64 } from "@holochain/client";
+
+/*
+ * Identifiers are bytes inside Holochain and text everywhere a person can see
+ * them. A Uint8Array stringifies to "132,32,36,..." and does not survive JSON,
+ * so anything shown, copied, pasted or sent must go through here first.
+ */
+const asText = (hash) => (hash ? encodeHashToBase64(hash) : "");
 
 const ROLE = "aboutme";
 const ZOME = "aboutme";
@@ -26,6 +33,9 @@ let holder = null; // whose circle this is
 let record = null; // the current About Me record
 
 const $ = (id) => document.getElementById(id);
+
+/** Whether this is your circle. Compares text, never byte arrays. */
+const isHolder = () => Boolean(holder) && holder === asText(me);
 
 /** Tell screen reader users what just happened, without stealing focus. */
 function announce(message) {
@@ -147,7 +157,7 @@ async function loadCircle() {
   record = { original, current };
   renderRecord(current);
 
-  const amHolder = holder && me && holder.toString() === me.toString();
+  const amHolder = isHolder();
   $("record-actions").hidden = false;
   $("edit-record").hidden = !amHolder;
   $("edit-record").textContent = "Change this";
@@ -166,7 +176,7 @@ async function loadCircle() {
 }
 
 async function loadSuggestions() {
-  const amHolder = holder && me && holder.toString() === me.toString();
+  const amHolder = isHolder();
 
   // The person whose circle it is edits the record directly; everyone else
   // offers. Both see the list, so a carer can tell that what she noticed was
@@ -201,12 +211,12 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     const label = $("circle-name").value.trim() || fullName;
 
     const cell = await call("create_circle", {
-      founder: me,
+      founder: asText(me),
       name: label,
       network_seed: crypto.randomUUID(),
     });
     circle = { cellId: cell.cell_id };
-    holder = me;
+    holder = asText(me);
     $("circle-heading").textContent = label;
 
     // Start the record with their name in it, so it is never nameless.
@@ -321,7 +331,7 @@ async function start() {
 
   const info = await client.appInfo();
   me = info.agent_pub_key;
-  $("my-identifier").textContent = me.toString();
+  $("my-identifier").textContent = asText(me);
 
   await loadCircles();
 
@@ -359,14 +369,14 @@ function renderSuggestions() {
   list.replaceChildren();
   $("suggestions-section").hidden = suggestions.length === 0;
 
-  const amHolder = holder && me && holder.toString() === me.toString();
+  const amHolder = isHolder();
 
   for (const item of suggestions) {
     const entry = item.suggestion?.entry?.Present?.entry;
     if (!entry) continue;
 
     const author = item.suggestion.signed_action.hashed.content.author;
-    const mine = author.toString() === me.toString();
+    const mine = asText(author) === asText(me);
     const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
 
     const li = document.createElement("li");
@@ -493,8 +503,8 @@ let members = new Map(); // agent key string -> { name, relationship }
  * a fact.
  */
 function describe(agentKey) {
-  const key = agentKey.toString();
-  if (me && key === me.toString()) return "You";
+  const key = asText(agentKey);
+  if (key === asText(me)) return "You";
   const member = members.get(key);
   if (!member) return "Someone in the circle";
   return member.relationship?.trim()
@@ -509,10 +519,10 @@ async function loadMembers() {
     const entry = r?.entry?.Present?.entry;
     if (!entry) continue;
     // Latest introduction wins; people correct how they describe themselves.
-    members.set(r.signed_action.hashed.content.author.toString(), entry);
+    members.set(asText(r.signed_action.hashed.content.author), entry);
   }
 
-  const mine = me && members.get(me.toString());
+  const mine = members.get(asText(me));
   $("introduce-section").hidden = false;
   if (mine) {
     $("member-name").value = mine.name;
@@ -556,7 +566,7 @@ $("join-form").addEventListener("submit", async (event) => {
     });
 
     circle = { cellId: cell.cell_id };
-    holder = bundle.founder;
+    holder = bundle.founder; // already text, out of the invitation
     $("circle-heading").textContent = label;
     circles.push({ cellId: circle.cellId, name: label });
     $("back-to-circles").hidden = circles.length < 2;
@@ -575,7 +585,7 @@ $("join-form").addEventListener("submit", async (event) => {
 
 $("copy-identifier").addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText(me.toString());
+    await navigator.clipboard.writeText(asText(me));
     announce("Copied. Send it to whoever is inviting you.");
   } catch {
     // Clipboard access can be refused. Selecting the text still works, so say
@@ -633,7 +643,7 @@ async function openCircle(item) {
   // The holder is named in the cell's own properties, so a circle you joined
   // reads correctly rather than assuming you hold everything.
   try {
-    holder = await call("who_holds_this", null, circle.cellId);
+    holder = asText(await call("who_holds_this", null, circle.cellId));
   } catch {
     holder = null;
   }
