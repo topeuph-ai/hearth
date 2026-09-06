@@ -663,7 +663,9 @@ async fn the_holder_is_told_when_someone_reads_the_record() {
                 .into_inner()
                 .decode()
                 .expect("the signal should be one of ours");
-            let aboutme::Signal::Acknowledged { by, role, .. } = decoded;
+            let aboutme::Signal::Acknowledged { by, role, .. } = decoded else {
+                panic!("expected an Acknowledged signal, got {decoded:?}");
+            };
             assert_eq!(by, *bob_cell.agent_pubkey(), "the reader should be named");
             assert_eq!(role, "district nurse", "the claimed role travels with it");
         }
