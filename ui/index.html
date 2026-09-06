@@ -42,39 +42,16 @@
       </section>
 
       <!-- No circle yet -->
-      <section id="no-circle" hidden>
-        <h2>Have you been invited?</h2>
-        <p>
-          Send whoever invited you the line below. It is safe to text, email or
-          read out — it identifies you and nothing more.
-        </p>
-        <form id="join-form">
-          <div class="field">
-            <label for="invitation-in">Paste the invitation they sent back</label>
-            <textarea
-              id="invitation-in"
-              name="invitation-in"
-              rows="3"
-              required
-            ></textarea>
-          </div>
-          <div class="field">
-            <label for="join-label">What you call them</label>
-            <p id="join-label-hint" class="hint">
-              Only on your own device. Leave it blank to use their name.
-            </p>
-            <input
-              id="join-label"
-              name="join-label"
-              type="text"
-              autocomplete="off"
-              aria-describedby="join-label-hint"
-            />
-          </div>
-          <button type="submit">Join their circle</button>
-        </form>
+      <!--
+        Make first, join second.
 
-        <h2>Or make a circle</h2>
+        This screen used to lead with "paste the invitation they sent back",
+        which is the one thing a brand-new person cannot do: nobody has sent
+        them anything. Lead with what somebody can always do with nothing in
+        their hands.
+      -->
+      <section id="no-circle" hidden>
+        <h2>Make a circle</h2>
         <p>
           A circle is a private space about one person. Only people you invite
           can see it. It lives on the devices of the people in it — there is no
@@ -112,6 +89,40 @@
           </div>
           <button type="submit">Make the circle</button>
         </form>
+
+        <details id="join-details">
+          <summary>Or join someone else's circle</summary>
+          <p>
+            Somebody has to invite you first. Send them
+            <strong>Your identifier</strong> from the top of this page, and
+            they will send an invitation back.
+          </p>
+        <form id="join-form">
+          <div class="field">
+            <label for="invitation-in">Paste the invitation they sent back</label>
+            <textarea
+              id="invitation-in"
+              name="invitation-in"
+              rows="3"
+              required
+            ></textarea>
+          </div>
+          <div class="field">
+            <label for="join-label">What you call them</label>
+            <p id="join-label-hint" class="hint">
+              Only on your own device. Leave it blank to use their name.
+            </p>
+            <input
+              id="join-label"
+              name="join-label"
+              type="text"
+              autocomplete="off"
+              aria-describedby="join-label-hint"
+            />
+          </div>
+          <button type="submit">Join their circle</button>
+        </form>
+        </details>
       </section>
 
       <!--
