@@ -22,6 +22,40 @@ import { AppWebsocket, encodeHashToBase64 } from "@holochain/client";
  */
 const asText = (hash) => (hash ? encodeHashToBase64(hash) : "");
 
+/*
+ * An invitation is one opaque line of text.
+ *
+ * It used to be raw JSON, which failed twice: a Uint8Array becomes
+ * {"0":196,"1":93,...} when stringified, so the signature inside arrived as an
+ * object of numbered keys and could never be used. And a multi-line JSON blob
+ * is easy to half-copy out of a text message.
+ *
+ * One line. Nothing inside it a person can damage by accident.
+ */
+const bytesToBase64 = (bytes) =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes)));
+
+const base64ToBytes = (text) =>
+  Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+function invitationToToken(bundle) {
+  return btoa(
+    JSON.stringify({
+      ...bundle,
+      invitation: { signature: bytesToBase64(bundle.invitation.signature) },
+    }),
+  );
+}
+
+function tokenToInvitation(token) {
+  const parsed = JSON.parse(atob(token.trim()));
+  return {
+    ...parsed,
+    invitation: { signature: base64ToBytes(parsed.invitation.signature) },
+  };
+}
+
+
 const ROLE = "aboutme";
 const ZOME = "aboutme";
 
@@ -315,8 +349,10 @@ $("invite-form").addEventListener("submit", async (event) => {
     const invitation = await call("invite", invitee, circle.cellId);
     const output = $("invitation-output");
     output.hidden = false;
-    output.textContent = JSON.stringify(invitation);
-    announce("Invitation ready.");
+    output.textContent = invitationToToken(invitation);
+    $("copy-invitation").hidden = false;
+    $("invitee").value = "";
+    announce("Invitation ready. Send it to them however you like.");
   } catch (error) {
     problem(error);
   }
@@ -555,7 +591,7 @@ $("introduce-form").addEventListener("submit", async (event) => {
 $("join-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const bundle = JSON.parse($("invitation-in").value.trim());
+    const bundle = tokenToInvitation($("invitation-in").value);
     const label = $("join-label").value.trim() || bundle.about || "Circle";
 
     const cell = await call("join_circle", {
@@ -575,24 +611,59 @@ $("join-form").addEventListener("submit", async (event) => {
     await loadCircle();
   } catch (error) {
     // The commonest cause by far is a half-copied invitation.
+    const damaged =
+      error instanceof SyntaxError ||
+      /JSON|atob|InvalidCharacter/i.test(String(error?.message ?? ""));
     problem(
-      error?.message?.includes("JSON")
-        ? new Error("That invitation looks incomplete. Copy the whole of it.")
+      damaged
+        ? new Error(
+            "That invitation could not be read. Copy the whole of it — it is " +
+              "one long line, with nothing before or after.",
+          )
         : error,
     );
   }
 });
 
-$("copy-identifier").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(asText(me));
-    announce("Copied. Send it to whoever is inviting you.");
-  } catch {
-    // Clipboard access can be refused. Selecting the text still works, so say
-    // so rather than failing silently.
-    announce("Could not copy. Select the text and copy it yourself.");
-  }
-});
+/**
+ * Wire up a copy button so that pressing it visibly does something.
+ *
+ * The first version only called announce(), which writes to a screen-reader
+ * live region. A sighted person pressed it, saw nothing at all, and reasonably
+ * concluded it was broken. Feedback that exists only for assistive technology
+ * is not feedback.
+ */
+function wireCopyButton(buttonId, getText, doneLabel = "Copied") {
+  const button = $(buttonId);
+  if (!button) return;
+  const original = button.textContent;
+  let resetAfter;
+
+  button.addEventListener("click", async () => {
+    const text = getText();
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      ok = false;
+    }
+
+    // Say it on the button, and say it to a screen reader. Both, always.
+    button.textContent = ok ? doneLabel : "Press Ctrl+C instead";
+    announce(
+      ok
+        ? `${doneLabel}. Send it to them however you like.`
+        : "Could not copy. Select the text and copy it yourself.",
+    );
+
+    clearTimeout(resetAfter);
+    resetAfter = setTimeout(() => {
+      button.textContent = original;
+    }, 2500);
+  });
+}
+
+wireCopyButton("copy-identifier", () => asText(me), "Copied");
 
 
 // ---------------------------------------------------------------------------
@@ -663,3 +734,9 @@ $("add-circle").addEventListener("click", () => {
   show("no-circle");
   $("person-name").focus();
 });
+
+wireCopyButton(
+  "copy-invitation",
+  () => $("invitation-output").textContent,
+  "Invitation copied",
+);

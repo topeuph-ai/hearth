@@ -100,11 +100,16 @@
         <form id="join-form">
           <div class="field">
             <label for="invitation-in">Paste the invitation they sent back</label>
+            <p id="invitation-in-hint" class="hint">
+              One long line. Paste the whole of it, with nothing before or
+              after.
+            </p>
             <textarea
               id="invitation-in"
               name="invitation-in"
               rows="3"
               required
+              aria-describedby="invitation-in-hint"
             ></textarea>
           </div>
           <div class="field">
@@ -344,6 +349,11 @@
             <button type="submit">Make an invitation</button>
           </form>
           <output id="invitation-output" hidden></output>
+          <div class="actions">
+            <button type="button" id="copy-invitation" class="secondary" hidden>
+              Copy the invitation
+            </button>
+          </div>
         </section>
       </section>
 
