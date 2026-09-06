@@ -325,14 +325,16 @@ These rules have no coverage:
 - acknowledgements cannot be edited
 - only the agent who created a link may remove it
 
-### Configuration fails closed
+### The lobby, and configuration that fails closed
 
 Reading the DNA properties yields one of three states, never an `Option`:
 
 - **`Founder`** — a real circle, closed around one person.
-- **`OpenForDevelopment`** — open, and it must be asked for in writing
-  (`open_for_development: true`). The base DNA in this repo states it, because
-  the base DNA is for development.
+- **`Lobby`** — anyone may join, **nobody may write**. The app's provisioned
+  cell is a lobby, and its only job is to exist so the app is installable and
+  can clone real circles out of itself. Everyone who installs the app shares
+  it, so it must hold nothing: entry is unrestricted precisely because there
+  is nothing there to reach. It must be asked for in writing (`lobby: true`).
 - **`Misconfigured`** — no properties, unreadable properties, or a founder that
   is not a valid agent key. **Admits nobody and lets nobody write.**
 

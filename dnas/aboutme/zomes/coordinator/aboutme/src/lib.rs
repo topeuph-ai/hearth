@@ -207,7 +207,7 @@ fn circle_modifiers(
 ) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
-        open_for_development: false,
+        lobby: false,
     };
 
     // Clone modifiers arrive as YAML, which is why the founder is carried as a

@@ -82,16 +82,19 @@ pub struct CircleProperties {
     /// byte array.
     pub founder: Option<String>,
 
-    /// Opt in, explicitly, to a circle anyone may join.
+    /// Mark this cell as a lobby: anyone may join, **nobody may write**.
     ///
-    /// This exists so the base cell is installable during development, where
-    /// no founder key is known in advance. It must be *stated*: a DNA with no
-    /// properties at all, or with a typo where the founder should be, is
-    /// closed to everybody rather than open to everybody.
+    /// The provisioned cell of the app is a lobby. It exists only so the app
+    /// is installable and can then clone real circles from it. Everyone who
+    /// installs the app shares it, so it must hold nothing: joining is
+    /// unrestricted precisely because there is nothing there to reach.
     ///
-    /// Absence of configuration must never mean absence of a membrane.
+    /// It must be *stated*. A DNA with no properties at all, or with a typo
+    /// where the founder should be, is closed to everybody rather than open to
+    /// everybody. Absence of configuration must never mean absence of a
+    /// membrane.
     #[serde(default)]
-    pub open_for_development: bool,
+    pub lobby: bool,
 }
 
 /// What an invited person presents when they join.
@@ -107,8 +110,9 @@ pub struct Invitation {
 pub enum Membrane {
     /// A real circle, closed around one person.
     Founder(AgentPubKey),
-    /// Explicitly opened for development. See `open_for_development`.
-    OpenForDevelopment,
+    /// A shared launching point. Anyone may join it; nobody may write in it.
+    /// See `lobby`.
+    Lobby,
     /// No usable configuration. Nobody may join and nobody may write.
     Misconfigured,
 }
@@ -129,7 +133,7 @@ fn membrane() -> ExternResult<Membrane> {
             Ok(key) => Ok(Membrane::Founder(key)),
             Err(_) => Ok(Membrane::Misconfigured),
         },
-        None if p.open_for_development => Ok(Membrane::OpenForDevelopment),
+        None if p.lobby => Ok(Membrane::Lobby),
         None => Ok(Membrane::Misconfigured),
     }
 }
@@ -140,11 +144,11 @@ fn check_membrane(
 ) -> ExternResult<ValidateCallbackResult> {
     let founder = match membrane()? {
         Membrane::Founder(key) => key,
-        Membrane::OpenForDevelopment => return Ok(ValidateCallbackResult::Valid),
+        Membrane::Lobby => return Ok(ValidateCallbackResult::Valid),
         Membrane::Misconfigured => {
             return invalid(
                 "This circle has no founder configured, so nobody may join it. \
-                 Set `founder`, or `open_for_development: true` if that is what you meant.",
+                 Set `founder`, or `lobby: true` if that is what you meant.",
             )
         }
     };
@@ -183,12 +187,14 @@ pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCa
 
 /// Is this agent the person whose circle this is?
 ///
-/// In a development circle with no founder property, everyone is. See the note
-/// on `founder`.
+/// Only a real circle has such a person. In a lobby the answer is nobody,
+/// which is what makes a lobby unwritable.
 fn is_the_person(agent: &AgentPubKey) -> ExternResult<bool> {
     Ok(match membrane()? {
         Membrane::Founder(f) => &f == agent,
-        Membrane::OpenForDevelopment => true,
+        // A lobby holds nothing and accepts nothing. It exists so the app can
+        // be installed and can then clone real circles from it.
+        Membrane::Lobby => false,
         // Unreachable in practice, since nobody can join a misconfigured
         // circle. Written as a refusal anyway: the default answer to "may
         // this agent speak as the person" is no.

@@ -35,7 +35,7 @@ fn an_about_me(name: &str) -> AboutMe {
 async fn circle_dna(founder: &AgentPubKey) -> DnaFile {
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
-        open_for_development: false,
+        lobby: false,
     };
     SweetDnaFile::from_bundle_with_overrides(
         &dna_path(),
@@ -367,7 +367,7 @@ async fn a_circle_with_no_founder_admits_nobody() {
         &dna_path(),
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: None,
-            open_for_development: false,
+            lobby: false,
         }),
     )
     .await
@@ -391,7 +391,7 @@ async fn a_circle_with_a_malformed_founder_admits_nobody() {
         &dna_path(),
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: Some("not-an-agent-key".to_string()),
-            open_for_development: false,
+            lobby: false,
         }),
     )
     .await
@@ -533,4 +533,89 @@ async fn one_person_can_have_separate_circles() {
         hashes[0], hashes[1],
         "a different seed must give a different network"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The lobby
+// ---------------------------------------------------------------------------
+
+/// A lobby whose only job is to exist so the app can be installed and clone
+/// real circles from it.
+async fn lobby_dna() -> DnaFile {
+    SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none().with_properties(CircleProperties {
+            founder: None,
+            lobby: true,
+        }),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn anyone_may_enter_the_lobby() {
+    let conductor = SweetConductor::standard().await;
+    let anyone = SweetAgents::one(conductor.keystore()).await;
+
+    join(&conductor, "anyone", &anyone, &lobby_dna().await, None)
+        .await
+        .expect("the lobby exists to be installable by anyone");
+}
+
+/// Everybody who installs the app shares the lobby, so it must hold nothing.
+/// Joining it is unrestricted precisely because there is nothing to reach.
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_may_write_in_the_lobby() {
+    let conductor = SweetConductor::standard().await;
+    let anyone = SweetAgents::one(conductor.keystore()).await;
+    let cell = join(&conductor, "anyone", &anyone, &lobby_dna().await, None)
+        .await
+        .unwrap();
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(&zome(&cell), "create_about_me", an_about_me("Anybody"))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a shared lobby that accepts writes is a shared database of strangers"
+    );
+}
+
+/// The lobby's actual purpose: cloning a real circle out of it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_circle_can_be_cloned_from_the_lobby() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let lobby = join(&conductor, "alice", &alice, &lobby_dna().await, None)
+        .await
+        .unwrap();
+
+    let circle: ClonedCell = conductor
+        .call(
+            &zome(&lobby),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.clone(),
+                name: "Alice".to_string(),
+                network_seed: "seed".to_string(),
+            },
+        )
+        .await;
+
+    assert_ne!(
+        circle.cell_id.dna_hash(),
+        lobby.dna_hash(),
+        "a circle must be its own network, not the lobby it came from"
+    );
+
+    // And unlike the lobby, the circle accepts the person's own record.
+    let _: Record = conductor
+        .call(
+            &zome(&circle.cell_id),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
 }
