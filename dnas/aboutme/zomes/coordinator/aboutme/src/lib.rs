@@ -145,6 +145,7 @@ pub struct AcknowledgeInput {
 /// The whole professional workflow: one tap.
 #[hdk_extern]
 pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
+    let role = input.role.clone();
     let ack = Acknowledgement {
         about_me: input.about_me.clone(),
         role: input.role,
@@ -152,11 +153,29 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
     let action_hash = create_entry(EntryTypes::Acknowledgement(ack))?;
 
     create_link(
-        input.about_me,
+        input.about_me.clone(),
         action_hash.clone(),
         LinkTypes::AboutMeToAcknowledgement,
         (),
     )?;
+
+    // Tell the holder someone has read it. Fire and forget, and deliberately
+    // unable to fail the write: the acknowledgement on the chain is the
+    // evidence, and this is only the nudge. A family should never lose a record
+    // that somebody read the notes because a phone happened to be off.
+    if let Membrane::Founder(founder) = membrane()? {
+        let me = agent_info()?.agent_initial_pubkey;
+        if founder != me {
+            let _ = send_remote_signal(
+                Signal::Acknowledged {
+                    about_me: input.about_me,
+                    by: me,
+                    role,
+                },
+                vec![founder],
+            );
+        }
+    }
 
     get(action_hash, GetOptions::default())?
         .ok_or_else(|| wasm_error!("Could not read the acknowledgement just written"))
@@ -281,4 +300,53 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
         membrane_proof: Some(proof),
         name: Some(input.name),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Signals: telling someone their record was read, without polling or a server
+// ---------------------------------------------------------------------------
+
+/// Sent peer to peer, never stored.
+///
+/// A signal is not evidence. The acknowledgement written to the chain is the
+/// evidence; this is only the nudge that makes it visible without the app
+/// having to ask repeatedly whether anything happened.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "kind")]
+pub enum Signal {
+    /// Somebody read a specific version of the record.
+    Acknowledged {
+        about_me: ActionHash,
+        by: AgentPubKey,
+        /// Claimed, never verified. See the note on `Acknowledgement`.
+        role: String,
+    },
+}
+
+/// Allow other members of this circle to deliver signals to us.
+///
+/// This is the one place capability grants genuinely belong. They were once on
+/// this project's build order as the route to revocation, which was wrong —
+/// they govern who may call into *this* cell, not what somebody already holds.
+///
+/// `Unrestricted` sounds alarming and is not: the only agents who can reach
+/// this cell at all are the ones the membrane already admitted to the circle.
+#[hdk_extern]
+pub fn init() -> ExternResult<InitCallbackResult> {
+    let mut functions = HashSet::new();
+    functions.insert((zome_info()?.name, "recv_remote_signal".into()));
+
+    create_cap_grant(CapGrantEntry {
+        tag: "circle-signals".into(),
+        access: CapAccess::Unrestricted,
+        functions: GrantedFunctions::Listed(functions),
+    })?;
+
+    Ok(InitCallbackResult::Pass)
+}
+
+/// Hand an incoming signal to whatever is showing the circle.
+#[hdk_extern]
+pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
+    emit_signal(signal)
 }

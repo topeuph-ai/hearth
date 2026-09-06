@@ -122,7 +122,7 @@ pub enum Membrane {
 /// **Fails closed.** No properties, unreadable properties, or a founder that
 /// is not a valid agent key all produce `Misconfigured`, which admits nobody.
 /// The only way to obtain an open circle is to ask for one in writing.
-fn membrane() -> ExternResult<Membrane> {
+pub fn membrane() -> ExternResult<Membrane> {
     let properties = dna_info()?.modifiers.properties;
     let Ok(p) = CircleProperties::try_from(properties) else {
         return Ok(Membrane::Misconfigured);

@@ -619,3 +619,54 @@ async fn a_circle_can_be_cloned_from_the_lobby() {
         )
         .await;
 }
+
+// ---------------------------------------------------------------------------
+// Signals: telling the holder without polling
+// ---------------------------------------------------------------------------
+
+/// The thing families currently have no way of knowing: whether anybody read
+/// it. No polling, no server, no notification service — the professional's
+/// device tells the holder's device directly.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_is_told_when_someone_reads_the_record() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let mut alice_hears = conductor.subscribe_to_app_signals("alice".to_string());
+
+    let record: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+
+    let _: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "acknowledge",
+            aboutme::AcknowledgeInput {
+                about_me: record.action_address().clone(),
+                role: "district nurse".to_string(),
+            },
+        )
+        .await;
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(60), alice_hears.recv())
+        .await
+        .expect("the holder should be told within a reasonable time")
+        .expect("the signal channel should stay open");
+
+    match signal {
+        Signal::App { signal, .. } => {
+            let decoded: aboutme::Signal = signal
+                .into_inner()
+                .decode()
+                .expect("the signal should be one of ours");
+            let aboutme::Signal::Acknowledged { by, role, .. } = decoded;
+            assert_eq!(by, *bob_cell.agent_pubkey(), "the reader should be named");
+            assert_eq!(role, "district nurse", "the claimed role travels with it");
+        }
+        other => panic!("expected an app signal, got {other:?}"),
+    }
+}
