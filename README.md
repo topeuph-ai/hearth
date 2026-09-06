@@ -158,6 +158,27 @@ machines, unplug the router, and they still find each other on the local
 network.** That is the demonstration, and it is a different thing from two
 windows on one laptop.
 
+### After changing the zomes, clear the app's data
+
+**Kangaroo installs the hApp on first run only.** Rebuild the app with new
+zomes and it will happily keep running the old ones, because there is already
+an app installed in its conductor. The symptom is the worst kind: the app
+starts, the conductor reports ready, no errors appear anywhere, and the
+interface either does nothing or fails against functions that no longer have
+the shape it expects.
+
+Move the data aside — do not delete it, in case something in there mattered:
+
+```bash
+# Windows
+mv ~/AppData/Roaming/uk.topeuph.hearth/0.1.x/default \
+   ~/AppData/Roaming/uk.topeuph.hearth/0.1.x/default-old
+```
+
+Next launch installs fresh. Note the DNA hash only changes when the
+*integrity* zome changes; a coordinator-only change leaves the hash alone,
+which makes this even quieter.
+
 Three things that cost time:
 
 - **The README says `build:windows`. The script is `build:win`.** It fails
