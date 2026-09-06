@@ -205,7 +205,19 @@
         <h2 id="circle-heading">Circle</h2>
 
         <div id="no-record" hidden>
-          <p>Nothing has been written yet.</p>
+          <!-- The holder's own circle, genuinely empty until they write. -->
+          <p id="no-record-empty" hidden>
+            Nothing has been written yet.
+          </p>
+          <!--
+            Everybody else. Saying "nothing has been written" would be a lie:
+            it has been written, on somebody else's device, and has not reached
+            this one yet. Deliberately not phrased as a failure.
+          -->
+          <p id="no-record-waiting" hidden>
+            Not here yet. It will appear once their device and yours have both
+            been on at the same time.
+          </p>
         </div>
 
         <!-- Read view -->
@@ -277,6 +289,9 @@
           <button type="button" id="edit-record">Change this</button>
           <button type="button" id="acknowledge" hidden>
             I have read this
+          </button>
+          <button type="button" id="check-again" class="secondary" hidden>
+            Check again
           </button>
         </div>
 

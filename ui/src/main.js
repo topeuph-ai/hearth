@@ -212,10 +212,29 @@ async function loadCircle() {
   if (!originals.length) {
     record = null;
     renderRecord(null);
+    renderReaders([]);
+
+    /*
+     * "Empty" and "not arrived yet" are completely different states, and only
+     * one of them is true for a person who has just joined.
+     *
+     * The holder's circle really is empty until they write. Everybody else is
+     * waiting for something that exists elsewhere — telling them nothing has
+     * been written is simply false, and it invites them to write it
+     * themselves, which they cannot.
+     */
+    const amHolder = isHolder();
+    $("no-record-empty").hidden = !amHolder;
+    $("no-record-waiting").hidden = amHolder;
+
     $("record-actions").hidden = false;
     $("acknowledge").hidden = true;
+    $("edit-record").hidden = !amHolder;
     $("edit-record").textContent = "Write it";
-    renderReaders([]);
+    $("check-again").hidden = amHolder;
+
+    $("invite-section").hidden = !amHolder;
+    await loadMembers();
     return;
   }
 
@@ -843,3 +862,19 @@ $("choose-join").addEventListener("click", () => {
 for (const button of document.querySelectorAll(".back-to-choose")) {
   button.addEventListener("click", () => show("choose"));
 }
+
+$("check-again").addEventListener("click", async () => {
+  const button = $("check-again");
+  const original = button.textContent;
+  button.textContent = "Looking...";
+  try {
+    await loadCircle();
+    // If it still is not here, that is not a failure. It means the other
+    // device has not been on since it was written.
+    if (!record) announce("Still not here yet.");
+  } catch (error) {
+    problem(error);
+  } finally {
+    button.textContent = original;
+  }
+});
