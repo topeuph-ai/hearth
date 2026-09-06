@@ -109,19 +109,23 @@ which is how you would create a participating non-storing node.
 
 ## Running the demo
 
-Two terminals. The first serves the interface, the second starts two agents:
-
-```bash
-cd ui && npm run dev
-```
+One command:
 
 ```bash
 cd ui && npm run demo
 ```
 
+It packs a fresh hApp, starts the interface server, waits for it, and opens two
+windows. A demo command that needs a second terminal is not a demo command.
+
 **Two windows on one machine is the whole argument**: two separate people, two
 separate stores, talking to each other with nothing in between. Make a circle
 in one, invite the other, watch the acknowledgement arrive.
+
+**Vite binds `[::1]` unless told otherwise.** The probe that waits for it
+connects to `127.0.0.1`, and on Windows the two never meet — which looks
+exactly like the server failing to start. `demo.mjs` passes
+`--host 127.0.0.1` so everything agrees.
 
 `hc-spin` shells out to `kitsune2-bootstrap-srv`, `holochain`, `lair-keystore`
 and `hc` **by bare name, and does not bundle them**. If they are not on PATH
