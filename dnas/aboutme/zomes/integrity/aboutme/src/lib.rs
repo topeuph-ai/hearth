@@ -80,7 +80,18 @@ pub struct CircleProperties {
     /// be YAML-representable and a byte array is not. And in a real deployment
     /// a person or an interface writes this value, and nobody hand-writes a
     /// byte array.
-    pub founder: String,
+    pub founder: Option<String>,
+
+    /// Opt in, explicitly, to a circle anyone may join.
+    ///
+    /// This exists so the base cell is installable during development, where
+    /// no founder key is known in advance. It must be *stated*: a DNA with no
+    /// properties at all, or with a typo where the founder should be, is
+    /// closed to everybody rather than open to everybody.
+    ///
+    /// Absence of configuration must never mean absence of a membrane.
+    #[serde(default)]
+    pub open_for_development: bool,
 }
 
 /// What an invited person presents when they join.
@@ -92,32 +103,50 @@ pub struct Invitation {
     pub signature: Signature,
 }
 
-/// The founder of this circle, if one is set.
+/// How this circle decides who belongs.
+pub enum Membrane {
+    /// A real circle, closed around one person.
+    Founder(AgentPubKey),
+    /// Explicitly opened for development. See `open_for_development`.
+    OpenForDevelopment,
+    /// No usable configuration. Nobody may join and nobody may write.
+    Misconfigured,
+}
+
+/// Read the membrane from the DNA properties.
 ///
-/// **Development sharp edge.** A DNA with no founder property is an open
-/// circle that anyone may join. That exists so the base cell is installable
-/// during development, where no founder key is known ahead of time. Every real
-/// circle is a clone that sets this property. This must be made to fail closed
-/// before the software is put in front of anyone.
-fn founder() -> ExternResult<Option<AgentPubKey>> {
+/// **Fails closed.** No properties, unreadable properties, or a founder that
+/// is not a valid agent key all produce `Misconfigured`, which admits nobody.
+/// The only way to obtain an open circle is to ask for one in writing.
+fn membrane() -> ExternResult<Membrane> {
     let properties = dna_info()?.modifiers.properties;
     let Ok(p) = CircleProperties::try_from(properties) else {
-        return Ok(None);
+        return Ok(Membrane::Misconfigured);
     };
-    // A property that is present but unreadable is an error, not an open
-    // circle. Only its complete absence means development mode.
-    AgentPubKey::try_from(p.founder.as_str())
-        .map(Some)
-        .map_err(|_| wasm_error!("This circle's founder property is not a valid agent key"))
+
+    match p.founder {
+        Some(founder) => match AgentPubKey::try_from(founder.as_str()) {
+            Ok(key) => Ok(Membrane::Founder(key)),
+            Err(_) => Ok(Membrane::Misconfigured),
+        },
+        None if p.open_for_development => Ok(Membrane::OpenForDevelopment),
+        None => Ok(Membrane::Misconfigured),
+    }
 }
 
 fn check_membrane(
     agent: &AgentPubKey,
     membrane_proof: &Option<MembraneProof>,
 ) -> ExternResult<ValidateCallbackResult> {
-    let Some(founder) = founder()? else {
-        // Development only. See the note on `founder`.
-        return Ok(ValidateCallbackResult::Valid);
+    let founder = match membrane()? {
+        Membrane::Founder(key) => key,
+        Membrane::OpenForDevelopment => return Ok(ValidateCallbackResult::Valid),
+        Membrane::Misconfigured => {
+            return invalid(
+                "This circle has no founder configured, so nobody may join it. \
+                 Set `founder`, or `open_for_development: true` if that is what you meant.",
+            )
+        }
     };
 
     // The founder needs no invitation to their own circle.
@@ -157,9 +186,13 @@ pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCa
 /// In a development circle with no founder property, everyone is. See the note
 /// on `founder`.
 fn is_the_person(agent: &AgentPubKey) -> ExternResult<bool> {
-    Ok(match founder()? {
-        Some(f) => &f == agent,
-        None => true,
+    Ok(match membrane()? {
+        Membrane::Founder(f) => &f == agent,
+        Membrane::OpenForDevelopment => true,
+        // Unreachable in practice, since nobody can join a misconfigured
+        // circle. Written as a refusal anyway: the default answer to "may
+        // this agent speak as the person" is no.
+        Membrane::Misconfigured => false,
     })
 }
 

@@ -34,7 +34,8 @@ fn an_about_me(name: &str) -> AboutMe {
 /// A circle whose founder is `founder`, built from the real packed DNA.
 async fn circle_dna(founder: &AgentPubKey) -> DnaFile {
     let properties = CircleProperties {
-        founder: founder.to_string(),
+        founder: Some(founder.to_string()),
+        open_for_development: false,
     };
     SweetDnaFile::from_bundle_with_overrides(
         &dna_path(),
@@ -346,5 +347,80 @@ async fn nobody_can_acknowledge_their_own_record() {
     assert!(
         result.is_err(),
         "a self-acknowledgement would make the evidence worthless"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Configuration must fail closed
+// ---------------------------------------------------------------------------
+
+/// The most dangerous thing that could go wrong quietly: a circle shipped with
+/// no founder configured, standing wide open.
+///
+/// Absence of configuration must never mean absence of a membrane.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_circle_with_no_founder_admits_nobody() {
+    let conductor = SweetConductor::standard().await;
+    let mallory = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none().with_properties(CircleProperties {
+            founder: None,
+            open_for_development: false,
+        }),
+    )
+    .await
+    .unwrap();
+
+    let result = join(&conductor, "mallory", &mallory, &dna, None).await;
+    assert!(
+        result.is_err(),
+        "a circle with no founder must be closed to everybody, not open to everybody"
+    );
+}
+
+/// A founder that is present but not a valid key is a misconfiguration, and
+/// must be treated as one rather than falling through to an open circle.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_circle_with_a_malformed_founder_admits_nobody() {
+    let conductor = SweetConductor::standard().await;
+    let mallory = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none().with_properties(CircleProperties {
+            founder: Some("not-an-agent-key".to_string()),
+            open_for_development: false,
+        }),
+    )
+    .await
+    .unwrap();
+
+    let result = join(&conductor, "mallory", &mallory, &dna, None).await;
+    assert!(
+        result.is_err(),
+        "a malformed founder must close the circle, not open it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Entry content
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_about_me_needs_a_display_name() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let mut blank = an_about_me("");
+    blank.display_name = "   ".to_string();
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", blank)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a record nobody is named in is not a record of anybody"
     );
 }

@@ -2,7 +2,10 @@ manifest_version: "0"
 name: aboutme
 integrity:
   network_seed: null
-  properties: null
+  # The base cell is for development only, and must say so: a DNA with no
+  # properties is now closed to everybody rather than open to everybody.
+  properties:
+    open_for_development: true
   zomes:
     - name: aboutme_integrity
       path: "../../../target/wasm32-unknown-unknown/release/aboutme_integrity.wasm"
