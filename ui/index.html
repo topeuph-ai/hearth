@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hearth</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <!-- Announcements for screen readers. Polite: never interrupts. -->
+    <p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>
+
+    <header>
+      <h1>Hearth</h1>
+      <p class="lead">What matters to me, and how to look after me.</p>
+    </header>
+
+    <main id="main">
+      <!-- Nothing here yet: the app is starting. Deliberately not a spinner. -->
+      <section id="starting">
+        <p>Starting up.</p>
+      </section>
+
+      <!-- No circle yet -->
+      <section id="no-circle" hidden>
+        <h2>Make a circle</h2>
+        <p>
+          A circle is a private space about one person. Only people you invite
+          can see it. It lives on the devices of the people in it — there is no
+          company holding a copy.
+        </p>
+        <form id="create-circle-form">
+          <div class="field">
+            <label for="circle-name">Whose circle is this?</label>
+            <p id="circle-name-hint" class="hint">
+              A name you will recognise, like “Mum” or “Dad”.
+            </p>
+            <input
+              id="circle-name"
+              name="circle-name"
+              type="text"
+              required
+              autocomplete="off"
+              aria-describedby="circle-name-hint"
+            />
+          </div>
+          <button type="submit">Make the circle</button>
+        </form>
+      </section>
+
+      <!-- Inside a circle -->
+      <section id="circle" hidden>
+        <h2 id="circle-heading">Circle</h2>
+
+        <div id="no-record" hidden>
+          <p>Nothing has been written yet.</p>
+        </div>
+
+        <!-- Read view -->
+        <article id="record" hidden aria-labelledby="record-name">
+          <h3 id="record-name"></h3>
+          <dl id="record-fields"></dl>
+          <p id="version-note" class="notice" hidden></p>
+        </article>
+
+        <!-- Write view: holder only -->
+        <form id="record-form" hidden>
+          <h3 id="record-form-heading">What people should know</h3>
+
+          <div class="field">
+            <label for="display-name">Name</label>
+            <input id="display-name" name="display-name" type="text" required />
+          </div>
+
+          <div class="field">
+            <label for="what-matters">What matters to me</label>
+            <textarea id="what-matters" name="what-matters" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="how-to-communicate">How to talk with me</label>
+            <p id="communicate-hint" class="hint">
+              For example: “Speak to my left side, I am deaf on the right.”
+            </p>
+            <textarea
+              id="how-to-communicate"
+              name="how-to-communicate"
+              rows="3"
+              aria-describedby="communicate-hint"
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <label for="how-to-support">How to help me feel at ease</label>
+            <textarea id="how-to-support" name="how-to-support" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="people-who-matter">People who matter to me</label>
+            <textarea
+              id="people-who-matter"
+              name="people-who-matter"
+              rows="3"
+            ></textarea>
+          </div>
+
+          <div class="actions">
+            <button type="submit">Save</button>
+            <button type="button" id="cancel-edit" class="secondary" hidden>
+              Cancel
+            </button>
+          </div>
+        </form>
+
+        <div class="actions" id="record-actions" hidden>
+          <button type="button" id="edit-record">Change this</button>
+          <button type="button" id="acknowledge" hidden>
+            I have read this
+          </button>
+        </div>
+
+        <section id="readers" hidden>
+          <h3>Who has read it</h3>
+          <ul id="readers-list"></ul>
+        </section>
+
+        <section id="invite-section" hidden>
+          <h3>Invite someone</h3>
+          <p>
+            Give them this invitation. It only works for the person it was made
+            for, so it is safe to read out or send.
+          </p>
+          <form id="invite-form">
+            <div class="field">
+              <label for="invitee">Their identifier</label>
+              <p id="invitee-hint" class="hint">
+                They will find this in their own copy of Hearth.
+              </p>
+              <input
+                id="invitee"
+                name="invitee"
+                type="text"
+                required
+                autocomplete="off"
+                aria-describedby="invitee-hint"
+              />
+            </div>
+            <button type="submit">Make an invitation</button>
+          </form>
+          <output id="invitation-output" hidden></output>
+        </section>
+      </section>
+
+      <section id="problem" hidden>
+        <h2>Something went wrong</h2>
+        <p id="problem-detail"></p>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
