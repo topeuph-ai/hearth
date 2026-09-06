@@ -74,6 +74,8 @@ function renderRecord(current) {
   $("no-record").hidden = true;
   $("record").hidden = false;
   $("record-name").textContent = entry.display_name;
+  $("relationship-whom").textContent = entry.display_name;
+  $("suggest-whose").textContent = entry.display_name;
 
   const list = $("record-fields");
   list.replaceChildren();
@@ -116,7 +118,8 @@ function renderReaders(records) {
     const li = document.createElement("li");
     // Never "Read by District Nurse" — that implies a credential nobody
     // checked. The claim and the claimant are shown as separate facts.
-    li.textContent = `Someone read this. They said they are: ${entry.role}`;
+    const who = describe(r.signed_action.hashed.content.author);
+    li.textContent = `${who} read this. Role claimed: ${entry.role}`;
     list.append(li);
   }
 }
@@ -157,6 +160,7 @@ async function loadCircle() {
   );
   renderReaders(readers);
 
+  await loadMembers();
   await loadSuggestions();
 }
 
@@ -327,6 +331,7 @@ async function start() {
     show("circle");
     await loadCircle();
   } else {
+    $("my-identifier").textContent = me.toString();
     show("no-circle");
     $("person-name").focus();
   }
@@ -382,9 +387,7 @@ function renderSuggestions() {
     who.className = "who";
     // No names exist in this build. Saying "someone" is honest; inventing a
     // name would not be.
-    who.textContent = mine
-      ? `You suggested this for “${label}”`
-      : `Someone in the circle suggested this for “${label}”`;
+    who.textContent = `${describe(author)} suggested this for “${label}”`;
     li.append(who);
 
     const text = document.createElement("p");
@@ -486,5 +489,95 @@ $("suggest-form").addEventListener("submit", async (event) => {
     await loadCircle();
   } catch (error) {
     problem(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Who is who
+// ---------------------------------------------------------------------------
+
+let members = new Map(); // agent key string -> { name, relationship }
+
+/**
+ * How to refer to somebody. Never invents an identity: an unintroduced member
+ * is "someone in the circle", which is true, rather than a guess dressed up as
+ * a fact.
+ */
+function describe(agentKey) {
+  const key = agentKey.toString();
+  if (me && key === me.toString()) return "You";
+  const member = members.get(key);
+  if (!member) return "Someone in the circle";
+  return member.relationship?.trim()
+    ? `${member.name} (${member.relationship})`
+    : member.name;
+}
+
+async function loadMembers() {
+  const records = await call("get_members", null, circle.cellId);
+  members = new Map();
+  for (const r of records) {
+    const entry = r?.entry?.Present?.entry;
+    if (!entry) continue;
+    // Latest introduction wins; people correct how they describe themselves.
+    members.set(r.signed_action.hashed.content.author.toString(), entry);
+  }
+
+  const mine = me && members.get(me.toString());
+  $("introduce-section").hidden = false;
+  if (mine) {
+    $("member-name").value = mine.name;
+    $("member-relationship").value = mine.relationship ?? "";
+  }
+}
+
+$("introduce-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await call(
+      "introduce_myself",
+      {
+        name: $("member-name").value.trim(),
+        relationship: $("member-relationship").value.trim(),
+      },
+      circle.cellId,
+    );
+    announce("Saved.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Joining a circle you were invited to
+// ---------------------------------------------------------------------------
+
+$("join-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const bundle = JSON.parse($("invitation-in").value.trim());
+    const label = $("join-label").value.trim() || bundle.about || "Circle";
+
+    const cell = await call("join_circle", {
+      founder: bundle.founder,
+      name: label,
+      network_seed: bundle.network_seed,
+      invitation: bundle.invitation,
+    });
+
+    circle = { cellId: cell.cell_id };
+    holder = bundle.founder;
+    $("circle-heading").textContent = label;
+    show("circle");
+    announce(`You have joined ${bundle.about || "the circle"}.`);
+    await loadCircle();
+  } catch (error) {
+    // The commonest cause by far is a half-copied invitation.
+    problem(
+      error?.message?.includes("JSON")
+        ? new Error("That invitation looks incomplete. Copy the whole of it.")
+        : error,
+    );
   }
 });

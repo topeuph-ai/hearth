@@ -23,7 +23,40 @@
 
       <!-- No circle yet -->
       <section id="no-circle" hidden>
-        <h2>Make a circle</h2>
+        <h2>Have you been invited?</h2>
+        <p>
+          Send whoever invited you the line below. It is safe to text, email or
+          read out — it identifies you and nothing more.
+        </p>
+        <output id="my-identifier"></output>
+
+        <form id="join-form">
+          <div class="field">
+            <label for="invitation-in">Paste the invitation they sent back</label>
+            <textarea
+              id="invitation-in"
+              name="invitation-in"
+              rows="3"
+              required
+            ></textarea>
+          </div>
+          <div class="field">
+            <label for="join-label">What you call them</label>
+            <p id="join-label-hint" class="hint">
+              Only on your own device. Leave it blank to use their name.
+            </p>
+            <input
+              id="join-label"
+              name="join-label"
+              type="text"
+              autocomplete="off"
+              aria-describedby="join-label-hint"
+            />
+          </div>
+          <button type="submit">Join their circle</button>
+        </form>
+
+        <h2>Or make a circle</h2>
         <p>
           A circle is a private space about one person. Only people you invite
           can see it. It lives on the devices of the people in it — there is no
@@ -146,6 +179,43 @@
         <section id="readers" hidden>
           <h3>Who has read it</h3>
           <ul id="readers-list"></ul>
+        </section>
+
+        <section id="introduce-section" hidden>
+          <h3>Who are you?</h3>
+          <p>
+            So the circle knows who said what. Nobody checks any of this — it is
+            how you describe yourself, not a credential.
+          </p>
+          <form id="introduce-form">
+            <div class="field">
+              <label for="member-name">Your name</label>
+              <input
+                id="member-name"
+                name="member-name"
+                type="text"
+                required
+                autocomplete="name"
+              />
+            </div>
+            <div class="field">
+              <label for="member-relationship">
+                How are you connected to <span id="relationship-whom">them</span>?
+              </label>
+              <p id="relationship-hint" class="hint">
+                In your own words. “Her son”, “district nurse”, “support worker,
+                Tuesdays”.
+              </p>
+              <input
+                id="member-relationship"
+                name="member-relationship"
+                type="text"
+                autocomplete="off"
+                aria-describedby="relationship-hint"
+              />
+            </div>
+            <button type="submit">Save</button>
+          </form>
         </section>
 
         <section id="suggestions-section" hidden>

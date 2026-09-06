@@ -23,11 +23,83 @@ fn circle_path() -> ExternResult<TypedPath> {
 ///
 /// The result is handed to the invitee out of band (a link, a QR code, read
 /// aloud over the phone) and presented as their membrane proof on joining.
+/// Everything the invited person needs, in one piece.
+///
+/// Safe to send by any means — text message, email, read aloud. The signature
+/// is over the invitee's own key, so it admits nobody else. An interceptor
+/// gains a useless blob.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InvitationBundle {
+    pub founder: AgentPubKey,
+    pub network_seed: String,
+    /// Whose circle this is, so the recipient knows what they are accepting
+    /// before they accept it. A label, not a claim.
+    pub about: String,
+    pub invitation: Invitation,
+}
+
 #[hdk_extern]
-pub fn invite(invitee: AgentPubKey) -> ExternResult<Invitation> {
+pub fn invite(invitee: AgentPubKey) -> ExternResult<InvitationBundle> {
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me, invitee)?;
-    Ok(Invitation { signature })
+    let signature = sign(me.clone(), invitee)?;
+
+    let about = match get_circle_about_me(())?.first() {
+        Some(original) => get_current_about_me(original.clone())?
+            .record
+            .and_then(|r| r.entry().as_option().cloned())
+            .and_then(|e| AboutMe::try_from(e).ok())
+            .map(|a| a.display_name)
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+
+    Ok(InvitationBundle {
+        founder: me,
+        network_seed: dna_info()?.modifiers.network_seed,
+        about,
+        invitation: Invitation { signature },
+    })
+}
+
+/// Who you are in this circle, in your own words.
+///
+/// Nothing here is verified. "Her son" is a claim, exactly like a
+/// professional's role on an acknowledgement, and the interface must not
+/// dress it up as anything more.
+#[hdk_extern]
+pub fn introduce_myself(member: Member) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Member(member))?;
+
+    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToMember,
+        (),
+    )?;
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the introduction just written"))
+}
+
+#[hdk_extern]
+pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
+    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToMember)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut out = Vec::new();
+    for link in links {
+        if let Some(hash) = link.target.into_action_hash() {
+            if let Some(record) = get(hash, GetOptions::default())? {
+                out.push(record);
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[hdk_extern]

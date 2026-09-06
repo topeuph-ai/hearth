@@ -40,6 +40,23 @@ pub struct Acknowledgement {
     pub role: String,
 }
 
+/// Who somebody in the circle is, in their own words.
+///
+/// Each member writes their own, and only their own. Nobody is labelled by
+/// anyone else. "Her son", "district nurse", "support worker, Tuesdays" —
+/// these are how people describe themselves, not roles an administrator
+/// assigned them.
+///
+/// Not a credential. Nothing here is checked, and the interface must never
+/// imply it was.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Member {
+    pub name: String,
+    /// How they relate to the person this circle is about.
+    pub relationship: String,
+}
+
 /// Which part of the record a suggestion is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
@@ -89,6 +106,7 @@ pub enum EntryTypes {
     Acknowledgement(Acknowledgement),
     Suggestion(Suggestion),
     SuggestionOutcome(SuggestionOutcome),
+    Member(Member),
 }
 
 #[hdk_link_types]
@@ -103,6 +121,8 @@ pub enum LinkTypes {
     CircleToSuggestion,
     /// Suggestion -> what the holder decided about it.
     SuggestionToOutcome,
+    /// Anchor -> Member, so the circle can put names to people.
+    CircleToMember,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -354,6 +374,18 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Anyone may say who they are, and only about themselves.
+        LinkTypes::CircleToMember => {
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only introduce yourself");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Only the holder records what they decided.
         LinkTypes::SuggestionToOutcome => {
             if !is_the_person(author)? {
@@ -409,6 +441,15 @@ fn validate_acknowledgement(
     Ok(ValidateCallbackResult::Valid)
 }
 
+fn validate_member(member: &Member) -> ExternResult<ValidateCallbackResult> {
+    // Deliberately no check on who the author is: everyone describes
+    // themselves. The only rule is that they say something.
+    if member.name.trim().is_empty() {
+        return invalid("Tell the circle what you are called");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallbackResult> {
     // Deliberately no check on who the author is. Any member of the circle may
     // offer something; the holder decides what goes in.
@@ -456,6 +497,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, action.author()),
             EntryTypes::Suggestion(s) => validate_suggestion(&s),
             EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, action.author()),
+            EntryTypes::Member(m) => validate_member(&m),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -481,6 +523,14 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             }
             EntryTypes::SuggestionOutcome(_) => {
                 invalid("A decision cannot be edited; make a new one")
+            }
+            // You may correct how you describe yourself, and only your own.
+            EntryTypes::Member(m) => {
+                let original = must_get_action(action.original_action_address.clone())?;
+                if original.action().author() != action.author() {
+                    return invalid("Only you may change how you are described");
+                }
+                validate_member(&m)
             }
         },
 
