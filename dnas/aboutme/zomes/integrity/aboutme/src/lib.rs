@@ -40,11 +40,55 @@ pub struct Acknowledgement {
     pub role: String,
 }
 
+/// Which part of the record a suggestion is about.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum AboutMeField {
+    WhatMattersToMe,
+    HowToCommunicateWithMe,
+    HowToSupportMe,
+    PeopleWhoMatter,
+}
+
+/// Something a member of the circle thinks should be in the record.
+///
+/// **Anyone in the circle may write one of these, and only the holder may
+/// accept it.** That split is the point. A son remembers what his mother
+/// enjoyed; a support worker notices what settles her. A record that only one
+/// person may write loses all of it.
+///
+/// The record keeps one voice. The knowledge is allowed in from everywhere.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Suggestion {
+    pub field: AboutMeField,
+    pub text: String,
+    /// Optional: why they think so. "She talked about the allotment all
+    /// summer." Often the more useful half.
+    pub because: String,
+}
+
+/// What the holder decided about a suggestion.
+///
+/// Kept as its own record rather than by deleting the suggestion, so the trail
+/// survives: who offered something, and what became of it. Somebody who takes
+/// the trouble to notice a thing about a person deserves better than for it to
+/// vanish silently.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct SuggestionOutcome {
+    pub suggestion: ActionHash,
+    /// True when it went into the record. False when it was set aside — which
+    /// is not a judgement on the person who offered it.
+    pub accepted: bool,
+}
+
 #[hdk_entry_types]
 #[unit_enum(UnitEntryTypes)]
 pub enum EntryTypes {
     AboutMe(AboutMe),
     Acknowledgement(Acknowledgement),
+    Suggestion(Suggestion),
+    SuggestionOutcome(SuggestionOutcome),
 }
 
 #[hdk_link_types]
@@ -55,6 +99,10 @@ pub enum LinkTypes {
     AboutMeUpdates,
     /// AboutMe version -> acknowledgements of that version.
     AboutMeToAcknowledgement,
+    /// Anchor -> Suggestion, so the holder can find what has been offered.
+    CircleToSuggestion,
+    /// Suggestion -> what the holder decided about it.
+    SuggestionToOutcome,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -293,6 +341,27 @@ fn validate_create_link(
             }
         }
 
+        // Anyone in the circle may offer a suggestion, but only their own.
+        LinkTypes::CircleToSuggestion => {
+            let Some(target) = as_action_hash(&action.target_address) else {
+                // Path anchor scaffolding. See the note under CircleToAboutMe.
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only post your own suggestion");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the holder records what they decided.
+        LinkTypes::SuggestionToOutcome => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may decide on a suggestion");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // You may only attach your own acknowledgement.
         LinkTypes::AboutMeToAcknowledgement => {
             let Some(target) = as_action_hash(&action.target_address) else {
@@ -340,6 +409,39 @@ fn validate_acknowledgement(
     Ok(ValidateCallbackResult::Valid)
 }
 
+fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallbackResult> {
+    // Deliberately no check on who the author is. Any member of the circle may
+    // offer something; the holder decides what goes in.
+    if suggestion.text.trim().is_empty() {
+        return invalid("A suggestion needs something in it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+fn validate_outcome(
+    outcome: &SuggestionOutcome,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid(
+            "Only the person whose circle this is may accept or set aside a suggestion",
+        );
+    }
+
+    // It must actually be a suggestion, so an outcome cannot be used to
+    // silently mark something else as settled.
+    let action = must_get_action(outcome.suggestion.clone())?;
+    let Some(entry_hash) = action.action().entry_hash() else {
+        return invalid("An outcome must refer to a suggestion");
+    };
+    let entry = must_get_entry(entry_hash.clone())?;
+    if Suggestion::try_from(entry.content.clone()).is_err() {
+        return invalid("An outcome must refer to a suggestion");
+    }
+
+    Ok(ValidateCallbackResult::Valid)
+}
+
 #[hdk_extern]
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match op.flattened::<EntryTypes, LinkTypes>()? {
@@ -352,6 +454,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, action.author()),
             EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, action.author()),
+            EntryTypes::Suggestion(s) => validate_suggestion(&s),
+            EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -366,6 +470,17 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             }
             EntryTypes::Acknowledgement(_) => {
                 invalid("Acknowledgements cannot be updated; write a new one")
+            }
+            // A member may correct their own suggestion before it is decided.
+            EntryTypes::Suggestion(s) => {
+                let original = must_get_action(action.original_action_address.clone())?;
+                if original.action().author() != action.author() {
+                    return invalid("Only the person who offered a suggestion may change it");
+                }
+                validate_suggestion(&s)
+            }
+            EntryTypes::SuggestionOutcome(_) => {
+                invalid("A decision cannot be edited; make a new one")
             }
         },
 

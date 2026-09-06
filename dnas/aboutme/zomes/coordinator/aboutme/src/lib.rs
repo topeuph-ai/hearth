@@ -321,6 +321,12 @@ pub enum Signal {
         /// Claimed, never verified. See the note on `Acknowledgement`.
         role: String,
     },
+    /// Somebody offered something for the record.
+    Suggested {
+        suggestion: ActionHash,
+        by: AgentPubKey,
+        text: String,
+    },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -349,4 +355,138 @@ pub fn init() -> ExternResult<InitCallbackResult> {
 #[hdk_extern]
 pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
     emit_signal(signal)
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions: everyone contributes, one voice remains
+// ---------------------------------------------------------------------------
+//
+// A son remembers what his mother enjoyed. A support worker notices what
+// settles her. A record only one person may write loses all of it — so anyone
+// in the circle may offer something, and only the holder decides what goes in.
+
+const SUGGESTION_ANCHOR: &str = "suggestions";
+
+fn suggestion_path() -> ExternResult<TypedPath> {
+    Path::from(SUGGESTION_ANCHOR).typed(LinkTypes::CircleToSuggestion)
+}
+
+#[hdk_extern]
+pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Suggestion(suggestion.clone()))?;
+
+    let path = suggestion_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToSuggestion,
+        (),
+    )?;
+
+    // Nudge the holder, the same way an acknowledgement does. Fire and forget:
+    // the suggestion is safely written either way.
+    if let Membrane::Founder(founder) = membrane()? {
+        let me = agent_info()?.agent_initial_pubkey;
+        if founder != me {
+            let _ = send_remote_signal(
+                Signal::Suggested {
+                    suggestion: action_hash.clone(),
+                    by: me,
+                    text: suggestion.text,
+                },
+                vec![founder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the suggestion just written"))
+}
+
+/// A suggestion and what became of it, if anything.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SuggestionWithOutcome {
+    pub suggestion: Record,
+    /// None means the holder has not looked at it yet.
+    pub outcome: Option<Record>,
+}
+
+#[hdk_extern]
+pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
+    let path = suggestion_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToSuggestion)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut out = Vec::new();
+    for link in links {
+        let Some(hash) = link.target.into_action_hash() else {
+            continue;
+        };
+        let Some(suggestion) = get(hash.clone(), GetOptions::default())? else {
+            continue;
+        };
+
+        let decisions = get_links(
+            LinkQuery::try_new(hash, LinkTypes::SuggestionToOutcome)?,
+            GetStrategy::Network,
+        )?;
+        let outcome = match decisions
+            .first()
+            .and_then(|l| l.target.clone().into_action_hash())
+        {
+            Some(h) => get(h, GetOptions::default())?,
+            None => None,
+        };
+
+        out.push(SuggestionWithOutcome {
+            suggestion,
+            outcome,
+        });
+    }
+    Ok(out)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DecideInput {
+    pub suggestion: ActionHash,
+    pub accepted: bool,
+}
+
+/// Record what the holder decided.
+///
+/// Setting something aside is kept, not deleted. Somebody took the trouble to
+/// notice a thing about a person; that should not vanish silently.
+#[hdk_extern]
+pub fn decide_on_suggestion(input: DecideInput) -> ExternResult<Record> {
+    let outcome = SuggestionOutcome {
+        suggestion: input.suggestion.clone(),
+        accepted: input.accepted,
+    };
+    let action_hash = create_entry(EntryTypes::SuggestionOutcome(outcome))?;
+
+    create_link(
+        input.suggestion,
+        action_hash.clone(),
+        LinkTypes::SuggestionToOutcome,
+        (),
+    )?;
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the decision just written"))
+}
+
+/// Correct your own suggestion before it has been decided.
+///
+/// Validation permits this only to whoever offered it, so nobody can put words
+/// in another member's mouth.
+#[hdk_extern]
+pub fn update_suggestion(input: (ActionHash, Suggestion)) -> ExternResult<Record> {
+    let (previous, suggestion) = input;
+    let updated = update_entry(previous, &suggestion)?;
+
+    get(updated, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the corrected suggestion"))
 }

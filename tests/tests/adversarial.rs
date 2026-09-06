@@ -670,3 +670,131 @@ async fn the_holder_is_told_when_someone_reads_the_record() {
         other => panic!("expected an app signal, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Suggestions: everyone contributes, one voice remains
+// ---------------------------------------------------------------------------
+
+fn a_suggestion() -> aboutme_integrity::Suggestion {
+    aboutme_integrity::Suggestion {
+        field: aboutme_integrity::AboutMeField::WhatMattersToMe,
+        text: "Her allotment. She talked about it all summer.".to_string(),
+        because: "I am her son.".to_string(),
+    }
+}
+
+/// The whole point. A member who may not write the record may still offer
+/// something for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_can_offer_a_suggestion() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let record: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    assert!(record.action().entry_hash().is_some());
+}
+
+/// And the holder sees it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_sees_what_was_offered() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let _: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let offered: Vec<aboutme::SuggestionWithOutcome> = conductor
+        .call(&zome(&alice_cell), "get_suggestions", ())
+        .await;
+
+    assert_eq!(offered.len(), 1, "the holder should see the suggestion");
+    assert!(
+        offered[0].outcome.is_none(),
+        "an undecided suggestion has no outcome yet"
+    );
+}
+
+/// A suggestion is an offer, not an edit. Only the holder decides.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_decide_on_a_suggestion() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "decide_on_suggestion",
+            aboutme::DecideInput {
+                suggestion: offered.action_address().clone(),
+                accepted: true,
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "offering something must not be the same as putting it in the record"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_decide_and_the_decision_is_kept() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_on_suggestion",
+            aboutme::DecideInput {
+                suggestion: offered.action_address().clone(),
+                // Set aside rather than accepted, because that is the case
+                // that must not disappear.
+                accepted: false,
+            },
+        )
+        .await;
+
+    let after: Vec<aboutme::SuggestionWithOutcome> = conductor
+        .call(&zome(&alice_cell), "get_suggestions", ())
+        .await;
+
+    assert_eq!(after.len(), 1, "a suggestion set aside is still there");
+    assert!(
+        after[0].outcome.is_some(),
+        "and what became of it is recorded, not silently dropped"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_change_somebody_elses_suggestion() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let mut altered = a_suggestion();
+    altered.text = "Something Bob never said.".to_string();
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "update_suggestion",
+            (offered.action_address().clone(), altered),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "nobody may put words in another member's mouth"
+    );
+}
