@@ -390,6 +390,26 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
     })
 }
 
+/// Take a circle off this device.
+///
+/// Deliberately `disable_clone_cell` and not `delete_clone_cell`. Disabling
+/// stops the cell running and takes it out of the app's list, which is the
+/// whole of what somebody means by "get this off my screen". Deleting would
+/// also throw away the local copy for good, and this is not the place to make
+/// that decision on their behalf.
+///
+/// What this does NOT do, and what the interface must not imply it does:
+/// nobody else's device is touched, nothing anyone has already read is taken
+/// back, and the circle carries on existing for every other member. There is
+/// no operator here to reach across and remove anything. Leaving is the only
+/// honest verb.
+#[hdk_extern]
+pub fn leave_circle(dna_hash: DnaHash) -> ExternResult<()> {
+    disable_clone_cell(DisableCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Signals: telling someone their record was read, without polling or a server
 // ---------------------------------------------------------------------------

@@ -93,6 +93,28 @@ function announce(message) {
   $("announcer").textContent = message;
 }
 
+/**
+ * Hold a button while its work is happening, and say what is happening on it.
+ *
+ * Making a circle builds a whole new encrypted space, which takes a moment.
+ * Without this the button looks broken: nothing changes, so the obvious thing
+ * to do is press it again — and every press made another circle. Three circles
+ * called "Mam", none of them removable. The press was not the mistake; a
+ * button that stays silent while it works is.
+ */
+async function whileWorking(button, working, task) {
+  const wasLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = working;
+  announce(working);
+  try {
+    return await task();
+  } finally {
+    button.disabled = false;
+    button.textContent = wasLabel;
+  }
+}
+
 /** The screen to return to when something goes wrong. Never "problem". */
 let lastGoodScreen = "choose";
 
@@ -337,11 +359,16 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     const fullName = $("person-name").value.trim();
     const label = $("circle-name").value.trim() || fullName;
 
-    const cell = await call("create_circle", {
-      founder: asText(me),
-      name: label,
-      network_seed: crypto.randomUUID(),
-    });
+    const cell = await whileWorking(
+      $("create-circle-submit"),
+      "Making the circle…",
+      () =>
+        call("create_circle", {
+          founder: asText(me),
+          name: label,
+          network_seed: crypto.randomUUID(),
+        }),
+    );
     circle = { cellId: cell.cell_id };
     holder = asText(me);
     markAsOwnRecord(circle.cellId, $("about-me").checked);
@@ -765,12 +792,17 @@ $("join-form").addEventListener("submit", async (event) => {
     const bundle = tokenToInvitation(pasted);
     const label = $("join-label").value.trim() || bundle.about || "Circle";
 
-    const cell = await call("join_circle", {
-      founder: bundle.founder,
-      name: label,
-      network_seed: bundle.network_seed,
-      invitation: bundle.invitation,
-    });
+    const cell = await whileWorking(
+      $("join-circle-submit"),
+      "Joining…",
+      () =>
+        call("join_circle", {
+          founder: bundle.founder,
+          name: label,
+          network_seed: bundle.network_seed,
+          invitation: bundle.invitation,
+        }),
+    );
 
     circle = { cellId: cell.cell_id };
     holder = bundle.founder; // already text, out of the invitation
@@ -849,6 +881,9 @@ async function loadCircles() {
   circles = cells
     .map((c) => c?.value ?? c?.cloned ?? c)
     .filter((c) => c?.clone_id || c?.original_dna_hash)
+    // A circle taken off this device is disabled, not deleted, so the
+    // conductor still lists it. It should not be on her screen.
+    .filter((c) => c.enabled !== false)
     .map((c) => ({ cellId: c.cell_id, name: c.name || "Circle" }));
 
   if (circles.length === 0) {
@@ -894,6 +929,30 @@ async function openCircle(item) {
   show("circle");
   await loadCircle();
 }
+
+$("leave-circle").addEventListener("click", async () => {
+  try {
+    const leaving = $("circle-heading").textContent;
+
+    await whileWorking($("leave-circle"), "Taking it off…", () =>
+      // Sent to the lobby cell, not to the circle: a cell cannot be the one to
+      // switch itself off.
+      call("leave_circle", circle.cellId[0]),
+    );
+
+    circle = null;
+    holder = null;
+    $("leave-details").open = false;
+
+    // Straight back to the list, which is where she was heading. If that was
+    // the last one, loadCircles puts her at the first question again rather
+    // than an empty page with nothing on it.
+    await loadCircles();
+    announce(`${leaving} is off this device.`);
+  } catch (error) {
+    problem(error);
+  }
+});
 
 $("back-to-circles").addEventListener("click", () => {
   renderCircles();

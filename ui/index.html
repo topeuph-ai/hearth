@@ -138,7 +138,7 @@
               aria-describedby="circle-name-hint"
             />
           </div>
-          <button type="submit">Create the circle</button>
+          <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
       </section>
 
@@ -202,7 +202,7 @@
               aria-describedby="join-label-hint"
             />
           </div>
-          <button type="submit">Join their circle</button>
+          <button type="submit" id="join-circle-submit">Join their circle</button>
         </form>
       </section>
 
@@ -476,6 +476,42 @@
             </button>
           </div>
         </section>
+
+        <!--
+          Folded away on purpose, and this is not the same call as the name
+          field above. A name is something you edit most times you come back
+          here; this is something you do once, if ever, and it should not sit
+          at thumb height next to the buttons somebody presses every visit.
+
+          The wording is the careful part. There is no operator here, so there
+          is nothing that could reach across and remove this from anybody
+          else. Saying "delete" or "remove" would be the interface claiming a
+          power that does not exist anywhere in the system. You leave; the
+          circle carries on without you.
+        -->
+        <details id="leave-details">
+          <summary>Take this off my device</summary>
+          <p>
+            This takes the circle off your list, here, on this device. It does
+            not reach anybody else: everyone still in it keeps their copy, and
+            anything they have already read stays read.
+          </p>
+          <!--
+            Not "nobody else has joined yet". The app knows who has introduced
+            themselves, which is not the same as who is in the circle, and
+            stating the one as though it were the other is exactly the kind of
+            claim this code has no business making. So: an if, not a fact.
+          -->
+          <p>
+            There is no server keeping a spare. If nobody else has a copy, this
+            is the only one.
+          </p>
+          <div class="actions">
+            <button type="button" id="leave-circle" class="secondary">
+              Take <span class="about-whom">them</span> off my device
+            </button>
+          </div>
+        </details>
       </section>
 
       <!--

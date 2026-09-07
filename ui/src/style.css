@@ -282,6 +282,23 @@ select {
   padding: 0.5rem 0;
 }
 
+/*
+ * Set well below everything else and in the quiet weight. This is a once-ever
+ * action sharing a screen with ones somebody uses every visit, and the layout
+ * should say so before the words do.
+ */
+#leave-details {
+  margin-top: 3rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+#leave-details summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+  color: var(--muted);
+}
+
 .steps {
   padding-left: 1.4rem;
   margin: 1rem 0 1.5rem;
