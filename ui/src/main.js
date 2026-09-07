@@ -351,15 +351,31 @@ function renderRecord(current) {
   list.replaceChildren();
   for (const [key, label] of FIELDS) {
     if (!entry[key]?.trim()) continue;
+
     const dt = document.createElement("dt");
     dt.textContent = label;
     // So a suggestion can find the words it is about, and sit next to them
     // rather than in a pile at the bottom of the page.
     dt.dataset.field = key;
+
     const dd = document.createElement("dd");
     dd.textContent = entry[key];
     dd.dataset.fieldValue = key;
-    list.append(dt, dd);
+
+    /*
+     * Each question kept with its own answer.
+     *
+     * A run of headings and paragraphs down a page reads as one long thing,
+     * and these are four separate answers about a person. A dl may hold a div
+     * around each term-and-definition group, so the grouping is in the markup
+     * rather than drawn on top of it — which also means a suggestion opened
+     * against a field lands inside that field's box instead of floating below
+     * the lot.
+     */
+    const group = document.createElement("div");
+    group.className = "record-field";
+    group.append(dt, dd);
+    list.append(group);
   }
 
   // Two people editing while apart both produce valid versions. Say so rather

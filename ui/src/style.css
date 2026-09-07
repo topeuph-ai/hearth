@@ -220,6 +220,26 @@ dd {
   white-space: pre-wrap;
 }
 
+/*
+ * One question and its answer, kept together and set apart from the next.
+ *
+ * Four answers about a person run down the page as one wall of text
+ * otherwise. Quiet lines rather than heavy cards: this is somebody's record,
+ * not a dashboard, and the boxes are here to help the eye find where one
+ * answer ends, not to draw attention to themselves.
+ */
+.record-field {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin: 0.75rem 0;
+}
+
+/* The margin is on the box now, so the heading does not need one. */
+.record-field dt {
+  margin-top: 0;
+}
+
 ul {
   padding-left: 1.2rem;
 }
