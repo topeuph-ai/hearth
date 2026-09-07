@@ -408,12 +408,14 @@ function fillForm() {
 $("create-circle-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    // Two different names, and conflating them is a real mistake. The full
-    // name is what a nurse or social worker reads and goes in the record.
-    // "Mum" is a private label on this device — the clone's name is set by
-    // each member for themselves, so it never travels.
+    // Two names on this page, and they are two different people: the one the
+    // circle is about, and the one filling it in. Conflating them is a real
+    // mistake, so they are asked separately and kept separately.
     const fullName = $("person-name").value.trim();
-    const label = $("circle-name").value.trim() || fullName;
+    const label = fullName;
+    const myOwn = $("about-me").checked;
+    // Nobody introduces themselves to their own record.
+    const carerName = myOwn ? "" : $("carer-name").value.trim();
 
     const cell = await whileWorking(
       $("create-circle-submit"),
@@ -427,7 +429,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     );
     circle = { cellId: cell.cell_id };
     holder = asText(me);
-    markAsOwnRecord(circle.cellId, $("about-me").checked);
+    markAsOwnRecord(circle.cellId, myOwn);
     $("circle-heading").textContent = label;
 
     // Start the record with their name in it, so it is never nameless.
@@ -442,6 +444,17 @@ $("create-circle-form").addEventListener("submit", async (event) => {
       },
       circle.cellId,
     );
+
+    // She has just told us who she is, so do not ask again inside the circle.
+    // Nothing here is checked; it is how she describes herself, and how she
+    // relates to the person is a separate question asked later.
+    if (carerName) {
+      await call(
+        "introduce_myself",
+        { name: carerName, relationship: "" },
+        circle.cellId,
+      );
+    }
 
     circles.push({ cellId: circle.cellId, name: label });
     $("back-to-circles").hidden = circles.length < 2;
@@ -1044,16 +1057,6 @@ $("go-back").addEventListener("click", () => {
   show(lastGoodScreen);
 });
 
-/*
- * "What you call them" is ambiguous the moment there are two people in the
- * sentence — the person the circle is about, and whoever holds it. On the
- * create form we know the name as it is typed, so use it.
- */
-$("person-name").addEventListener("input", () => {
-  const name = $("person-name").value.trim();
-  $("call-them-whom").textContent = name || "them";
-});
-
 // ---------------------------------------------------------------------------
 // Choosing what to do
 // ---------------------------------------------------------------------------
@@ -1102,8 +1105,8 @@ function updateWhoseCircle() {
   $("person-name-hint").textContent = mine
     ? "As a nurse or social worker would need to see it."
     : "As a nurse or social worker would need to see it. Everyone in the circle reads this one.";
-  // You do not have a nickname for yourself.
-  $("private-label-field").hidden = mine;
+  // Your own record has one person in it, and you have already named them.
+  $("carer-name-field").hidden = mine;
 }
 
 for (const id of ["about-me", "about-someone-else"]) {

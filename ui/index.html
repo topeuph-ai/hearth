@@ -122,20 +122,27 @@
               aria-describedby="person-name-hint"
             />
           </div>
-          <div class="field" id="private-label-field">
-            <label for="circle-name">
-              What you call <span id="call-them-whom">them</span>
-            </label>
-            <p id="circle-name-hint" class="hint">
-              Only on your own device — “Mum”, “Dad”. Leave it blank to use
-              their full name. Nobody else sees this.
+          <!--
+            Two people are named on this page and they are not the same
+            person: the one the circle is about, and the one typing. Asked in
+            that order, because the circle is about her, not about whoever set
+            it up.
+
+            Hidden when this is somebody's own record, where the two people
+            are one and the question has already been answered above.
+          -->
+          <div class="field" id="carer-name-field">
+            <label for="carer-name">Your name</label>
+            <p id="carer-name-hint" class="hint">
+              So the circle knows who wrote this. Nobody checks it — it is how
+              you describe yourself, not a credential.
             </p>
             <input
-              id="circle-name"
-              name="circle-name"
+              id="carer-name"
+              name="carer-name"
               type="text"
-              autocomplete="off"
-              aria-describedby="circle-name-hint"
+              autocomplete="name"
+              aria-describedby="carer-name-hint"
             />
           </div>
           <button type="submit" id="create-circle-submit">Create the circle</button>
