@@ -150,15 +150,40 @@ out loud when somebody asks whether it would scale.
 Nothing in the script stops a larger number. Past six it prints a note and
 carries on.
 
-### One machine only, and why
+### One machine by default — and the cross-machine question
 
 Every agent in this demo shares **one bootstrap server and one relay running on
-`127.0.0.1`**. Two laptops each running `npm run demo` would each start their
-own, and would never find each other — not because peer-to-peer does not work
-across machines, but because they would be looking in two different places for
-who else exists.
+`127.0.0.1`**. Two laptops each running `npm run demo` each start their own,
+so they never find each other — not because peer-to-peer fails across machines,
+but because they are asking two different servers who exists.
 
-**Crossing machines is the desktop build's job.** Kangaroo ships pointing at
+**A bootstrap server is a place to leave your address, not a place your data
+goes through.** It never sees a record. If it goes down, peers that have
+already found each other carry on. This matters for the argument: needing a
+rendezvous is not the same as needing an operator, and it is not the thing this
+project says nobody will hold.
+
+**Running your own is one command**, using the binary already in `./bin`:
+
+```bash
+./bin/kitsune2-bootstrap-srv --listen 0.0.0.0:8888   # verified: it binds and serves
+```
+
+**`hc-spin` advertises `--bootstrap-url` and `--relay-url`**, which is the
+obvious route to pointing several machines at one rendezvous.
+
+> ⚠️ **Unfinished, 2026-09-07.** Wiring those flags through `npm run demo` was
+> tried and **did not work** — hc-spin exits immediately, with no error, as soon
+> as either flag is passed, whereas the identical command without them starts
+> normally. The bootstrap server itself was verified listening on
+> `0.0.0.0:8888`; what failed is hc-spin accepting the flag. Not yet
+> established: whether `hc-spin@0.700.0` really supports these options (the
+> `--help` output was read via `npx`, which may have fetched a newer version
+> than the one installed), or whether it is a Windows argument-passing problem.
+> **Check the installed version's own help before assuming the flags exist.**
+> Until this is settled, do not claim the demo runs across machines.
+
+**The desktop build is the other route.** Kangaroo ships pointing at
 Holochain's dev-test bootstrap and relay servers, which are public — see the
 warnings in *Packaging the desktop app* below, because those servers carry no
 availability guarantee and **changing the URLs after deployment partitions the
