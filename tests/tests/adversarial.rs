@@ -774,6 +774,7 @@ async fn a_circle_with_no_founder_admits_nobody() {
         &dna_path(),
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: None,
+            seconder: None,
             lobby: false,
         }),
     )
@@ -798,6 +799,7 @@ async fn a_circle_with_a_malformed_founder_admits_nobody() {
         &dna_path(),
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: Some("not-an-agent-key".to_string()),
+            seconder: None,
             lobby: false,
         }),
     )
@@ -852,6 +854,7 @@ async fn two_holders_circles_are_different_networks() {
                 founder: alice_cell.agent_pubkey().to_string(),
                 name: "Alice".to_string(),
                 network_seed: "shared-seed".to_string(),
+                seconder: None,
             },
         )
         .await;
@@ -865,6 +868,7 @@ async fn two_holders_circles_are_different_networks() {
                 founder: bob_cell.agent_pubkey().to_string(),
                 name: "Bob".to_string(),
                 network_seed: "shared-seed".to_string(),
+                seconder: None,
             },
         )
         .await;
@@ -904,6 +908,7 @@ async fn nobody_can_create_a_circle_in_another_persons_name() {
                 founder: someone_else.to_string(),
                 name: "Not mine to make".to_string(),
                 network_seed: "seed".to_string(),
+                seconder: None,
             },
         )
         .await;
@@ -930,6 +935,7 @@ async fn one_person_can_have_separate_circles() {
                     founder: alice.to_string(),
                     name: seed.to_string(),
                     network_seed: seed.to_string(),
+                    seconder: None,
                 },
             )
             .await;
@@ -1008,6 +1014,7 @@ async fn a_circle_can_be_cloned_from_the_lobby() {
                 founder: alice.to_string(),
                 name: "Alice".to_string(),
                 network_seed: "seed".to_string(),
+                seconder: None,
             },
         )
         .await;
