@@ -260,6 +260,7 @@ async function loadCircle() {
    * empty box and a "Check again" button that never turned itself off.
    */
   const amHolder = isHolder();
+  $("check-it-over").hidden = true;
 
   const originals = await call("get_circle_about_me", null, circle.cellId);
   const original = originals[0] ?? null;
@@ -283,7 +284,9 @@ async function loadCircle() {
   $("acknowledge").hidden = amHolder || !haveIt;
   // Only offer this while there is actually something to wait for.
   $("check-again").hidden = amHolder || haveIt;
-  $("invite-section").hidden = !amHolder;
+  // Nothing to invite anybody to until the record exists. An empty circle is
+  // a confusing thing to be invited into.
+  $("invite-section").hidden = !amHolder || !haveIt;
 
   renderReaders(
     haveIt
@@ -416,8 +419,16 @@ $("record-form").addEventListener("submit", async (event) => {
     }
 
     $("record-form").hidden = true;
-    announce("Saved.");
     await loadCircle();
+
+    // The holder has just written it, so show it back to them to check before
+    // anybody else is asked to rely on it.
+    if (isHolder()) {
+      $("check-it-over").hidden = false;
+      announce("Saved. Read it over, then invite people.");
+    } else {
+      announce("Saved.");
+    }
   } catch (error) {
     problem(error);
   }
