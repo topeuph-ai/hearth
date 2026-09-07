@@ -726,6 +726,41 @@ function withTimeout(promise, seconds, what) {
   ]);
 }
 
+/*
+ * Look again, quietly, at the circle that is open.
+ *
+ * The signal that says somebody has joined is sent the moment they join,
+ * which is the moment the two machines have only just found each other — so
+ * it is the message most likely to be lost. Rather than make the arrival
+ * depend on it, the open circle re-reads its own list every so often.
+ *
+ * Gossip is already running underneath this whether we look or not. Nothing
+ * here syncs anything; it decides when the screen looks again. So there is no
+ * spinner, no "last checked", and nothing that implies anybody has fallen
+ * behind — and in particular nothing that says "up to date", which is the one
+ * thing this cannot know. With no operator there is nobody to ask; finding
+ * nothing and reaching nobody look identical from here.
+ *
+ * Only the circle actually on screen, and only while the window is being
+ * looked at. Never all of them at once: a district nurse reading without
+ * storing is an authority for nothing, so for her every one of these is a
+ * real call over the network, and thirty of them on a timer is a different
+ * proposition entirely.
+ */
+const LOOK_AGAIN_EVERY = 20000;
+
+function watchForArrivals() {
+  setInterval(async () => {
+    if (!circle || document.hidden) return;
+    try {
+      await loadMembers();
+    } catch {
+      // Not being able to reach anybody is not an error worth a screen. It is
+      // Tuesday, and somebody's laptop is shut.
+    }
+  }, LOOK_AGAIN_EVERY);
+}
+
 async function start() {
   client = await withTimeout(AppWebsocket.connect(), 20, "Connecting");
 
@@ -734,6 +769,7 @@ async function start() {
   $("my-identifier").textContent = asText(me);
 
   await loadCircles();
+  watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
   client.on("signal", async (signal) => {
