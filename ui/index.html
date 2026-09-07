@@ -145,6 +145,52 @@
               aria-describedby="carer-name-hint"
             />
           </div>
+
+          <!--
+            Directly under your name, because it finishes the sentence your
+            name started. Asked here it is one thought; asked three screens
+            later it is an interrogation.
+          -->
+          <div class="field" id="carer-relationship-field">
+            <label for="carer-relationship">
+              How are you connected to
+              <span id="create-relationship-whom">them</span>?
+            </label>
+            <p id="carer-relationship-hint" class="hint">
+              In your own words. “Her son”, “district nurse”, “support worker,
+              Tuesdays”.
+            </p>
+            <input
+              id="carer-relationship"
+              name="carer-relationship"
+              type="text"
+              autocomplete="off"
+              aria-describedby="carer-relationship-hint"
+            />
+          </div>
+
+          <!--
+            Last, because it is the only question here nobody else ever sees.
+            "What you call them" is ambiguous the moment two people are named
+            on a page, so the person is named in the question rather than
+            pointed at.
+          -->
+          <div class="field" id="private-label-field">
+            <label for="circle-name">
+              What do you call <span id="call-them-whom">them</span>?
+            </label>
+            <p id="circle-name-hint" class="hint">
+              Only on your own device — “Mum”, “Dad”. Leave it blank to use
+              their full name. Nobody else sees this.
+            </p>
+            <input
+              id="circle-name"
+              name="circle-name"
+              type="text"
+              autocomplete="off"
+              aria-describedby="circle-name-hint"
+            />
+          </div>
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
       </section>

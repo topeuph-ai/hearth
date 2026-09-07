@@ -412,10 +412,13 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     // circle is about, and the one filling it in. Conflating them is a real
     // mistake, so they are asked separately and kept separately.
     const fullName = $("person-name").value.trim();
-    const label = fullName;
     const myOwn = $("about-me").checked;
+    // What this device lists her under. Hers alone: the clone's name is set by
+    // each member for themselves, so it never travels.
+    const label = (myOwn ? "" : $("circle-name").value.trim()) || fullName;
     // Nobody introduces themselves to their own record.
     const carerName = myOwn ? "" : $("carer-name").value.trim();
+    const carerRelationship = myOwn ? "" : $("carer-relationship").value.trim();
 
     const cell = await whileWorking(
       $("create-circle-submit"),
@@ -451,7 +454,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     if (carerName) {
       await call(
         "introduce_myself",
-        { name: carerName, relationship: "" },
+        { name: carerName, relationship: carerRelationship },
         circle.cellId,
       );
     }
@@ -811,7 +814,17 @@ async function loadMembers() {
   }
 
   const mine = members.get(asText(me));
-  $("introduce-section").hidden = false;
+
+  /*
+   * Only for somebody who has not said yet.
+   *
+   * Whoever made the circle answered both of these on the way in — her name,
+   * and how she is connected to the person — so putting them up again inside
+   * the circle asks a person to introduce herself to a record she has just
+   * written. Somebody who joined by invitation has not been asked, and this
+   * is where they are.
+   */
+  $("introduce-section").hidden = Boolean(mine);
   $("relationship-field").hidden = isOwnRecord(circle.cellId);
   if (mine) {
     $("member-name").value = mine.name;
@@ -1051,6 +1064,18 @@ wireCopyButton(
   "Invitation copied",
 );
 
+/*
+ * Two questions on the create form name her, and she is being typed in right
+ * above them. "How are you connected to them?" and "What do you call them?"
+ * are both ambiguous while two people are being named on one page, so neither
+ * is allowed to say "them" once there is a name to use.
+ */
+$("person-name").addEventListener("input", () => {
+  const who = $("person-name").value.trim() || "them";
+  $("create-relationship-whom").textContent = who;
+  $("call-them-whom").textContent = who;
+});
+
 $("go-back").addEventListener("click", () => {
   // Back to where they were, with whatever they typed still in the fields.
   // A mistyped character should cost a correction, not a restart.
@@ -1106,7 +1131,15 @@ function updateWhoseCircle() {
     ? "As a nurse or social worker would need to see it."
     : "As a nurse or social worker would need to see it. Everyone in the circle reads this one.";
   // Your own record has one person in it, and you have already named them.
-  $("carer-name-field").hidden = mine;
+  // There is nobody to be connected to, and nobody calls themselves a
+  // nickname on their own device.
+  for (const id of [
+    "carer-name-field",
+    "carer-relationship-field",
+    "private-label-field",
+  ]) {
+    $(id).hidden = mine;
+  }
 }
 
 for (const id of ["about-me", "about-someone-else"]) {
