@@ -202,9 +202,25 @@ function isOwnRecord(cellId) {
   }
 }
 
+/**
+ * Is there anything here a person would call written?
+ *
+ * Making a circle seeds a record with her name in it and four empty fields,
+ * so a record exists from the first moment — which is not the same as
+ * something having been written. Reading these apart matters: the screen used
+ * to say "Read this over" above a page with nothing on it but a name.
+ */
+const hasBeenWritten = (entry) =>
+  Boolean(entry) && FIELDS.some(([key]) => entry[key]?.trim());
+
 function renderRecord(current) {
   const entry = current?.record?.entry?.Present?.entry;
-  if (!entry) {
+
+  // Her name is hers whether or not anything has been written yet, and every
+  // question on this screen is phrased around it.
+  if (entry?.display_name) nameHer(entry.display_name);
+
+  if (!hasBeenWritten(entry)) {
     $("no-record").hidden = false;
     $("record").hidden = true;
     return;
@@ -213,7 +229,6 @@ function renderRecord(current) {
   $("no-record").hidden = true;
   $("record").hidden = false;
   $("record-name").textContent = entry.display_name;
-  nameHer(entry.display_name);
 
   const list = $("record-fields");
   list.replaceChildren();
@@ -228,11 +243,15 @@ function renderRecord(current) {
 
   // Two people editing while apart both produce valid versions. Say so rather
   // than quietly picking a winner and pretending there was never a question.
+  //
+  // Only for a real fork. Editing your own record twice is not two people
+  // disagreeing, and saying it was is worse than saying nothing: it invites
+  // somebody to go looking for a conflict that never happened.
   const note = $("version-note");
-  if (current.version_count > 1) {
+  if (current.divergent_versions > 1) {
     note.hidden = false;
     note.textContent =
-      `This was changed in ${current.version_count} places while devices ` +
+      `This was written in ${current.divergent_versions} places while devices ` +
       `were apart. You are seeing the most recent.`;
   } else {
     note.hidden = true;
@@ -294,24 +313,37 @@ async function loadCircle() {
   const entry = current?.record?.entry?.Present?.entry;
   const haveIt = Boolean(entry);
 
+  /*
+   * "A record exists" and "somebody has written something" are different
+   * facts, and treating them as one produced a screen that said "Read this
+   * over" above a page containing nothing but a name. Making the circle seeds
+   * the record so it is never nameless, which means a record exists from the
+   * first second — before anybody has typed a word into it.
+   *
+   * So: `haveIt` decides whether there is an entry to update, which is a
+   * question about the chain. `written` decides what the screen says, which
+   * is a question about the person.
+   */
+  const written = hasBeenWritten(entry);
+
   record = haveIt ? { original, current } : null;
   renderRecord(haveIt ? current : null);
 
-  $("no-record-empty").hidden = haveIt || !amHolder;
-  $("no-record-waiting").hidden = haveIt || amHolder;
+  $("no-record-empty").hidden = written || !amHolder;
+  $("no-record-waiting").hidden = written || amHolder;
 
   $("record-actions").hidden = false;
   $("edit-record").hidden = !amHolder;
-  $("edit-record").textContent = haveIt ? "Change this" : "Write it";
-  $("acknowledge").hidden = amHolder || !haveIt;
+  $("edit-record").textContent = written ? "Change this" : "Write it";
+  $("acknowledge").hidden = amHolder || !written;
   // Only offer this while there is actually something to wait for.
-  $("check-again").hidden = amHolder || haveIt;
-  // Nothing to invite anybody to until the record exists. An empty circle is
-  // a confusing thing to be invited into.
-  $("invite-section").hidden = !amHolder || !haveIt;
+  $("check-again").hidden = amHolder || written;
+  // Nothing to invite anybody to until something has been written. A name and
+  // four empty headings is a confusing thing to be invited into.
+  $("invite-section").hidden = !amHolder || !written;
 
   renderReaders(
-    haveIt
+    written
       ? await call(
           "get_acknowledgements",
           current.record.signed_action.hashed.hash,
@@ -448,10 +480,17 @@ $("record-form").addEventListener("submit", async (event) => {
     await loadCircle();
 
     // The holder has just written it, so show it back to them to check before
-    // anybody else is asked to rely on it.
-    if (isHolder()) {
+    // anybody else is asked to rely on it — but only if there is something to
+    // read. Saving a form with every box empty is a real thing to do, usually
+    // by accident, and "Read this over" pointing at a bare name is the screen
+    // telling somebody to check work that does not exist.
+    const somethingToRead = hasBeenWritten(aboutMe);
+
+    if (isHolder() && somethingToRead) {
       $("check-it-over").hidden = false;
       announce("Saved. Read it over, then invite people.");
+    } else if (isHolder()) {
+      announce(`Saved. Nothing has been written about ${aboutMe.display_name.trim() || "them"} yet.`);
     } else {
       announce("Saved.");
     }

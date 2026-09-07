@@ -216,6 +216,100 @@ async fn the_person_can_write_their_own_about_me() {
     assert!(record.action().entry_hash().is_some());
 }
 
+/// Correcting your own record is not a disagreement with yourself.
+///
+/// This shipped, and it was found by looking at the screen rather than by any
+/// test: writing a record and then editing it once announced "This was changed
+/// in 2 places while devices were apart." The count was of every version in
+/// the chain, which is two after any ordinary edit. What matters is how many
+/// loose ends the chain has, and a chain edited in order has exactly one.
+#[tokio::test(flavor = "multi_thread")]
+async fn editing_your_own_record_in_order_is_not_a_disagreement() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let original = created.action_address().clone();
+
+    // Two corrections, one after the other, each on top of the last — which is
+    // what a person sitting at one machine actually does.
+    let mut head = original.clone();
+    for matters in ["Seeing my grandchildren", "Seeing my grandchildren on Sundays"] {
+        let mut edited = an_about_me("Alice Bell");
+        edited.what_matters_to_me = matters.into();
+
+        let updated: Record = conductor
+            .call(
+                &zome(&alice_cell),
+                "update_about_me",
+                aboutme::UpdateAboutMeInput {
+                    original_action_hash: original.clone(),
+                    previous_action_hash: head.clone(),
+                    about_me: edited,
+                },
+            )
+            .await;
+        head = updated.action_address().clone();
+    }
+
+    let current: aboutme::CurrentAboutMe = conductor
+        .call(&zome(&alice_cell), "get_current_about_me", original)
+        .await;
+
+    assert_eq!(
+        current.divergent_versions, 1,
+        "three versions in a row are one account of a person, not three competing ones"
+    );
+}
+
+/// And the case the warning exists for, which must still be caught.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_edits_from_the_same_starting_point_do_disagree() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let original = created.action_address().clone();
+
+    // Both updates name the original as what they replace: neither knew about
+    // the other. This is what two devices apart produce.
+    for matters in ["At home if possible", "With her sister"] {
+        let mut edited = an_about_me("Alice Bell");
+        edited.what_matters_to_me = matters.into();
+
+        let _: Record = conductor
+            .call(
+                &zome(&alice_cell),
+                "update_about_me",
+                aboutme::UpdateAboutMeInput {
+                    original_action_hash: original.clone(),
+                    previous_action_hash: original.clone(),
+                    about_me: edited,
+                },
+            )
+            .await;
+    }
+
+    let current: aboutme::CurrentAboutMe = conductor
+        .call(&zome(&alice_cell), "get_current_about_me", original)
+        .await;
+
+    assert_eq!(
+        current.divergent_versions, 2,
+        "two versions written from the same starting point are a real fork, and          somebody should be told rather than shown one of them silently"
+    );
+}
+
 /// The central red-team finding.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_member_cannot_write_the_persons_about_me() {

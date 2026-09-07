@@ -7,6 +7,7 @@
 
 use aboutme_integrity::*;
 use hdk::prelude::*;
+use std::collections::BTreeSet;
 
 const CIRCLE_ANCHOR: &str = "circle";
 
@@ -197,24 +198,53 @@ pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<V
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurrentAboutMe {
     pub record: Option<Record>,
-    /// How many versions exist in total. More than one means edits were made
-    /// while devices were apart, and the interface should say so rather than
-    /// quietly picking a winner.
-    pub version_count: usize,
+    /// How many versions have nothing written on top of them.
+    ///
+    /// One is the ordinary case however many times the record has been
+    /// edited, because edits made one after another form a chain and only the
+    /// last link of a chain is loose. More than one means the chain forked:
+    /// two people wrote while their devices were apart, and neither knew about
+    /// the other. That, and only that, is worth telling somebody about.
+    ///
+    /// This used to be the total number of versions, which meant writing a
+    /// record and then correcting it — the most ordinary thing anyone does
+    /// here — announced that it "was changed in 2 places while devices were
+    /// apart". It was the software inventing a disagreement between a person
+    /// and herself.
+    pub divergent_versions: usize,
 }
 
 #[hdk_extern]
 pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<CurrentAboutMe> {
     let versions = get_about_me_versions(original_action_hash)?;
-    let version_count = versions.len();
     let newest = versions
         .last()
         .cloned()
         .ok_or_else(|| wasm_error!("An About Me always has at least its original version"))?;
 
+    // Every update names the version it replaced. Collect those names and the
+    // loose ends are whatever is left over — the versions nothing was built
+    // on top of.
+    let mut replaced: BTreeSet<ActionHash> = BTreeSet::new();
+    for hash in &versions {
+        let Some(record) = get(hash.clone(), GetOptions::default())? else {
+            continue;
+        };
+        if let ActionData::Update(update) = &record.action().data {
+            replaced.insert(update.original_action_address.clone());
+        }
+    }
+
+    // A record with no updates at all has one loose end: the original.
+    let divergent_versions = versions
+        .iter()
+        .filter(|hash| !replaced.contains(hash))
+        .count()
+        .max(1);
+
     Ok(CurrentAboutMe {
         record: get(newest, GetOptions::default())?,
-        version_count,
+        divergent_versions,
     })
 }
 
