@@ -220,9 +220,6 @@ async function loadCircle() {
    * State 3 fell between the two branches: a record existed, so the empty
    * branch never ran, but there was nothing to render, so the reader saw an
    * empty box and a "Check again" button that never turned itself off.
-   *
-   * One calculation of what is true, then one place that sets the screen to
-   * match it.
    */
   const amHolder = isHolder();
 
@@ -264,6 +261,529 @@ async function loadCircle() {
   await loadSuggestions();
 }
 
+async function loadSuggestions() {
+  const amHolder = isHolder();
+
+  // The person whose circle it is edits the record directly; everyone else
+  // offers. Both see the list, so a carer can tell that what she noticed was
+  // used.
+  $("suggest-section").hidden = amHolder;
+
+  suggestions = await call("get_suggestions", null, circle.cellId);
+  renderSuggestions();
+}
+
+function fillForm() {
+  const entry = record?.current?.record?.entry?.Present?.entry;
+  $("display-name").value = entry?.display_name ?? "";
+  $("what-matters").value = entry?.what_matters_to_me ?? "";
+  $("how-to-communicate").value = entry?.how_to_communicate_with_me ?? "";
+  $("how-to-support").value = entry?.how_to_support_me ?? "";
+  $("people-who-matter").value = entry?.people_who_matter ?? "";
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+$("create-circle-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    // Two different names, and conflating them is a real mistake. The full
+    // name is what a nurse or social worker reads and goes in the record.
+    // "Mum" is a private label on this device — the clone's name is set by
+    // each member for themselves, so it never travels.
+    const fullName = $("person-name").value.trim();
+    const label = $("circle-name").value.trim() || fullName;
+
+    const cell = await call("create_circle", {
+      founder: asText(me),
+      name: label,
+      network_seed: crypto.randomUUID(),
+    });
+    circle = { cellId: cell.cell_id };
+    holder = asText(me);
+    $("circle-heading").textContent = label;
+
+    // Start the record with their name in it, so it is never nameless.
+    await call(
+      "create_about_me",
+      {
+        display_name: fullName,
+        what_matters_to_me: "",
+        how_to_communicate_with_me: "",
+        how_to_support_me: "",
+        people_who_matter: "",
+      },
+      circle.cellId,
+    );
+
+    circles.push({ cellId: circle.cellId, name: label });
+    $("back-to-circles").hidden = circles.length < 2;
+    show("circle");
+    announce(`Circle made for ${fullName}.`);
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+$("edit-record").addEventListener("click", () => {
+  fillForm();
+  $("record-form").hidden = false;
+  $("record-actions").hidden = true;
+  $("cancel-edit").hidden = !record;
+  $("display-name").focus();
+});
+
+$("cancel-edit").addEventListener("click", () => {
+  $("record-form").hidden = true;
+  $("record-actions").hidden = false;
+  $("edit-record").focus();
+});
+
+$("record-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const aboutMe = {
+      display_name: $("display-name").value.trim(),
+      what_matters_to_me: $("what-matters").value,
+      how_to_communicate_with_me: $("how-to-communicate").value,
+      how_to_support_me: $("how-to-support").value,
+      people_who_matter: $("people-who-matter").value,
+    };
+
+    if (record) {
+      const head = record.current.record.signed_action.hashed.hash;
+      await call(
+        "update_about_me",
+        {
+          original_action_hash: record.original,
+          previous_action_hash: head,
+          about_me: aboutMe,
+        },
+        circle.cellId,
+      );
+    } else {
+      await call("create_about_me", aboutMe, circle.cellId);
+    }
+
+    $("record-form").hidden = true;
+    announce("Saved.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+$("acknowledge").addEventListener("click", async () => {
+  try {
+    const role = window.prompt("What should they know you are?", "") ?? "";
+    await call(
+      "acknowledge",
+      {
+        about_me: record.current.record.signed_action.hashed.hash,
+        role: role.trim(),
+      },
+      circle.cellId,
+    );
+    announce("Marked as read.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+$("invite-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const invitee = $("invitee").value.trim();
+
+    if (looksLikeAnInvitation(invitee)) {
+      throw new Error(
+        "That is an invitation, not an identifier. This box wants the long " +
+          "line beginning uhCAk that they copied from their own Hearth.",
+      );
+    }
+    if (!looksLikeAnIdentifier(invitee)) {
+      throw new Error(
+        "That does not look like an identifier. It is one long line beginning " +
+          "uhCAk, which they copy from “Your identifier” at the top of their " +
+          "own Hearth. It is not their name.",
+      );
+    }
+
+    const invitation = await call("invite", invitee, circle.cellId);
+    const output = $("invitation-output");
+    output.hidden = false;
+    output.textContent = invitationToToken(invitation);
+    $("copy-invitation").hidden = false;
+    $("invitee").value = "";
+    announce("Invitation ready. Send it to them however you like.");
+  } catch (error) {
+    problem(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+
+/*
+ * A connection that hangs is worse than one that fails.
+ *
+ * Waiting forever leaves "Starting up." on screen with no error and no way to
+ * tell whether anything is wrong. Give it a deadline, and say so when it
+ * passes.
+ */
+function withTimeout(promise, seconds, what) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `${what} took longer than ${seconds} seconds. Hearth could not ` +
+                `reach its own conductor. Closing and reopening usually helps.`,
+            ),
+          ),
+        seconds * 1000,
+      ),
+    ),
+  ]);
+}
+
+async function start() {
+  client = await withTimeout(AppWebsocket.connect(), 20, "Connecting");
+
+  const info = await client.appInfo();
+  me = info.agent_pub_key;
+  $("my-identifier").textContent = asText(me);
+
+  await loadCircles();
+
+  // Someone read the record. Told to us by their device, not by a server.
+  client.on("signal", async (signal) => {
+    const payload = signal?.payload ?? signal;
+    if (payload?.kind === "Acknowledged") {
+      announce(`Someone read this. They said they are: ${payload.role}`);
+      if (circle) await loadCircle();
+    }
+    if (payload?.kind === "Suggested") {
+      announce("Someone has suggested something for the record.");
+      if (circle) await loadCircle();
+    }
+  });
+}
+
+start().catch(problem);
+
+// ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
+
+const FIELD_LABELS = {
+  WhatMattersToMe: ["what_matters_to_me", "What matters to me"],
+  HowToCommunicateWithMe: ["how_to_communicate_with_me", "How to talk with me"],
+  HowToSupportMe: ["how_to_support_me", "How to help me feel at ease"],
+  PeopleWhoMatter: ["people_who_matter", "People who matter to me"],
+};
+
+let suggestions = [];
+
+function renderSuggestions() {
+  const list = $("suggestions-list");
+  list.replaceChildren();
+  $("suggestions-section").hidden = suggestions.length === 0;
+
+  const amHolder = isHolder();
+
+  for (const item of suggestions) {
+    const entry = item.suggestion?.entry?.Present?.entry;
+    if (!entry) continue;
+
+    const author = item.suggestion.signed_action.hashed.content.author;
+    const mine = asText(author) === asText(me);
+    const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
+
+    const li = document.createElement("li");
+    li.className = "suggestion";
+
+    const who = document.createElement("p");
+    who.className = "who";
+    // No names exist in this build. Saying "someone" is honest; inventing a
+    // name would not be.
+    who.textContent = `${describe(author)} suggested this for “${label}”`;
+    li.append(who);
+
+    const text = document.createElement("p");
+    text.textContent = entry.text;
+    li.append(text);
+
+    if (entry.because?.trim()) {
+      const because = document.createElement("p");
+      because.className = "because";
+      because.textContent = entry.because;
+      li.append(because);
+    }
+
+    const outcome = item.outcome?.entry?.Present?.entry;
+    if (outcome) {
+      const decided = document.createElement("p");
+      decided.className = "outcome";
+      // Set aside is shown, never hidden. Somebody took the trouble to notice
+      // something; letting it vanish silently is how people stop noticing.
+      decided.textContent = outcome.accepted
+        ? "Added to the record."
+        : "Set aside for now. Thank you for offering it.";
+      li.append(decided);
+    } else if (amHolder) {
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const accept = document.createElement("button");
+      accept.type = "button";
+      accept.textContent = "Add this";
+      accept.addEventListener("click", () =>
+        decide(item, entry, true).catch(problem),
+      );
+
+      const setAside = document.createElement("button");
+      setAside.type = "button";
+      setAside.className = "secondary";
+      setAside.textContent = "Not this one";
+      setAside.addEventListener("click", () =>
+        decide(item, entry, false).catch(problem),
+      );
+
+      actions.append(accept, setAside);
+      li.append(actions);
+    } else {
+      const waiting = document.createElement("p");
+      waiting.className = "who";
+      waiting.textContent = "Not looked at yet.";
+      li.append(waiting);
+    }
+
+    list.append(li);
+  }
+}
+
+/** Accept or set aside. Accepting also puts the words into the record. */
+async function decide(item, entry, accepted) {
+  const hash = item.suggestion.signed_action.hashed.hash;
+
+  await call("decide_on_suggestion", { suggestion: hash, accepted }, circle.cellId);
+
+  if (accepted && record) {
+    const [key] = FIELD_LABELS[entry.field] ?? [];
+    const current = record.current.record.entry.Present.entry;
+    const existing = current[key]?.trim();
+
+    await call(
+      "update_about_me",
+      {
+        original_action_hash: record.original,
+        previous_action_hash: record.current.record.signed_action.hashed.hash,
+        about_me: {
+          ...current,
+          [key]: existing ? `${existing}\n${entry.text}` : entry.text,
+        },
+      },
+      circle.cellId,
+    );
+  }
+
+  announce(accepted ? "Added to the record." : "Set aside.");
+  await loadCircle();
+}
+
+$("suggest-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await call(
+      "suggest",
+      {
+        field: $("suggest-field").value,
+        text: $("suggest-text").value.trim(),
+        because: $("suggest-because").value.trim(),
+      },
+      circle.cellId,
+    );
+    $("suggest-form").reset();
+    announce("Offered. The person who holds this circle will see it.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Who is who
+// ---------------------------------------------------------------------------
+
+let members = new Map(); // agent key string -> { name, relationship }
+
+/**
+ * How to refer to somebody. Never invents an identity: an unintroduced member
+ * is "someone in the circle", which is true, rather than a guess dressed up as
+ * a fact.
+ */
+function describe(agentKey) {
+  const key = asText(agentKey);
+  if (key === asText(me)) return "You";
+  const member = members.get(key);
+  if (!member) return "Someone in the circle";
+  return member.relationship?.trim()
+    ? `${member.name} (${member.relationship})`
+    : member.name;
+}
+
+async function loadMembers() {
+  const records = await call("get_members", null, circle.cellId);
+  members = new Map();
+  for (const r of records) {
+    const entry = r?.entry?.Present?.entry;
+    if (!entry) continue;
+    // Latest introduction wins; people correct how they describe themselves.
+    members.set(asText(r.signed_action.hashed.content.author), entry);
+  }
+
+  const mine = members.get(asText(me));
+  $("introduce-section").hidden = false;
+  if (mine) {
+    $("member-name").value = mine.name;
+    $("member-relationship").value = mine.relationship ?? "";
+  }
+}
+
+$("introduce-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await call(
+      "introduce_myself",
+      {
+        name: $("member-name").value.trim(),
+        relationship: $("member-relationship").value.trim(),
+      },
+      circle.cellId,
+    );
+    announce("Saved.");
+    await loadCircle();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Joining a circle you were invited to
+// ---------------------------------------------------------------------------
+
+$("join-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const pasted = $("invitation-in").value.trim();
+
+    // Their own identifier is the likeliest paste of all: it is at the top of
+    // this very screen, a few centimetres above the box. Say so exactly rather
+    // than hedging with "it may even be your own".
+    if (pasted === asText(me)) {
+      throw new Error(
+        "That is your own identifier. It does not go here — it goes to the " +
+          "other person. Send it to them, they paste it into their Hearth, " +
+          "and what comes back is what belongs in this box.",
+      );
+    }
+
+    if (looksLikeAnIdentifier(pasted)) {
+      throw new Error(
+        "That is somebody's identifier, not an invitation. An identifier only " +
+          "says who a person is. Send yours to whoever holds the circle, and " +
+          "they will send back an invitation.",
+      );
+    }
+
+    const bundle = tokenToInvitation(pasted);
+    const label = $("join-label").value.trim() || bundle.about || "Circle";
+
+    const cell = await call("join_circle", {
+      founder: bundle.founder,
+      name: label,
+      network_seed: bundle.network_seed,
+      invitation: bundle.invitation,
+    });
+
+    circle = { cellId: cell.cell_id };
+    holder = bundle.founder; // already text, out of the invitation
+    $("circle-heading").textContent = label;
+    circles.push({ cellId: circle.cellId, name: label });
+    $("back-to-circles").hidden = circles.length < 2;
+    show("circle");
+    announce(`You have joined ${bundle.about || "the circle"}.`);
+    await loadCircle();
+  } catch (error) {
+    // The commonest cause by far is a half-copied invitation.
+    const damaged =
+      error instanceof SyntaxError ||
+      /JSON|atob|InvalidCharacter/i.test(String(error?.message ?? ""));
+    problem(
+      damaged
+        ? new Error(
+            "That invitation could not be read. Copy the whole of it — it is " +
+              "one long line, with nothing before or after.",
+          )
+        : error,
+    );
+  }
+});
+
+/**
+ * Wire up a copy button so that pressing it visibly does something.
+ *
+ * The first version only called announce(), which writes to a screen-reader
+ * live region. A sighted person pressed it, saw nothing at all, and reasonably
+ * concluded it was broken. Feedback that exists only for assistive technology
+ * is not feedback.
+ */
+function wireCopyButton(buttonId, getText, doneLabel = "Copied") {
+  const button = $(buttonId);
+  if (!button) return;
+  const original = button.textContent;
+  let resetAfter;
+
+  button.addEventListener("click", async () => {
+    const text = getText();
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      ok = false;
+    }
+
+    // Say it on the button, and say it to a screen reader. Both, always.
+    button.textContent = ok ? doneLabel : "Press Ctrl+C instead";
+    announce(
+      ok
+        ? `${doneLabel}. Send it to them however you like.`
+        : "Could not copy. Select the text and copy it yourself.",
+    );
+
+    clearTimeout(resetAfter);
+    resetAfter = setTimeout(() => {
+      button.textContent = original;
+    }, 2500);
+  });
+}
+
+wireCopyButton("copy-identifier", () => asText(me), "Copied");
+
+
+// ---------------------------------------------------------------------------
+// The list of people
+// ---------------------------------------------------------------------------
+
+/** Every circle this person belongs to. Circles are clones of the lobby. */
 async function loadCircles() {
   const info = await client.appInfo();
   const cells = info.cell_info[ROLE] ?? [];
@@ -383,41 +903,3 @@ $("check-again").addEventListener("click", async () => {
     button.textContent = original;
   }
 });
-
-/**
- * Wire up a copy button so that pressing it visibly does something.
- *
- * An earlier version only called announce(), which writes to a screen-reader
- * live region. A sighted person pressed it, saw nothing, and reasonably
- * concluded it was broken. Feedback that exists only for assistive technology
- * is not feedback — so this says it on the button and announces it.
- */
-function wireCopyButton(buttonId, getText, doneLabel = "Copied") {
-  const button = $(buttonId);
-  if (!button) return;
-  const original = button.textContent;
-  let resetAfter;
-
-  button.addEventListener("click", async () => {
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(getText());
-    } catch {
-      ok = false;
-    }
-
-    button.textContent = ok ? doneLabel : "Press Ctrl+C instead";
-    announce(
-      ok
-        ? `${doneLabel}. Send it to them however you like.`
-        : "Could not copy. Select the text and copy it yourself.",
-    );
-
-    clearTimeout(resetAfter);
-    resetAfter = setTimeout(() => {
-      button.textContent = original;
-    }, 2500);
-  });
-}
-
-wireCopyButton("copy-identifier", () => asText(me), "Copied");
