@@ -486,6 +486,15 @@ async function loadCircle() {
   $("edit-record").hidden = !amHolder;
   $("edit-record").textContent = written ? "Change this" : "Write it";
   $("acknowledge").hidden = amHolder || !written;
+
+  /*
+   * The circle re-reads itself every twenty seconds, and a refresh must not
+   * appear underneath somebody who is halfway through typing who they are.
+   * If the form is open it stays open, and the button that opens it stays
+   * away.
+   */
+  if ($("acknowledge").hidden) $("acknowledge-form").hidden = true;
+  else if (!$("acknowledge-form").hidden) $("acknowledge").hidden = true;
   // Only offer this while there is actually something to wait for.
   $("check-again").hidden = amHolder || written;
   // Nothing to invite anybody to until something has been written. A name and
@@ -670,18 +679,49 @@ $("record-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("acknowledge").addEventListener("click", async () => {
+$("acknowledge").addEventListener("click", () => {
+  // Start from what they have already told this circle they are. It is their
+  // own sentence about themselves, so offering it back is not the app putting
+  // words in anybody's mouth — and they can change it before it is written.
+  const mine = members.get(asText(me));
+  if (!$("ack-role").value.trim()) {
+    $("ack-role").value = mine?.relationship?.trim() ?? "";
+  }
+
+  $("acknowledge-form").hidden = false;
+  $("acknowledge").hidden = true;
+  $("ack-role").focus();
+  $("ack-role").select();
+});
+
+$("cancel-acknowledge").addEventListener("click", () => {
+  $("acknowledge-form").hidden = true;
+  $("acknowledge").hidden = false;
+  $("acknowledge").focus();
+});
+
+$("acknowledge-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
   try {
-    const role = window.prompt("What should they know you are?", "") ?? "";
-    await call(
-      "acknowledge",
-      {
-        about_me: record.current.record.signed_action.hashed.hash,
-        role: role.trim(),
-      },
-      circle.cellId,
+    const role = $("ack-role").value.trim();
+
+    await whileWorking($("acknowledge-form").querySelector("button[type=submit]"), "Saying so…", () =>
+      call(
+        "acknowledge",
+        {
+          about_me: record.current.record.signed_action.hashed.hash,
+          role,
+        },
+        circle.cellId,
+      ),
     );
-    announce("Marked as read.");
+
+    $("acknowledge-form").hidden = true;
+    announce(
+      role
+        ? `Marked as read, as ${role}.`
+        : "Marked as read.",
+    );
     await loadCircle();
   } catch (error) {
     problem(error);

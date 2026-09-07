@@ -498,6 +498,40 @@
         </div>
 
         <!--
+          This was a window.prompt — a grey browser box, in the browser's own
+          words, with an OK button, appearing on top of a care record. The one
+          place a professional touches this app was the one place that did not
+          look like it.
+
+          It also could not say what the box below says, and that sentence is
+          the whole point: what goes in here is a claim, and the record will
+          show it as a claim. A prompt has nowhere to put a caveat.
+        -->
+        <form id="acknowledge-form" hidden>
+          <div class="field">
+            <label for="ack-role">What should they know you are?</label>
+            <p id="ack-role-hint" class="hint">
+              In your own words. “District nurse”, “her son”, “support worker,
+              Tuesdays”. Nobody checks this, and the circle will see it as
+              something you said about yourself, not as a credential.
+            </p>
+            <input
+              id="ack-role"
+              name="ack-role"
+              type="text"
+              autocomplete="off"
+              aria-describedby="ack-role-hint"
+            />
+          </div>
+          <div class="actions">
+            <button type="submit">I have read this</button>
+            <button type="button" id="cancel-acknowledge" class="secondary">
+              Cancel
+            </button>
+          </div>
+        </form>
+
+        <!--
           Somebody invites a nephew, he joins, and until now nothing anywhere
           said so. The invitation went out, the circle grew, and the screen
           looked identical — so there was no way to tell whether it had worked
