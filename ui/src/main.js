@@ -14,6 +14,9 @@
  */
 
 import { AppWebsocket, encodeHashToBase64 } from "@holochain/client";
+// Records arrive with their entries still packed. Holochain speaks msgpack on
+// the wire and does not unpack app entries for you.
+import { decode } from "@msgpack/msgpack";
 
 /*
  * Identifiers are bytes inside Holochain and text everywhere a person can see
@@ -150,6 +153,37 @@ const FIELDS = [
   ["people_who_matter", "People who matter to me"],
 ];
 
+/**
+ * The app entry inside a record.
+ *
+ * A record arrives with its entry still packed: `entry.Present.entry` is a
+ * run of bytes, not an object. Reading a field straight off it gives
+ * undefined for every field, silently — which is why a record with four
+ * paragraphs in it came back as "Nothing has been written yet", and why the
+ * form reopened empty over answers that were safely written down.
+ */
+function entryOf(record) {
+  const packed = record?.entry?.Present?.entry;
+  if (!packed) return null;
+  try {
+    return decode(packed);
+  } catch {
+    // A record whose entry will not unpack is not a record we can show. Say
+    // nothing rather than guess at what was in it.
+    return null;
+  }
+}
+
+/**
+ * Who wrote a record.
+ *
+ * Holochain 0.7 splits an action into a header and its per-variant data, and
+ * the author moved into the header. Read from the old place it is undefined,
+ * so every contribution was filed under nobody: the circle could not tell
+ * that you had introduced yourself, and offered you the form again.
+ */
+const authorOf = (record) => record?.signed_action?.hashed?.content?.header?.author;
+
 async function call(fnName, payload, cellId) {
   return client.callZome({
     ...(cellId ? { cell_id: cellId } : { role_name: ROLE }),
@@ -199,7 +233,7 @@ let knownName = "";
  */
 function personName() {
   const fromRecord =
-    record?.current?.record?.entry?.Present?.entry?.display_name?.trim();
+    entryOf(record?.current?.record)?.display_name?.trim();
   return fromRecord || knownName.trim();
 }
 
@@ -242,7 +276,7 @@ const hasBeenWritten = (entry) =>
 let showingSomething = false;
 
 function renderRecord(current) {
-  const entry = current?.record?.entry?.Present?.entry;
+  const entry = entryOf(current?.record);
 
   // Her name is hers whether or not anything has been written yet, and every
   // question on this screen is phrased around it.
@@ -298,12 +332,12 @@ function renderReaders(records) {
   section.hidden = false;
 
   for (const r of records) {
-    const entry = r?.entry?.Present?.entry;
+    const entry = entryOf(r);
     if (!entry) continue;
     const li = document.createElement("li");
     // Never "Read by District Nurse" — that implies a credential nobody
     // checked. The claim and the claimant are shown as separate facts.
-    const who = describe(r.signed_action.hashed.content.author);
+    const who = describe(authorOf(r));
     li.textContent = `${who} read this. Role claimed: ${entry.role}`;
     list.append(li);
   }
@@ -348,7 +382,7 @@ async function loadCircle() {
     ? await call("get_current_about_me", original, circle.cellId)
     : null;
 
-  const entry = current?.record?.entry?.Present?.entry;
+  const entry = entryOf(current?.record);
   const haveIt = Boolean(entry);
 
   /*
@@ -410,7 +444,7 @@ async function loadSuggestions() {
 }
 
 function fillForm() {
-  const entry = record?.current?.record?.entry?.Present?.entry;
+  const entry = entryOf(record?.current?.record);
   $("what-matters").value = entry?.what_matters_to_me ?? "";
   $("how-to-communicate").value = entry?.how_to_communicate_with_me ?? "";
   $("how-to-support").value = entry?.how_to_support_me ?? "";
@@ -684,10 +718,10 @@ function renderSuggestions() {
   const amHolder = isHolder();
 
   for (const item of suggestions) {
-    const entry = item.suggestion?.entry?.Present?.entry;
+    const entry = entryOf(item.suggestion);
     if (!entry) continue;
 
-    const author = item.suggestion.signed_action.hashed.content.author;
+    const author = authorOf(item.suggestion);
     const mine = asText(author) === asText(me);
     const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
 
@@ -712,7 +746,7 @@ function renderSuggestions() {
       li.append(because);
     }
 
-    const outcome = item.outcome?.entry?.Present?.entry;
+    const outcome = entryOf(item.outcome);
     if (outcome) {
       const decided = document.createElement("p");
       decided.className = "outcome";
@@ -762,7 +796,7 @@ async function decide(item, entry, accepted) {
 
   if (accepted && record) {
     const [key] = FIELD_LABELS[entry.field] ?? [];
-    const current = record.current.record.entry.Present.entry;
+    const current = entryOf(record.current.record);
     const existing = current[key]?.trim();
 
     await call(
@@ -828,10 +862,10 @@ async function loadMembers() {
   const records = await call("get_members", null, circle.cellId);
   members = new Map();
   for (const r of records) {
-    const entry = r?.entry?.Present?.entry;
+    const entry = entryOf(r);
     if (!entry) continue;
     // Latest introduction wins; people correct how they describe themselves.
-    members.set(asText(r.signed_action.hashed.content.author), entry);
+    members.set(asText(authorOf(r)), entry);
   }
 
   /*
