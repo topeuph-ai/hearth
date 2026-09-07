@@ -39,9 +39,18 @@ fn an_about_me(name: &str) -> AboutMe {
 
 /// A circle whose founder is `founder`, built from the real packed DNA.
 async fn circle_dna(founder: &AgentPubKey) -> DnaFile {
+    circle_dna_with_seconder(founder, None).await
+}
+
+/// The same, for a circle that asks two people to agree before anybody joins.
+async fn circle_dna_with_seconder(
+    founder: &AgentPubKey,
+    seconder: Option<&AgentPubKey>,
+) -> DnaFile {
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
         lobby: false,
+        seconder: seconder.map(|k| k.to_string()),
     };
     SweetDnaFile::from_bundle_with_overrides(
         &dna_path(),
@@ -433,6 +442,147 @@ async fn two_edits_from_the_same_starting_point_do_disagree() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// A second yes: circles that ask two people to agree
+// ---------------------------------------------------------------------------
+//
+// The safeguarding case is not somebody breaking in. It is the holder being
+// talked into letting a person in — a plausible caller, a new "friend", a
+// relative nobody trusts. The holder is the one under that pressure, so a rule
+// the holder can waive alone is not a safeguard at all.
+//
+// Compare RIX Multi Me's "Buddy", who can veto a share. This is the other way
+// round and stronger: nothing happens unless the second person actively
+// agrees. A veto has to arrive in time to stop something already moving; a
+// signature that was never given stops nothing, because nothing started.
+
+/// Everything a circle with a second yes needs: the founder, the person who
+/// must also agree, somebody to invite, and a lobby for the seconder to sign
+/// in — which is how the real app does it, and why the seconder never has to
+/// be a member of the circle at all.
+async fn a_circle_that_asks_two_people() -> (
+    SweetConductor,
+    CellId, // the founder's cell
+    CellId, // the seconder's lobby cell
+    DnaFile,
+    AgentPubKey, // somebody waiting to be invited
+) {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ruth = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = circle_dna_with_seconder(&alice, Some(&ruth)).await;
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let lobby = lobby_dna().await;
+    let ruth_lobby = join(&conductor, "ruth-lobby", &ruth, &lobby, None)
+        .await
+        .expect("anyone may enter the lobby");
+
+    (conductor, alice_cell, ruth_lobby, dna, bob)
+}
+
+/// One signature is not enough where the circle asks for two.
+#[tokio::test(flavor = "multi_thread")]
+async fn half_an_invitation_opens_nothing() {
+    let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
+
+    assert!(
+        bundle.invitation.seconded.is_none(),
+        "inviting somebody leaves the holder with only her own signature on it"
+    );
+    assert!(
+        bundle.seconder.is_some(),
+        "and the invitation says who else must agree, because the joiner needs \
+         that to compute the same circle at all"
+    );
+
+    let refused = join(&conductor, "bob", &bob, &dna, Some(&bundle.invitation)).await;
+    assert!(
+        refused.is_err(),
+        "the holder's signature alone must not open a circle that asks for two"
+    );
+}
+
+/// Two signatures do.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_people_agreeing_lets_somebody_in() {
+    let (conductor, alice_cell, ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
+
+    // Ruth signs from the lobby, never having joined the circle: she is
+    // agreeing to who gets in without being able to read a word of it.
+    let seconded: Signature = conductor
+        .call(&zome(&ruth_lobby), "second_an_invitation", bob.to_string())
+        .await;
+
+    let invitation = Invitation {
+        signature: bundle.invitation.signature.clone(),
+        seconded: Some(seconded),
+    };
+
+    assert!(
+        join(&conductor, "bob", &bob, &dna, Some(&invitation))
+            .await
+            .is_ok(),
+        "with both agreements the door opens"
+    );
+}
+
+/// The holder cannot be both people. That is the entire point.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_give_the_second_yes_herself() {
+    let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
+
+    // Alice signs a second time, from her own cell, trying to be both
+    // signatures. This is the attack the feature exists for: the holder under
+    // pressure, waiving her own safeguard.
+    let forged: Signature = conductor
+        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .await;
+
+    let invitation = Invitation {
+        signature: bundle.invitation.signature.clone(),
+        seconded: Some(forged),
+    };
+
+    assert!(
+        join(&conductor, "bob", &bob, &dna, Some(&invitation))
+            .await
+            .is_err(),
+        "a safeguard the holder can waive alone is not a safeguard"
+    );
+}
+
+/// A circle that asks nobody carries on working exactly as it did.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_circle_with_no_second_yes_is_unchanged() {
+    let (conductor, _alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let seconder: Option<AgentPubKey> = conductor
+        .call(&zome(&bob_cell), "who_seconds_here", ())
+        .await;
+
+    assert!(
+        seconder.is_none(),
+        "most circles ask one person, and must not start asking two by accident"
+    );
+}
+
 /// The central red-team finding.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_member_cannot_write_the_persons_about_me() {
@@ -770,6 +920,7 @@ async fn lobby_dna() -> DnaFile {
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: None,
             lobby: true,
+            seconder: None,
         }),
     )
     .await

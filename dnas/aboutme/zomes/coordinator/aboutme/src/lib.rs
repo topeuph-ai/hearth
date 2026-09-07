@@ -34,6 +34,18 @@ pub struct InvitationBundle {
     /// Base64, not raw bytes. This bundle is meant to be copied into a text
     /// message, so every field in it has to survive being text.
     pub founder: String,
+    /// Who this invitation is for.
+    ///
+    /// Carried for the person who has to agree to it. They are being asked to
+    /// sign somebody into a circle, and "sign this, never mind who" is not a
+    /// safeguard — it is a rubber stamp with extra steps. It is also simply
+    /// what they need in order to sign at all: the signature is over this key.
+    pub invitee: String,
+    /// Whoever this circle asks to agree as well, if it asks anybody. It forms
+    /// part of the DNA hash, so it has to travel with the invitation or the
+    /// joiner computes a different circle and lands nowhere.
+    #[serde(default)]
+    pub seconder: Option<String>,
     pub network_seed: String,
     /// Whose circle this is, so the recipient knows what they are accepting
     /// before they accept it. A label, not a claim.
@@ -52,7 +64,7 @@ pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
     })?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), invitee)?;
+    let signature = sign(me.clone(), invitee.clone())?;
 
     let about = match get_circle_about_me(())?.first() {
         Some(original) => get_current_about_me(original.clone())?
@@ -64,11 +76,61 @@ pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
         None => String::new(),
     };
 
+    let seconder = match membrane()? {
+        Membrane::Founder(_, seconder) => seconder.map(|k| k.to_string()),
+        _ => None,
+    };
+
     Ok(InvitationBundle {
         founder: me.to_string(),
+        invitee: invitee.to_string(),
+        seconder,
         network_seed: dna_info()?.modifiers.network_seed,
         about,
-        invitation: Invitation { signature },
+        invitation: Invitation {
+            signature,
+            // Not yet. Where the circle names a seconder, this invitation is
+            // incomplete until they add theirs: see second_an_invitation.
+            seconded: None,
+        },
+    })
+}
+
+/// Add the second agreement to an invitation somebody else has started.
+///
+/// Called by whoever the circle named as its seconder, on their own machine,
+/// with the invitee's identifier in front of them. They are signing the same
+/// thing the holder signed — that person's key, and nothing else.
+///
+/// Deliberately not a "vote" or an "approval workflow". There is nothing to
+/// approve and nobody to approve it to: two people sign, or the invitation
+/// does not exist. And deliberately not a veto, which is what RIX Multi Me's
+/// Buddy has. A veto must arrive in time to stop something already moving; a
+/// signature that was never given stops nothing because nothing started.
+///
+/// Note this does not check who is calling. It cannot usefully: anybody may
+/// sign anything, and a signature from the wrong key simply fails at the door
+/// like any other. The check that matters is in the membrane, where every peer
+/// makes it independently.
+#[hdk_extern]
+pub fn second_an_invitation(invitee: String) -> ExternResult<Signature> {
+    let invitee = AgentPubKey::try_from(invitee.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    sign(me, invitee)
+}
+
+/// Whether this circle asks two people to agree, and who the second is.
+///
+/// Read from the DNA rather than stored anywhere, because it is part of what
+/// this circle *is*. An interface needs it to know whether an invitation it
+/// has just made is finished or half-made.
+#[hdk_extern]
+pub fn who_seconds_here(_: ()) -> ExternResult<Option<AgentPubKey>> {
+    Ok(match membrane()? {
+        Membrane::Founder(_, seconder) => seconder,
+        _ => None,
     })
 }
 
@@ -98,7 +160,7 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
     // must never be the difference between somebody being in the circle and
     // not. The list on her screen is the record of who is here; this only
     // saves her going to look.
-    if let Membrane::Founder(founder) = membrane()? {
+    if let Membrane::Founder(founder, _) = membrane()? {
         let me = agent_info()?.agent_initial_pubkey;
         if founder != me {
             let _ = send_remote_signal(
@@ -392,7 +454,7 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
     // unable to fail the write: the acknowledgement on the chain is the
     // evidence, and this is only the nudge. A family should never lose a record
     // that somebody read the notes because a phone happened to be off.
-    if let Membrane::Founder(founder) = membrane()? {
+    if let Membrane::Founder(founder, _) = membrane()? {
         let me = agent_info()?.agent_initial_pubkey;
         if founder != me {
             let _ = send_remote_signal(
@@ -466,11 +528,17 @@ pub fn delete_about_me(action_hash: ActionHash) -> ExternResult<ActionHash> {
 
 fn circle_modifiers(
     founder: &AgentPubKey,
+    seconder: Option<String>,
     network_seed: String,
 ) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
+    // Part of the DNA hash, exactly like the founder. Naming somebody who must
+    // also agree is therefore a different circle, not a setting inside this
+    // one — which is the point. A rule the holder can switch off alone is no
+    // protection for a holder who is being leaned on.
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
         lobby: false,
+        seconder: seconder.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
     };
 
     // Clone modifiers arrive as YAML, which is why the founder is carried as a
@@ -502,6 +570,9 @@ pub struct CreateCircleInput {
     pub name: String,
     /// Makes this circle distinct from any other for the same person.
     pub network_seed: String,
+    /// Optionally, somebody who must also agree before anybody may join.
+    #[serde(default)]
+    pub seconder: Option<String>,
 }
 
 /// Bring a new circle into being.
@@ -512,7 +583,7 @@ pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
 
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
         membrane_proof: None,
         name: Some(input.name),
     })
@@ -528,6 +599,13 @@ pub struct JoinCircleInput {
     pub network_seed: String,
     /// From the founder's `invite`, signed over the joiner's own key.
     pub invitation: Invitation,
+    /// Whoever this circle asks to agree as well, if it asks anybody.
+    ///
+    /// Part of the DNA hash, so a joiner who leaves it out computes a
+    /// different circle and lands nowhere. It travels in the invitation for
+    /// exactly that reason.
+    #[serde(default)]
+    pub seconder: Option<String>,
 }
 
 /// Join a circle you have been invited to.
@@ -537,16 +615,63 @@ pub struct JoinCircleInput {
 /// independently.
 #[hdk_extern]
 pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
+    let founder = AgentPubKey::try_from(input.founder.trim())
+        .map_err(|_| wasm_error!("That invitation is damaged: the holder is unreadable"))?;
+
+    /*
+     * Check the invitation before building anything with it.
+     *
+     * The membrane is the real gate and stays the real gate: every peer checks
+     * it, and nothing here can be skipped by a modified client. This is about
+     * what a failed attempt leaves behind on the machine that made it.
+     *
+     * A clone is created first and genesis runs second, so an invitation that
+     * fails the membrane still leaves the cell registered — an enabled circle
+     * in somebody's list that they are not a member of, cannot read, and
+     * cannot join properly afterwards, because the cell id is now taken and
+     * every retry collides with it. Found by trying it: joining with half an
+     * invitation left a circle called "Auntie Marge" that could never work.
+     *
+     * So the same two signatures are verified here, where failing costs
+     * nothing and can say something useful.
+     */
+    let me = agent_info()?.agent_initial_pubkey;
+
+    if !verify_signature(founder.clone(), input.invitation.signature.clone(), me.clone())? {
+        return Err(wasm_error!(
+            "This invitation was not made for you, or not by the person whose \
+             circle it is. Ask them to make one from your identifier."
+        ));
+    }
+
+    if let Some(seconder) = input.seconder.as_deref() {
+        let seconder = AgentPubKey::try_from(seconder.trim()).map_err(|_| {
+            wasm_error!("That invitation is damaged: the second agreement names nobody readable")
+        })?;
+
+        let Some(seconded) = input.invitation.seconded.clone() else {
+            return Err(wasm_error!(
+                "This invitation is not finished. This circle asks two people to \
+                 agree before anybody joins, and only one of them has. Send it \
+                 back to whoever invited you."
+            ));
+        };
+
+        if !verify_signature(seconder, seconded, me)? {
+            return Err(wasm_error!(
+                "The second agreement on this invitation is not from the person \
+                 this circle asks to give it."
+            ));
+        }
+    }
+
     let proof = SerializedBytes::try_from(input.invitation)
         .map(MembraneProof::new)
         .map_err(|e| wasm_error!(format!("Could not read that invitation: {e:?}")))?;
 
-    let founder = AgentPubKey::try_from(input.founder.trim())
-        .map_err(|_| wasm_error!("That invitation is damaged: the holder is unreadable"))?;
-
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
         membrane_proof: Some(proof),
         name: Some(input.name),
     })
@@ -671,7 +796,7 @@ pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
 
     // Nudge the holder, the same way an acknowledgement does. Fire and forget:
     // the suggestion is safely written either way.
-    if let Membrane::Founder(founder) = membrane()? {
+    if let Membrane::Founder(founder, _) = membrane()? {
         let me = agent_info()?.agent_initial_pubkey;
         if founder != me {
             let _ = send_remote_signal(
@@ -811,7 +936,7 @@ pub fn update_suggestion(input: (ActionHash, Suggestion)) -> ExternResult<Record
 #[hdk_extern]
 pub fn who_holds_this(_: ()) -> ExternResult<Option<AgentPubKey>> {
     Ok(match membrane()? {
-        Membrane::Founder(key) => Some(key),
+        Membrane::Founder(key, _) => Some(key),
         _ => None,
     })
 }

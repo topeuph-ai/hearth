@@ -59,10 +59,17 @@ function looksLikeAnInvitation(text) {
 }
 
 function invitationToToken(bundle) {
+  const seconded = bundle.invitation.seconded;
   return btoa(
     JSON.stringify({
       ...bundle,
-      invitation: { signature: bytesToBase64(bundle.invitation.signature) },
+      invitation: {
+        signature: bytesToBase64(bundle.invitation.signature),
+        // Absent until the second person has agreed. An invitation without it,
+        // to a circle that asks for one, is not a weak invitation — it is an
+        // unfinished one.
+        seconded: seconded ? bytesToBase64(seconded) : null,
+      },
     }),
   );
 }
@@ -71,7 +78,12 @@ function tokenToInvitation(token) {
   const parsed = JSON.parse(atob(token.trim()));
   return {
     ...parsed,
-    invitation: { signature: base64ToBytes(parsed.invitation.signature) },
+    invitation: {
+      signature: base64ToBytes(parsed.invitation.signature),
+      seconded: parsed.invitation.seconded
+        ? base64ToBytes(parsed.invitation.seconded)
+        : null,
+    },
   };
 }
 
@@ -148,6 +160,7 @@ function show(...ids) {
     "starting",
     "choose",
     "create",
+    "second",
     "join",
     "circles",
     "circle",
@@ -584,6 +597,9 @@ $("create-circle-form").addEventListener("submit", async (event) => {
           founder: asText(me),
           name: label,
           network_seed: crypto.randomUUID(),
+          // Part of the DNA hash, so this is decided once, here, and cannot be
+          // switched off later by somebody under pressure to switch it off.
+          seconder: $("seconder").value.trim() || null,
         }),
     );
     circle = { cellId: cell.cell_id };
@@ -783,6 +799,14 @@ $("invite-form").addEventListener("submit", async (event) => {
     const output = $("invitation-output");
     output.hidden = false;
     output.textContent = invitationToToken(invitation);
+    /*
+     * Half an invitation is not a worse invitation; it is not one yet. Said
+     * before the wall of base64 rather than after it, because somebody who has
+     * scrolled that far has already started copying.
+     */
+    const seconder = await call("who_seconds_here", null, circle.cellId);
+    $("needs-seconding").hidden = !seconder;
+
     $("copy-invitation").hidden = false;
     $("done-inviting").hidden = false;
     $("invitee").value = "";
@@ -1332,6 +1356,9 @@ $("join-form").addEventListener("submit", async (event) => {
           name: label,
           network_seed: bundle.network_seed,
           invitation: bundle.invitation,
+          // Out of the invitation, because it forms part of the DNA hash: get
+          // this wrong and you compute a different circle and arrive nowhere.
+          seconder: bundle.seconder ?? null,
         }),
     );
 
@@ -1612,6 +1639,12 @@ wireCopyButton(
   "Invitation copied",
 );
 
+wireCopyButton(
+  "copy-seconded",
+  () => $("seconded-output").textContent,
+  "Copied",
+);
+
 /*
  * Two questions on the create form name her, and she is being typed in right
  * above them. "How are you connected to them?" and "What do you call them?"
@@ -1642,6 +1675,84 @@ $("invitation-in").addEventListener("input", () => {
   }
   $("join-relationship-whom").textContent = about || "them";
   $("join-label-whom").textContent = about || "the person this circle is about";
+});
+
+$("choose-second").addEventListener("click", () => {
+  forgetTheSeconding();
+  show("second");
+  $("half-invitation").focus();
+});
+
+$("second-back").addEventListener("click", () => {
+  forgetTheSeconding();
+  show("choose");
+});
+
+function forgetTheSeconding() {
+  $("half-invitation").value = "";
+  $("second-who").hidden = true;
+  $("seconded-output").hidden = true;
+  $("seconded-output").textContent = "";
+  $("copy-seconded").hidden = true;
+}
+
+/*
+ * Say who is being let in, before agreeing to let them in.
+ *
+ * The whole value of a second yes is that somebody reads it who is not the
+ * person being leaned on. Agreeing to an opaque line of base64 would be
+ * worthless, so the moment it parses, this says whose circle it is.
+ */
+$("half-invitation").addEventListener("input", () => {
+  const note = $("second-who");
+  try {
+    const bundle = tokenToInvitation($("half-invitation").value);
+    const about = bundle?.about?.trim();
+    const who = bundle?.invitee?.trim();
+    note.hidden = false;
+    // Their identifier, not a name: no name travels with an invitation, and
+    // inventing one here would be the software vouching for somebody it knows
+    // nothing about. Whoever asked should have said who this is out loud, and
+    // the identifier is the thing that can be checked against what they said.
+    note.textContent = about
+      ? `This would let ${who} into ${about}'s circle.`
+      : `This would let ${who} into a circle.`;
+  } catch {
+    // Half a paste is unfinished, not wrong.
+    note.hidden = true;
+  }
+});
+
+$("second-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const bundle = tokenToInvitation($("half-invitation").value);
+
+    /*
+     * Signed on the lobby cell, not on the circle's.
+     *
+     * Signing does not depend on the circle at all — it is this key over that
+     * person's key — and doing it here means whoever gives the second yes
+     * never has to be in the circle. A solicitor, an advocate, a sister two
+     * hundred miles away can hold this power and never read a word of
+     * somebody's record.
+     */
+    const seconded = await whileWorking($("second-submit"), "Agreeing…", () =>
+      call("second_an_invitation", bundle.invitee),
+    );
+
+    const finished = invitationToToken({
+      ...bundle,
+      invitation: { ...bundle.invitation, seconded },
+    });
+
+    $("seconded-output").hidden = false;
+    $("seconded-output").textContent = finished;
+    $("copy-seconded").hidden = false;
+    announce("Agreed. Send this back to whoever asked you.");
+  } catch (error) {
+    problem(error);
+  }
 });
 
 $("go-back").addEventListener("click", () => {

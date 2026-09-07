@@ -190,21 +190,56 @@ pub struct CircleProperties {
     /// membrane.
     #[serde(default)]
     pub lobby: bool,
+
+    /// Somebody whose agreement is also needed before anyone may join, as a
+    /// base64 agent key. Optional: most circles will not have one.
+    ///
+    /// The safeguarding case this exists for is not a stranger breaking in.
+    /// It is somebody being *talked into* letting a person in — a plausible
+    /// caller, a new "friend", a relative nobody trusts. The holder is the
+    /// person under that pressure, so a rule the holder can waive alone is not
+    /// a safeguard at all.
+    ///
+    /// So it lives here, in the properties, where it forms part of the DNA
+    /// hash and every peer enforces it independently. It cannot be turned off
+    /// under pressure, because turning it off would be a different circle.
+    /// The cost of that is honest and worth stating: changing who the seconder
+    /// is means re-forming the circle. Circles are clones, so that is cheap,
+    /// and it is the same answer this project gives to revocation.
+    ///
+    /// Compare RIX Multi Me's "Buddy", who can *veto* a share. This is the
+    /// other way round, and stronger: nothing happens unless the seconder
+    /// actively agrees. A veto has to arrive in time to stop something; a
+    /// second signature simply does not exist until it is given.
+    pub seconder: Option<String>,
 }
 
 /// What an invited person presents when they join.
 ///
-/// It is simply the founder's signature over the invitee's public key. Nobody
-/// else can produce one, and every peer can check it without asking anyone.
+/// The founder's signature over the invitee's public key, and — where the
+/// circle names a seconder — that person's signature over the same key. Nobody
+/// else can produce either, and every peer can check both without asking
+/// anyone.
 #[derive(Serialize, Deserialize, Debug, Clone, SerializedBytes)]
 pub struct Invitation {
     pub signature: Signature,
+
+    /// The seconder's signature over the same invitee key.
+    ///
+    /// `None` is the ordinary case for a circle with no seconder. In a circle
+    /// that has one, an invitation without this is simply incomplete — it is
+    /// not a weaker invitation, it is not one yet.
+    #[serde(default)]
+    pub seconded: Option<Signature>,
 }
 
 /// How this circle decides who belongs.
 pub enum Membrane {
     /// A real circle, closed around one person.
-    Founder(AgentPubKey),
+    ///
+    /// The second key, where there is one, is somebody who must also agree
+    /// before anybody joins.
+    Founder(AgentPubKey, Option<AgentPubKey>),
     /// A shared launching point. Anyone may join it; nobody may write in it.
     /// See `lobby`.
     Lobby,
@@ -223,9 +258,21 @@ pub fn membrane() -> ExternResult<Membrane> {
         return Ok(Membrane::Misconfigured);
     };
 
+    // A seconder that cannot be read is not a seconder that can be ignored.
+    // Naming one and getting it wrong closes the circle, exactly as a
+    // mistyped founder does: absence of configuration must never mean absence
+    // of a membrane, and neither must a typo in it.
+    let seconder = match p.seconder.as_deref() {
+        None => None,
+        Some(text) => match AgentPubKey::try_from(text.trim()) {
+            Ok(key) => Some(key),
+            Err(_) => return Ok(Membrane::Misconfigured),
+        },
+    };
+
     match p.founder {
         Some(founder) => match AgentPubKey::try_from(founder.as_str()) {
-            Ok(key) => Ok(Membrane::Founder(key)),
+            Ok(key) => Ok(Membrane::Founder(key, seconder)),
             Err(_) => Ok(Membrane::Misconfigured),
         },
         None if p.lobby => Ok(Membrane::Lobby),
@@ -237,8 +284,8 @@ fn check_membrane(
     agent: &AgentPubKey,
     membrane_proof: &Option<MembraneProof>,
 ) -> ExternResult<ValidateCallbackResult> {
-    let founder = match membrane()? {
-        Membrane::Founder(key) => key,
+    let (founder, seconder) = match membrane()? {
+        Membrane::Founder(key, seconder) => (key, seconder),
         Membrane::Lobby => return Ok(ValidateCallbackResult::Valid),
         Membrane::Misconfigured => {
             return invalid(
@@ -266,11 +313,29 @@ fn check_membrane(
 
     // Signed over the invitee's own key, so an invitation cannot be passed on
     // to somebody else.
-    if verify_signature(founder, invitation.signature, agent.clone())? {
-        Ok(ValidateCallbackResult::Valid)
-    } else {
-        invalid("Invitation was not issued by the person whose circle this is")
+    if !verify_signature(founder, invitation.signature, agent.clone())? {
+        return invalid("Invitation was not issued by the person whose circle this is");
     }
+
+    // Where this circle names somebody who must also agree, their signature is
+    // over the same key, and it is checked here by every peer rather than
+    // anywhere it could be skipped.
+    if let Some(seconder) = seconder {
+        let Some(seconded) = invitation.seconded else {
+            return invalid(
+                "This circle asks two people to agree before anybody joins, and \
+                 this invitation only has one of them",
+            );
+        };
+        if !verify_signature(seconder, seconded, agent.clone())? {
+            return invalid(
+                "The second agreement on this invitation is not from the person \
+                 this circle asks to give it",
+            );
+        }
+    }
+
+    Ok(ValidateCallbackResult::Valid)
 }
 
 /// Checked locally before joining, so a bad invitation fails immediately with a
@@ -286,7 +351,7 @@ pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCa
 /// which is what makes a lobby unwritable.
 fn is_the_person(agent: &AgentPubKey) -> ExternResult<bool> {
     Ok(match membrane()? {
-        Membrane::Founder(f) => &f == agent,
+        Membrane::Founder(f, _) => &f == agent,
         // A lobby holds nothing and accepts nothing. It exists so the app can
         // be installed and can then clone real circles from it.
         Membrane::Lobby => false,

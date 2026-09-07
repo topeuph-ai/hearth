@@ -68,6 +68,14 @@
               A private space about one person — you decide who is in it.
             </span>
           </button>
+          <button type="button" id="choose-second">
+            <span class="choice-title">Agree to an invitation</span>
+            <span class="choice-detail">
+              Somebody has asked you to be the second yes on who joins their
+              circle. You do not join it yourself.
+            </span>
+          </button>
+
           <button type="button" id="choose-join">
             <span class="choice-title">Join a circle</span>
             <span class="choice-detail">
@@ -202,8 +210,90 @@
               aria-describedby="circle-name-hint"
             />
           </div>
+          <!--
+            Last, and folded away, because most circles will not want one and
+            an optional safeguard should not read like a required step.
+
+            It has to be decided here and nowhere else: it forms part of the
+            DNA hash, so a circle either asks two people or it does not, from
+            the first moment. That is deliberate. A safeguard the holder can
+            switch off alone is no help to a holder who is being leaned on,
+            and the whole reason for this is somebody being talked into
+            letting a person in.
+          -->
+          <details id="seconder-details">
+            <summary>Ask someone else to agree to who joins</summary>
+            <p class="hint">
+              Nobody will be able to join this circle unless two people say
+              yes: you, and whoever you name here. They do not join the circle
+              themselves and they never see what is written in it.
+            </p>
+            <div class="field">
+              <label for="seconder">Their identifier</label>
+              <p id="seconder-hint" class="hint">
+                The long line beginning uhCAk from their own Hearth. Leave this
+                blank if you do not want a second yes.
+              </p>
+              <input
+                id="seconder"
+                name="seconder"
+                type="text"
+                autocomplete="off"
+                aria-describedby="seconder-hint"
+              />
+            </div>
+            <p class="hint">
+              This cannot be changed afterwards. Changing it would mean making
+              a new circle, which is cheap to do but does mean inviting
+              everybody again.
+            </p>
+          </details>
+
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
+      </section>
+
+      <!--
+        For whoever was named as a second yes. They do not need to be in the
+        circle and cannot read it: all they hold is a key, and all they do is
+        sign the same thing the holder signed — one person's identifier.
+
+        Which is also why this lives out here rather than inside a circle. A
+        solicitor, an advocate or a sister two hundred miles away can be the
+        second yes without ever seeing a word of somebody's record.
+      -->
+      <section id="second" hidden>
+        <div class="actions">
+          <button type="button" id="second-back" class="secondary">Back</button>
+        </div>
+        <h2>Agree to an invitation</h2>
+        <p>
+          Somebody has named you as the person who agrees to who joins their
+          circle. Nobody can join it unless you say yes as well.
+        </p>
+        <form id="second-form">
+          <div class="field">
+            <label for="half-invitation">Paste what they sent you</label>
+            <p id="half-invitation-hint" class="hint">
+              One long line. It is half an invitation until you agree to it.
+            </p>
+            <textarea
+              id="half-invitation"
+              name="half-invitation"
+              rows="3"
+              required
+              aria-describedby="half-invitation-hint"
+            ></textarea>
+          </div>
+          <p id="second-who" class="notice" hidden></p>
+          <button type="submit" id="second-submit">I agree to this</button>
+        </form>
+        <output id="seconded-output" hidden></output>
+        <div class="actions">
+          <button type="button" id="copy-seconded" class="secondary" hidden>
+            Copy the finished invitation
+          </button>
+        </div>
       </section>
 
       <section id="join" hidden>
@@ -776,6 +866,15 @@
             </div>
             <button type="submit">Make an invitation</button>
           </form>
+          <!--
+            Said above the invitation, not below it, because somebody who has
+            read as far as a wall of base64 has already started copying.
+          -->
+          <p id="needs-seconding" class="notice" hidden>
+            This is only half of an invitation. Send it to the person who
+            agrees to who joins this circle, and they will send you back the
+            finished one.
+          </p>
           <output id="invitation-output" hidden></output>
           <div class="actions">
             <button type="button" id="copy-invitation" class="secondary" hidden>
