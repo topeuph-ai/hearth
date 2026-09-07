@@ -1,9 +1,24 @@
 /*
- * Launch the demo: two agents, two windows, one machine.
+ * Launch the demo: as many agents as you ask for, one machine.
+ *
+ *     npm run demo        two people
+ *     npm run demo -- 3   three
+ *     npm run demo -- 6   six
  *
  * One command. It starts the interface server, waits for it, packs a fresh
- * hApp and opens two windows — because a demo command that needs a second
+ * hApp and opens the windows — because a demo command that needs a second
  * terminal is not a demo command.
+ *
+ * On the number: the conductor is not what limits this. Measured on this
+ * machine, each extra agent costs about 52MB of holochain and 6MB of
+ * lair-keystore. The window costs several times that, because it is Chrome.
+ * So the ceiling is the browser, not Holochain — which is worth knowing,
+ * because it is the opposite of what people expect of a peer-to-peer app.
+ *
+ * One machine, though. Every agent here shares one bootstrap and one relay
+ * server running on 127.0.0.1, so two laptops each running this would never
+ * find each other. Crossing machines is the desktop build's job — see the
+ * README.
  *
  * Two things this exists to prevent, both of which cost real time:
  *
@@ -36,6 +51,28 @@ const die = (message) => {
   console.error(`\n${message}\n`);
   process.exit(1);
 };
+
+// Checked before anything else happens. A typo here should cost a message,
+// not a packed hApp and a port check.
+const asked = process.argv[2] ?? "2";
+const agents = Number(asked);
+
+if (!Number.isInteger(agents) || agents < 1) {
+  die(
+    `"${asked}" is not a number of people.\n\n` +
+      `  npm run demo        two people\n` +
+      `  npm run demo -- 3   three`,
+  );
+}
+
+// Not a limit, a warning. Nothing here stops a larger number; it is just that
+// each window is a Chrome, and a machine has only so much of that in it.
+if (agents > 6) {
+  console.log(
+    `\n${agents} windows is a lot of Chrome for one machine. Carrying on.\n`,
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Everything present?
@@ -151,15 +188,16 @@ while (!(await portIsOpen())) {
 }
 
 // ---------------------------------------------------------------------------
-// Two agents, two windows
+// However many people you asked for
 // ---------------------------------------------------------------------------
 
-const agents = process.argv[2] ?? "2";
-console.log(`\nOpening ${agents} windows. Close them to stop.\n`);
+console.log(
+  `\nOpening ${agents} window${agents === 1 ? "" : "s"}. Close them to stop.\n`,
+);
 
 const spin = spawn(
   "hc-spin",
-  ["-n", agents, "--ui-port", String(UI_PORT), happ],
+  ["-n", String(agents), "--ui-port", String(UI_PORT), happ],
   {
     cwd: ui,
     stdio: "inherit",

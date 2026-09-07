@@ -115,12 +115,54 @@ One command:
 cd ui && npm run demo
 ```
 
-It packs a fresh hApp, starts the interface server, waits for it, and opens two
+It packs a fresh hApp, starts the interface server, waits for it, and opens the
 windows. A demo command that needs a second terminal is not a demo command.
+
+**As many people as you want:**
+
+```bash
+npm run demo        # two
+npm run demo -- 3   # three
+npm run demo -- 6   # six
+```
 
 **Two windows on one machine is the whole argument**: two separate people, two
 separate stores, talking to each other with nothing in between. Make a circle
-in one, invite the other, watch the acknowledgement arrive.
+in one, invite the other, watch the acknowledgement arrive. Three is what you
+want for anything involving a second yes, where one person invites, another
+agrees, and a third arrives.
+
+### What actually limits the number
+
+Not the conductor. Measured on a laptop running two agents:
+
+| | each |
+| --- | --- |
+| `holochain` | ~52 MB |
+| `lair-keystore` | ~6 MB |
+| `kitsune2-bootstrap-srv` | ~9 MB, shared by all of them |
+
+An agent costs under 60 MB. **The window costs several times that, because it
+is Chrome.** So the ceiling on this demo is the browser, not Holochain — the
+opposite of what people assume about peer-to-peer software, and worth saying
+out loud when somebody asks whether it would scale.
+
+Nothing in the script stops a larger number. Past six it prints a note and
+carries on.
+
+### One machine only, and why
+
+Every agent in this demo shares **one bootstrap server and one relay running on
+`127.0.0.1`**. Two laptops each running `npm run demo` would each start their
+own, and would never find each other — not because peer-to-peer does not work
+across machines, but because they would be looking in two different places for
+who else exists.
+
+**Crossing machines is the desktop build's job.** Kangaroo ships pointing at
+Holochain's dev-test bootstrap and relay servers, which are public — see the
+warnings in *Packaging the desktop app* below, because those servers carry no
+availability guarantee and **changing the URLs after deployment partitions the
+network.**
 
 **Vite binds `[::1]` unless told otherwise.** The probe that waits for it
 connects to `127.0.0.1`, and on Windows the two never meet — which looks
