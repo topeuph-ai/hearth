@@ -267,32 +267,21 @@
           <h3 id="record-form-heading">What people should know</h3>
 
           <!--
-            The name was given when the circle was made, so this arrives
-            already filled in. It is shown rather than hidden because this is
-            the same form she comes back to after reading it over, and on that
-            pass the name is one more thing that might be wrong. A control
-            called "Change their name" was the wrong shape: it made correcting
-            a name a special act instead of an ordinary edit.
+            No name field here, and this is the third shape it has had.
 
-            Deliberately not "their name is spelt wrong": the software cannot
-            know why somebody is changing a name. It might be a typo, a
-            marriage, or a name they would rather be known by. Saying which
-            would be the code claiming something it cannot know.
+            It was a fold-away "Change their name", which made correcting a
+            name a special act. Then it was a plain field, on the reasoning
+            that it would arrive filled in and she could fix it in passing. It
+            did not arrive filled in: the labels below are named directly, but
+            the box was filled from the record, which has not come back from
+            the network yet. So the screen asked for a name it had just been
+            given, in an empty box, directly above four labels already using
+            it.
+
+            Asking is the mistake, whether the box is full or empty. The name
+            was given when the circle was made and every label on this form
+            proves the app knows it.
           -->
-          <div class="field">
-            <label for="display-name">Their full name</label>
-            <p id="display-name-hint" class="hint">
-              As a nurse or social worker would need to see it.
-            </p>
-            <input
-              id="display-name"
-              name="display-name"
-              type="text"
-              required
-              aria-describedby="display-name-hint"
-            />
-          </div>
-
           <div class="field">
             <label for="what-matters">
               What matters to <span class="about-whom">them</span>

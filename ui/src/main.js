@@ -171,11 +171,36 @@ async function call(fnName, payload, cellId) {
  */
 function nameHer(name) {
   const who = name?.trim() || "them";
+  knownName = name?.trim() ?? knownName;
   $("relationship-whom").textContent = who;
   $("suggest-whose").textContent = who;
   for (const span of document.querySelectorAll(".about-whom")) {
     span.textContent = who;
   }
+}
+
+/*
+ * Her name, held for the length of the visit.
+ *
+ * The write form does not ask for it: it was given when the circle was made,
+ * and every label on that form is already using it. So saving has to get it
+ * from somewhere, and "somewhere" cannot be the record alone — right after a
+ * circle is made the record has not come back from the network yet, which is
+ * the whole reason the old name box appeared empty.
+ */
+let knownName = "";
+
+/**
+ * The name to write into the record, in the order the app is sure of it.
+ *
+ * The record wins when it is here, because that is what everybody else reads.
+ * What was typed when the circle was made is the fallback, for the minute
+ * before the record has come back.
+ */
+function personName() {
+  const fromRecord =
+    record?.current?.record?.entry?.Present?.entry?.display_name?.trim();
+  return fromRecord || knownName.trim();
 }
 
 /*
@@ -370,7 +395,6 @@ async function loadSuggestions() {
 
 function fillForm() {
   const entry = record?.current?.record?.entry?.Present?.entry;
-  $("display-name").value = entry?.display_name ?? "";
   $("what-matters").value = entry?.what_matters_to_me ?? "";
   $("how-to-communicate").value = entry?.how_to_communicate_with_me ?? "";
   $("how-to-support").value = entry?.how_to_support_me ?? "";
@@ -441,7 +465,7 @@ $("edit-record").addEventListener("click", () => {
   fillForm();
   $("record-form").hidden = false;
   $("record-actions").hidden = true;
-  $("display-name").focus();
+  $("what-matters").focus();
 });
 
 $("cancel-edit").addEventListener("click", () => {
@@ -454,7 +478,7 @@ $("record-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
     const aboutMe = {
-      display_name: $("display-name").value.trim(),
+      display_name: personName(),
       what_matters_to_me: $("what-matters").value,
       how_to_communicate_with_me: $("how-to-communicate").value,
       how_to_support_me: $("how-to-support").value,
@@ -954,6 +978,12 @@ function renderCircles() {
 
 async function openCircle(item) {
   circle = { cellId: item.cellId };
+
+  // Forget the last person before showing this one. A name carried over from
+  // the circle just closed could otherwise be written into this one, which is
+  // the worst thing a record about a person could get wrong.
+  knownName = "";
+  record = null;
 
   // The holder is named in the cell's own properties, so a circle you joined
   // reads correctly rather than assuming you hold everything.
