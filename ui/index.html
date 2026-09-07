@@ -267,16 +267,19 @@
           <h3 id="record-form-heading">What people should know</h3>
 
           <!--
-            The name was given when the circle was made, so asking again here
-            would be the same question twice. Tucked away, but reachable.
+            The name was given when the circle was made, so this arrives
+            already filled in. It is shown rather than hidden because this is
+            the same form she comes back to after reading it over, and on that
+            pass the name is one more thing that might be wrong. A control
+            called "Change their name" was the wrong shape: it made correcting
+            a name a special act instead of an ordinary edit.
 
             Deliberately not "their name is spelt wrong": the software cannot
             know why somebody is changing a name. It might be a typo, a
             marriage, or a name they would rather be known by. Saying which
             would be the code claiming something it cannot know.
           -->
-          <details class="field" id="fix-name">
-            <summary>Change their name</summary>
+          <div class="field">
             <label for="display-name">Their full name</label>
             <p id="display-name-hint" class="hint">
               As a nurse or social worker would need to see it.
@@ -288,7 +291,7 @@
               required
               aria-describedby="display-name-hint"
             />
-          </details>
+          </div>
 
           <div class="field">
             <label for="what-matters">

@@ -372,7 +372,6 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     fillForm();
     $("record-form").hidden = false;
     $("record-actions").hidden = true;
-    $("fix-name").open = false;
     $("what-matters").focus();
   } catch (error) {
     problem(error);
