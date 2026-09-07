@@ -217,6 +217,40 @@ output {
   word-break: break-all;
 }
 
+/*
+ * What just happened, at the top of the window, on whatever page you are on.
+ *
+ * Not a status indicator and never permanent: it says a thing occurred and
+ * then goes. Nothing in here counts, spins, or implies anybody has fallen
+ * behind — an empty bar is the normal state.
+ */
+#announcer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  text-align: center;
+  background: var(--notice);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #announcer {
+    animation: settle 0.2s ease-out;
+  }
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

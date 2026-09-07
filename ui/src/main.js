@@ -92,8 +92,27 @@ const $ = (id) => document.getElementById(id);
 const isHolder = () => Boolean(holder) && holder === asText(me);
 
 /** Tell screen reader users what just happened, without stealing focus. */
+let announcementFades;
+
+/**
+ * Say what just happened, where somebody will see it.
+ *
+ * Goes on its own after a while, because it is a thing that happened, not a
+ * state anybody has to clear. Nothing counts up, nothing waits to be
+ * dismissed, and an empty bar is the ordinary condition of this app.
+ */
 function announce(message) {
-  $("announcer").textContent = message;
+  const bar = $("announcer");
+  bar.textContent = message;
+  bar.hidden = !message;
+
+  clearTimeout(announcementFades);
+  if (message) {
+    announcementFades = setTimeout(() => {
+      bar.textContent = "";
+      bar.hidden = true;
+    }, 8000);
+  }
 }
 
 /**
@@ -923,6 +942,38 @@ function alwaysAWayBack() {
   $("back-to-circles").hidden = false;
 }
 
+/*
+ * Who was here last time we looked.
+ *
+ * An arrival is announced from the list itself rather than from the signal
+ * that goes with it. The signal is sent the instant somebody joins — the one
+ * moment the two machines have only just found each other — so it is exactly
+ * the message most likely to go missing. Noticing the change works whether it
+ * arrived or not, which makes the signal a convenience rather than the thing
+ * everything depends on.
+ */
+let peopleLastSeen = new Set();
+
+function sayWhoIsNew() {
+  const now = new Set(members.keys());
+  const firstLook = peopleLastSeen.size === 0;
+
+  const arrived = [...now].filter(
+    (key) => !peopleLastSeen.has(key) && key !== asText(me),
+  );
+  peopleLastSeen = now;
+
+  // Opening a circle is not everybody arriving at once.
+  if (firstLook || arrived.length === 0) return;
+
+  const names = arrived.map((key) => members.get(key)?.name?.trim() || "Somebody");
+  announce(
+    names.length === 1
+      ? `${names[0]} has joined.`
+      : `${names.join(" and ")} have joined.`,
+  );
+}
+
 function renderPeople() {
   const list = $("people-list");
   list.replaceChildren();
@@ -985,6 +1036,7 @@ async function loadMembers() {
    * the zome reads my own chain alongside the network. It did not always, and
    * this section reappeared empty on the screen I had just filled in.
    */
+  sayWhoIsNew();
   renderPeople();
 
   const mine = members.get(asText(me));
@@ -1207,6 +1259,9 @@ async function openCircle(item) {
    */
   forgetTheInvitation();
 
+  // A different circle has different people in it, and none of them is "new".
+  peopleLastSeen = new Set();
+
   // Forget the last person before showing this one. A name carried over from
   // the circle just closed could otherwise be written into this one, which is
   // the worst thing a record about a person could get wrong.
@@ -1269,6 +1324,17 @@ $("done-inviting").addEventListener("click", () => {
   forgetTheInvitation();
   $("circle-heading").scrollIntoView({ block: "start" });
   $("edit-record").focus();
+});
+
+$("check-people").addEventListener("click", async () => {
+  try {
+    await whileWorking($("check-people"), "Looking…", () => loadMembers());
+    // Says something either way. A button that sometimes does nothing visible
+    // is a button people press over and over.
+    if (!$("announcer").textContent) announce("Nobody new yet.");
+  } catch (error) {
+    problem(error);
+  }
 });
 
 $("rename-circle").addEventListener("click", () => {

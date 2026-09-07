@@ -7,8 +7,19 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <!-- Announcements for screen readers. Polite: never interrupts. -->
-    <p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>
+    <!--
+      What just happened, said out loud.
+
+      This was visually-hidden — a live region for screen readers and nothing
+      else — so every announcement this app has ever made was invisible to
+      anybody looking at it. "Saved", "Invitation ready", "Dave Smythe has
+      joined": all of it, to nobody.
+
+      Still polite and still a live region, so a screen reader hears it once
+      and is never interrupted. It now also appears, at the top of the window,
+      for the people who were being told nothing.
+    -->
+    <p id="announcer" role="status" aria-live="polite" hidden></p>
 
     <header>
       <h1>Hearth</h1>
@@ -502,6 +513,17 @@
             How each person describes themselves. Nobody checks any of it.
           </p>
           <ul id="people-list"></ul>
+          <div class="actions">
+            <!--
+              Because a signal is a nudge, not a guarantee. The one that says
+              somebody has joined is sent at the exact moment the two machines
+              have only just met, which is when it is least likely to arrive —
+              so there has to be a way to simply look again.
+            -->
+            <button type="button" id="check-people" class="secondary">
+              Check again
+            </button>
+          </div>
         </section>
 
         <section id="readers" hidden>
