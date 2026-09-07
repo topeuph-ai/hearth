@@ -141,6 +141,21 @@ async function call(fnName, payload, cellId) {
 // Rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Put her name everywhere the interface asks somebody a question about her.
+ *
+ * The read view keeps "What matters to me", because that is her record in her
+ * own voice. The forms ask whoever is typing, and they are usually not her.
+ */
+function nameHer(name) {
+  const who = name?.trim() || "them";
+  $("relationship-whom").textContent = who;
+  $("suggest-whose").textContent = who;
+  for (const span of document.querySelectorAll(".about-whom")) {
+    span.textContent = who;
+  }
+}
+
 function renderRecord(current) {
   const entry = current?.record?.entry?.Present?.entry;
   if (!entry) {
@@ -152,8 +167,7 @@ function renderRecord(current) {
   $("no-record").hidden = true;
   $("record").hidden = false;
   $("record-name").textContent = entry.display_name;
-  $("relationship-whom").textContent = entry.display_name;
-  $("suggest-whose").textContent = entry.display_name;
+  nameHer(entry.display_name);
 
   const list = $("record-fields");
   list.replaceChildren();
@@ -321,8 +335,16 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     circles.push({ cellId: circle.cellId, name: label });
     $("back-to-circles").hidden = circles.length < 2;
     show("circle");
-    announce(`Circle made for ${fullName}.`);
+    announce(`Circle made for ${fullName}. Now write what people should know.`);
     await loadCircle();
+
+    // Straight into writing it. An empty circle is not much use to anybody,
+    // and inviting people to nothing is worse.
+    nameHer(fullName);
+    fillForm();
+    $("record-form").hidden = false;
+    $("record-actions").hidden = true;
+    $("what-matters").focus();
   } catch (error) {
     problem(error);
   }
