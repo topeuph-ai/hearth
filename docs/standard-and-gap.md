@@ -137,12 +137,84 @@ organisation, not the person.**
   presupposes somebody hosting the master. **That is the operator problem
   restated, not solved.**
 
-**The one genuine person-held comparator is RIX Multi Me / the RIX Wiki** —
-conformant with About Me, built with and for the learning disability community,
-an NHS Innovation Accelerator alumnus. It is the closest thing to this that
-exists and it deserves study rather than dismissal. The likely difference is
-that it is a hosted service with an organisation behind it, but that needs
-verifying rather than assuming.
+**The one genuine person-held comparator is RIX Multi Me / the RIX Wiki**, and
+it has its own section below, because studying it properly changed one of this
+project's arguments.
+
+## The nearest neighbour: RIX Multi Me / the RIX Wiki
+
+Studied on 2026-09-07. **This is the closest existing thing to Hearth, and it
+is a good deal more than "a hosted competitor".** It deserves to be understood
+rather than waved at.
+
+**What it is.** A private multimedia portfolio — a "go-to place for all the
+information about an individual" — built on a mind-map interface, holding text,
+files, links, audio and video. Developed out of years of research at **RIX
+Research & Media, University of East London**, and managed and distributed by
+**Multi Me Ltd**, a private company incorporated in 2010. Conformant with the
+About Me standard. An NHS Innovation Accelerator alumnus. ISO 27001 certified
+in 2024, with a named Data Protection Officer.
+
+**It is genuinely person-held.** The person decides what to share and with
+whom. It is not a provider system with a family portal bolted on.
+
+**It has a safeguarding idea this project does not have.** A user's **Buddy can
+veto** what the user shares. That is a real answer to a real problem — somebody
+who might be persuaded to over-share — and Hearth has no equivalent. Its
+membership model is all-or-nothing: everybody in a circle reads everything, and
+the holder decides who is in. **That is a gap here that studying a comparator
+surfaced, not a point in our favour.**
+
+**Who pays.** Wikis are commonly paid for by a **local authority, school or
+other organisation** — piloted in Herefordshire, Oxfordshire and Abingdon &
+Witney College under the name "WikiMe". An individual "My Wiki" licence is
+reported at **£72 a year including VAT**.
+
+*That figure comes from a search summary of their help desk, which could not be
+fetched directly — three of their pages returned 403 or redirect loops. Verify
+it before quoting it anywhere.*
+
+### The part that costs this project an argument
+
+**When the organisation stops paying, the person can move onto an individual
+subscription and keep their Wiki.** That is a considered answer to the funding
+cliff, and it is a good one.
+
+So **"we are the only one that survives being defunded" is not a claim this
+project can make.** RIX already survives that, for about the price of a
+streaming service.
+
+The honest claim is narrower and structural:
+
+> RIX survives its *commissioner* going away. It does not survive its
+> *operator* going away. Multi Me Ltd is a private company; ISO 27001 does not
+> help if it stops trading, and neither does a DPO. Every Wiki depends on that
+> company continuing to exist and continuing to host.
+
+That is precisely the HealthVault shape — a well-run, well-intentioned,
+well-certified hosted service whose users' data depended on a corporate
+decision they had no say in. **The differentiator is not "person-held". It is
+"no company to fail."**
+
+### What could not be established, and should be asked directly
+
+1. Where the data is hosted, and **who the data controller is** — the person,
+   Multi Me Ltd, or the commissioning authority.
+2. What happens to a Wiki if **Multi Me Ltd ceases trading**. Is there an
+   export? An escrow? A published continuity commitment?
+3. Whether professionals in *other* organisations can read a Wiki in practice
+   during, say, an unplanned hospital admission — or whether it works mainly
+   within the commissioning authority's own settings.
+
+Question 3 is the important one. RIX is strongest in learning-disability
+advocacy, with a heavy multimedia emphasis Hearth does not have at all. **If a
+Wiki turns out to work well across a hospital boundary, the gap this project
+aims at is smaller than assumed and should be restated. If it does not, that
+boundary is the gap, and it is the thing to demonstrate.**
+
+Contact for all three: info@multime.com. This is a reasonable thing to ask as
+somebody building in the open, and their answers are worth more than any amount
+of further searching.
 
 ## What is genuinely unoccupied
 
@@ -172,9 +244,8 @@ code answers it.
 
 ## What would strengthen the case, in order
 
-1. **Verify RIX Multi Me properly.** Hosted or not? Who is the data controller?
-   What happens when funding stops? It is the nearest neighbour and the most
-   useful thing to understand.
+1. ~~Verify RIX Multi Me properly.~~ Done 2026-09-07 — see the section above.
+   Three questions remain that only they can answer; email info@multime.com.
 2. **Ask `england.dtac@nhs.net` how a system with no operator should be
    assessed.** DTAC assumes a supplier organisation to answer it. That question
    is publishable on its own, and the answer shapes everything.
@@ -191,3 +262,11 @@ code answers it.
 - PRSB conformant partners: https://theprsb.org/partners/conformant-partners/
 - RIX and the About Me standard (PRSB news): https://theprsb.org/news/rix-on-a-mission-to-transform-peoples-care-experience-with-the-about-me-standard/
 - RIX Multi Me, NHS Innovation Accelerator: https://covid19.nhsaccelerator.com/innovation/rix-multi-mi/
+- Multi Me, about us: https://www.multime.com/about-us
+- Multi Me, about My Wiki: https://www.multime.com/about-my-wiki
+- RIX Software: https://rixsoftware.org/
+
+**Pages that would not load and are worth retrying**: rixinclusiveresearch.org
+(403), rixsoftware.org/about-rix-software (403), the RIX Wiki help desk
+(redirect loop), and digitalhealth.net's January 2026 piece on the social care
+data barrier (403).
