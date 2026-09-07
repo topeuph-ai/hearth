@@ -412,6 +412,12 @@
         <article id="record" hidden aria-labelledby="record-name">
           <h3 id="record-name"></h3>
           <dl id="record-fields"></dl>
+          <!--
+            Not one of the seven, so not in the list with them. It is not
+            something about her; it is about how this page came to exist, which
+            is why it sits under the record rather than inside it.
+          -->
+          <p id="supported-by-note" class="hint" hidden></p>
           <p id="version-note" class="notice" hidden></p>
         </article>
 
@@ -435,11 +441,33 @@
             was given when the circle was made and every label on this form
             proves the app knows it.
           -->
+          <!--
+            The seven sections of About Me, in the order the standard lists
+            them. Every one is optional, in the standard and here: an empty
+            answer is a real answer, and a form that insists on all seven is a
+            form nobody finishes.
+
+            Headings are the standard's, put into the second person for a form.
+            The read view keeps her voice — "My wellness" — because that is her
+            record; the form asks whoever is typing, and they are usually not
+            her.
+          -->
           <div class="field">
             <label for="what-matters">
-              What matters to <span class="about-whom">them</span>
+              What matters most to <span class="about-whom">them</span>
             </label>
             <textarea id="what-matters" name="what-matters" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="people-who-matter">
+              People who matter to <span class="about-whom">them</span>
+            </label>
+            <textarea
+              id="people-who-matter"
+              name="people-who-matter"
+              rows="3"
+            ></textarea>
           </div>
 
           <div class="field">
@@ -458,21 +486,87 @@
           </div>
 
           <div class="field">
-            <label for="how-to-support">
-              How to help <span class="about-whom">them</span> feel at ease
+            <!--
+              Its own span, not the shared one: every other label puts the name
+              after a preposition ("support Margaret Smythe"), and this one
+              puts it in front of a noun, where it needs an apostrophe.
+            -->
+            <label for="my-wellness">
+              <span id="wellness-whom">Their</span> wellness
             </label>
-            <textarea id="how-to-support" name="how-to-support" rows="3"></textarea>
+            <p id="wellness-hint" class="hint">
+              What keeps them well, and what it looks like when they are not.
+            </p>
+            <textarea
+              id="my-wellness"
+              name="my-wellness"
+              rows="3"
+              aria-describedby="wellness-hint"
+            ></textarea>
           </div>
 
           <div class="field">
-            <label for="people-who-matter">
-              People who matter to <span class="about-whom">them</span>
+            <label for="please-do">Please do, and please do not</label>
+            <p id="please-do-hint" class="hint">
+              The things that help, and the things that make it worse. This one
+              is written to whoever is reading it, so it stays in those words.
+            </p>
+            <textarea
+              id="please-do"
+              name="please-do"
+              rows="3"
+              aria-describedby="please-do-hint"
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <label for="how-to-support">
+              How and when to support <span class="about-whom">them</span>
+            </label>
+            <p id="support-hint" class="hint">
+              Including what helps them feel at ease.
+            </p>
+            <textarea
+              id="how-to-support"
+              name="how-to-support"
+              rows="3"
+              aria-describedby="support-hint"
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <label for="also-worth-knowing">
+              Also worth knowing about <span class="about-whom">them</span>
             </label>
             <textarea
-              id="people-who-matter"
-              name="people-who-matter"
+              id="also-worth-knowing"
+              name="also-worth-knowing"
               rows="3"
             ></textarea>
+          </div>
+
+          <!--
+            The standard's own acknowledgement that the person whose record
+            this is may not be the person typing.
+
+            Set apart from the seven, because it is not something about her —
+            it is about how the page in front of you came to exist. Signed
+            authorship already proves who wrote each version; this says it in
+            words, where somebody reading the record will actually see it.
+          -->
+          <div class="field" id="supported-by-field">
+            <label for="supported-by">Supported to write this by</label>
+            <p id="supported-by-hint" class="hint">
+              Who helped put this together. Leave it blank if they wrote it
+              themselves.
+            </p>
+            <input
+              id="supported-by"
+              name="supported-by"
+              type="text"
+              autocomplete="off"
+              aria-describedby="supported-by-hint"
+            />
           </div>
 
           <div class="actions">
@@ -617,15 +711,23 @@
           <form id="suggest-form">
             <div class="field">
               <label for="suggest-field">What is it about?</label>
+              <!-- The seven, in her voice, in the standard's order. -->
               <select id="suggest-field" name="suggest-field">
-                <option value="WhatMattersToMe">What matters to me</option>
+                <option value="WhatMattersToMe">What matters most to me</option>
+                <option value="PeopleWhoMatter">People who matter to me</option>
                 <option value="HowToCommunicateWithMe">
                   How to talk with me
                 </option>
-                <option value="HowToSupportMe">
-                  How to help me feel at ease
+                <option value="MyWellness">My wellness</option>
+                <option value="PleaseDoAndPleaseDoNot">
+                  Please do, and please do not
                 </option>
-                <option value="PeopleWhoMatter">People who matter to me</option>
+                <option value="HowToSupportMe">
+                  How and when to support me
+                </option>
+                <option value="AlsoWorthKnowing">
+                  Also worth knowing about me
+                </option>
               </select>
             </div>
             <div class="field">

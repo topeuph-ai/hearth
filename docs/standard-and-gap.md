@@ -25,32 +25,36 @@ the entry on the NHS Standards Directory.
 
 The standard has seven sections. Every element in it is optional (`0..1`).
 
+**Updated 2026-09-07: all seven sections and "Supported to write this by" are
+now implemented.** The table below is the state after that change.
+
 | PRSB section | Hearth |
 | --- | --- |
 | What is most important to me | yes — `what_matters_to_me` |
 | People who are important to me | yes — `people_who_matter` |
 | How I communicate and how to communicate with me | yes — `how_to_communicate_with_me` |
-| My wellness | no |
-| Please do and please do not | no |
-| How and when to support me | partly — `how_to_support_me`, shown as "How to help me feel at ease" |
-| Also worth knowing about me | no |
+| My wellness | yes — `my_wellness` |
+| Please do and please do not | yes — `please_do_and_please_do_not` |
+| How and when to support me | yes — `how_to_support_me` |
+| Also worth knowing about me | yes — `also_worth_knowing` |
 
 Each section also allows a **coded value** and **multi-media** (filename, MIME
-type, file, URL). Hearth has neither: it is free text only.
+type, file, URL). Hearth has neither: it is free text only, and that is the
+remaining distance between this and the full standard.
 
 Two metadata elements sit outside the sections:
 
 | PRSB element | Hearth |
 | --- | --- |
-| Supported to write this by | no — see below, this one matters |
+| Supported to write this by | yes — `supported_to_write_this_by` |
 | Date last updated | partly — every version is a signed action with a timestamp, so it exists but is never shown |
 
 ## What this means
 
 **Hearth is a strict subset, not a divergence.** Everything it stores maps onto
 a section of the standard, and nothing it stores falls outside it. Because
-every element is optional, holding four of seven does not contradict the data
-model.
+every element is optional, an unanswered section is a real answer rather than a
+hole.
 
 **It is not conformant, and should not be described as such.** Conformance is
 an assessed process with a quality mark, run by PRSB, which this has not been
@@ -62,7 +66,7 @@ presented, recorded, or managed across different systems" (NHS Standards
 Directory), so "What matters to me" for "What is most important to me" is a
 presentation choice, not a deviation.
 
-### The one gap worth closing: "Supported to write this by"
+### "Supported to write this by" — done, and why it mattered
 
 The standard has a field for **who helped write this**. Hearth already has the
 concept — holder is not always the subject, which is load-bearing here, because
@@ -70,9 +74,15 @@ a daughter or case manager holds the circle where the person cannot — and it
 records who wrote every version cryptographically. But the record itself never
 says, in the person's own record, that somebody else wrote it on their behalf.
 
-That is the standard describing something the design already believes. It is a
-small change, and it is the only place where Hearth is silent and About Me is
-not.
+That was the standard describing something the design already believed. It is
+now a field on the record and a line under it: *"Supported to write this by Pam
+Smythe."* Whoever sets a circle up for somebody else has already given their
+name on the way in, so it arrives filled in and can be changed. Self-declared,
+like everything else here, and never inferred.
+
+**What remains missing is coded values and multi-media**, which the standard
+allows against every section. Hearth is free text only. That is the honest
+description of the remaining distance.
 
 ### The tension worth confronting
 
@@ -168,8 +178,8 @@ code answers it.
 2. **Ask `england.dtac@nhs.net` how a system with no operator should be
    assessed.** DTAC assumes a supplier organisation to answer it. That question
    is publishable on its own, and the answer shapes everything.
-3. **Add "Supported to write this by."** Small, and it closes the only place
-   where Hearth is silent and the standard is not.
+3. ~~Add "Supported to write this by."~~ Done 2026-09-07, along with the three
+   missing sections.
 4. **Do not claim conformance.** Say "scoped to About Me v2.0.1" and be exact
    about which four of the seven sections are implemented.
 

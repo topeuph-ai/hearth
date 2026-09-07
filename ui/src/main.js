@@ -165,11 +165,18 @@ function problem(error) {
   $("go-back").focus();
 }
 
+/*
+ * The seven sections of About Me, in her own voice and in the standard's own
+ * order. The form asks whoever is typing; this is the record speaking.
+ */
 const FIELDS = [
-  ["what_matters_to_me", "What matters to me"],
-  ["how_to_communicate_with_me", "How to talk with me"],
-  ["how_to_support_me", "How to help me feel at ease"],
+  ["what_matters_to_me", "What matters most to me"],
   ["people_who_matter", "People who matter to me"],
+  ["how_to_communicate_with_me", "How to talk with me"],
+  ["my_wellness", "My wellness"],
+  ["please_do_and_please_do_not", "Please do, and please do not"],
+  ["how_to_support_me", "How and when to support me"],
+  ["also_worth_knowing", "Also worth knowing about me"],
 ];
 
 /**
@@ -230,6 +237,7 @@ function nameHer(name) {
   // "in their own words" needs no apostrophe; "in Margaret Smythe own words"
   // does. The sentence changes shape depending on whether we know her name.
   $("suggest-whose").textContent = name?.trim() ? `${who}'s` : "their";
+  $("wellness-whom").textContent = name?.trim() ? `${who}'s` : "Their";
   for (const span of document.querySelectorAll(".about-whom")) {
     span.textContent = who;
   }
@@ -377,6 +385,14 @@ function renderRecord(current) {
     group.append(dt, dd);
     list.append(group);
   }
+
+  // Said plainly, and only when there is somebody to name. "Supported to
+  // write this by" is the standard's way of admitting that the person whose
+  // record this is may not be the person who typed it.
+  const supporter = entry.supported_to_write_this_by?.trim();
+  const supportedBy = $("supported-by-note");
+  supportedBy.hidden = !supporter;
+  supportedBy.textContent = supporter ? `Supported to write this by ${supporter}.` : "";
 
   // Two people editing while apart both produce valid versions. Say so rather
   // than quietly picking a winner and pretending there was never a question.
@@ -530,10 +546,15 @@ async function loadSuggestions() {
 
 function fillForm() {
   const entry = entryOf(record?.current?.record);
+  // In the order they appear on the form.
   $("what-matters").value = entry?.what_matters_to_me ?? "";
-  $("how-to-communicate").value = entry?.how_to_communicate_with_me ?? "";
-  $("how-to-support").value = entry?.how_to_support_me ?? "";
   $("people-who-matter").value = entry?.people_who_matter ?? "";
+  $("how-to-communicate").value = entry?.how_to_communicate_with_me ?? "";
+  $("my-wellness").value = entry?.my_wellness ?? "";
+  $("please-do").value = entry?.please_do_and_please_do_not ?? "";
+  $("how-to-support").value = entry?.how_to_support_me ?? "";
+  $("also-worth-knowing").value = entry?.also_worth_knowing ?? "";
+  $("supported-by").value = entry?.supported_to_write_this_by ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -576,9 +597,16 @@ $("create-circle-form").addEventListener("submit", async (event) => {
       {
         display_name: fullName,
         what_matters_to_me: "",
-        how_to_communicate_with_me: "",
-        how_to_support_me: "",
         people_who_matter: "",
+        how_to_communicate_with_me: "",
+        my_wellness: "",
+        please_do_and_please_do_not: "",
+        how_to_support_me: "",
+        also_worth_knowing: "",
+        // Whoever is setting this up for somebody else has just given their
+        // name, and they are by definition the person supporting it being
+        // written. Said here rather than asked again, and editable.
+        supported_to_write_this_by: carerName,
       },
       circle.cellId,
     );
@@ -631,9 +659,13 @@ $("record-form").addEventListener("submit", async (event) => {
     const aboutMe = {
       display_name: personName(),
       what_matters_to_me: $("what-matters").value,
-      how_to_communicate_with_me: $("how-to-communicate").value,
-      how_to_support_me: $("how-to-support").value,
       people_who_matter: $("people-who-matter").value,
+      how_to_communicate_with_me: $("how-to-communicate").value,
+      my_wellness: $("my-wellness").value,
+      please_do_and_please_do_not: $("please-do").value,
+      how_to_support_me: $("how-to-support").value,
+      also_worth_knowing: $("also-worth-knowing").value,
+      supported_to_write_this_by: $("supported-by").value.trim(),
     };
 
     if (record) {
@@ -887,10 +919,16 @@ start().catch(problem);
 // ---------------------------------------------------------------------------
 
 const FIELD_LABELS = {
-  WhatMattersToMe: ["what_matters_to_me", "What matters to me"],
-  HowToCommunicateWithMe: ["how_to_communicate_with_me", "How to talk with me"],
-  HowToSupportMe: ["how_to_support_me", "How to help me feel at ease"],
+  WhatMattersToMe: ["what_matters_to_me", "What matters most to me"],
   PeopleWhoMatter: ["people_who_matter", "People who matter to me"],
+  HowToCommunicateWithMe: ["how_to_communicate_with_me", "How to talk with me"],
+  MyWellness: ["my_wellness", "My wellness"],
+  PleaseDoAndPleaseDoNot: [
+    "please_do_and_please_do_not",
+    "Please do, and please do not",
+  ],
+  HowToSupportMe: ["how_to_support_me", "How and when to support me"],
+  AlsoWorthKnowing: ["also_worth_knowing", "Also worth knowing about me"],
 };
 
 let suggestions = [];

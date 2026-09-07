@@ -21,13 +21,19 @@ fn dna_path() -> PathBuf {
         .join("dnas/aboutme/workdir/aboutme.dna")
 }
 
+/// All seven sections of About Me, so a test that round-trips a record
+/// round-trips the whole of one.
 fn an_about_me(name: &str) -> AboutMe {
     AboutMe {
         display_name: name.to_string(),
         what_matters_to_me: "Seeing my grandchildren".into(),
-        how_to_communicate_with_me: "Speak to my left side, I'm deaf on the right".into(),
-        how_to_support_me: "Give me time to answer".into(),
         people_who_matter: "My daughter Ruth".into(),
+        how_to_communicate_with_me: "Speak to my left side, I'm deaf on the right".into(),
+        my_wellness: "I am not myself when I stop reading".into(),
+        please_do_and_please_do_not: "Please do not move my chair".into(),
+        how_to_support_me: "Give me time to answer".into(),
+        also_worth_knowing: "I was a district nurse for thirty years".into(),
+        supported_to_write_this_by: "My daughter Ruth".into(),
     }
 }
 

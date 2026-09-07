@@ -10,20 +10,44 @@ use hdi::prelude::*;
 
 /// Written by the person, or by whoever acts for them.
 ///
-/// Field names track the PRSB About Me headings. They are a working subset
-/// and should be checked against the published standard before v1.
+/// The seven sections of the PRSB About Me standard, v2.0.1 (May 2025), in the
+/// order the standard lists them, plus the one piece of its metadata that says
+/// something this app could not otherwise say.
+///
+/// Free text only. The standard also allows a coded value and multi-media
+/// against each section, and neither is here — so this is a subset of About
+/// Me, not an implementation of it, and must never be described as conformant.
+/// Conformance is an assessed process with a quality mark, which this has not
+/// been through. See `docs/standard-and-gap.md`.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct AboutMe {
     pub display_name: String,
-    /// What matters to me
+    /// What is most important to me
     pub what_matters_to_me: String,
-    /// How I communicate, and how to communicate with me
-    pub how_to_communicate_with_me: String,
-    /// How to support me / what helps me feel at ease
-    pub how_to_support_me: String,
-    /// People who matter to me
+    /// People who are important to me
     pub people_who_matter: String,
+    /// How I communicate and how to communicate with me
+    pub how_to_communicate_with_me: String,
+    /// My wellness
+    pub my_wellness: String,
+    /// Please do and please do not
+    pub please_do_and_please_do_not: String,
+    /// How and when to support me
+    pub how_to_support_me: String,
+    /// Also worth knowing about me
+    pub also_worth_knowing: String,
+    /// Supported to write this by.
+    ///
+    /// The standard's own acknowledgement that the person whose record this is
+    /// may not be the person typing. This project already believed that —
+    /// where somebody cannot hold their own circle, a daughter or a case
+    /// manager holds it — but the record never said so on its own face. Signed
+    /// authorship proves who wrote each version cryptographically; this says it
+    /// in words, in the record, where somebody reading it will see it.
+    ///
+    /// Self-declared like everything else here, and never inferred.
+    pub supported_to_write_this_by: String,
 }
 
 /// A professional's "I have read this."
@@ -61,9 +85,12 @@ pub struct Member {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
     WhatMattersToMe,
-    HowToCommunicateWithMe,
-    HowToSupportMe,
     PeopleWhoMatter,
+    HowToCommunicateWithMe,
+    MyWellness,
+    PleaseDoAndPleaseDoNot,
+    HowToSupportMe,
+    AlsoWorthKnowing,
 }
 
 /// Something a member of the circle thinks should be in the record.
