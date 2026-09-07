@@ -138,6 +138,50 @@ pub fn my_introduction(_: ()) -> ExternResult<Option<Member>> {
         .find_map(|record| record.entry().to_app_option::<Member>().ok().flatten()))
 }
 
+/// The About Me on my own chain, if I wrote one.
+///
+/// Same rule as `my_introduction`, for the same reason. `get_circle_about_me`
+/// asks the network, and in the seconds after saving, what I have just
+/// written is not back yet — so the screen said "Nothing has been written
+/// yet" directly above "Read this over", about the words I had just typed.
+///
+/// Only the person the circle is about may author this, which validation
+/// enforces, so for them their own chain is the whole of it. For everybody
+/// else the network is the only place it could come from.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MyAboutMe {
+    /// The original create, which is the stable identity of the record.
+    pub original: ActionHash,
+    /// The newest version on this chain.
+    pub record: Record,
+}
+
+#[hdk_extern]
+pub fn my_about_me(_: ()) -> ExternResult<Option<MyAboutMe>> {
+    // Chain order, oldest first.
+    let records = query(
+        ChainQueryFilter::new()
+            .entry_type(UnitEntryTypes::AboutMe.try_into()?)
+            .include_entries(true),
+    )?;
+
+    let Some(newest) = records.last().cloned() else {
+        return Ok(None);
+    };
+
+    // The create is the identity; every later version is an update of it.
+    let original = records
+        .iter()
+        .find(|r| matches!(r.action().data, ActionData::Create(_)))
+        .map(|r| r.action_address().clone())
+        .unwrap_or_else(|| newest.action_address().clone());
+
+    Ok(Some(MyAboutMe {
+        original,
+        record: newest,
+    }))
+}
+
 #[hdk_extern]
 pub fn create_about_me(about_me: AboutMe) -> ExternResult<Record> {
     let action_hash = create_entry(EntryTypes::AboutMe(about_me))?;

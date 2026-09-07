@@ -238,6 +238,9 @@ function isOwnRecord(cellId) {
 const hasBeenWritten = (entry) =>
   Boolean(entry) && FIELDS.some(([key]) => entry[key]?.trim());
 
+/** Whether the last load put a written record on the screen. */
+let showingSomething = false;
+
 function renderRecord(current) {
   const entry = current?.record?.entry?.Present?.entry;
 
@@ -329,11 +332,35 @@ async function loadCircle() {
   $("check-it-over").hidden = true;
 
   const originals = await call("get_circle_about_me", null, circle.cellId);
-  const original = originals[0] ?? null;
+  let original = originals[0] ?? null;
 
-  const current = original
+  let current = original
     ? await call("get_current_about_me", original, circle.cellId)
     : null;
+
+  /*
+   * If I wrote it, my own chain is where it certainly is.
+   *
+   * The two calls above ask the network, and for a few seconds after saving
+   * the answer is "nothing" — which is how the screen came to say "Nothing
+   * has been written yet" directly above "Read this over", about words that
+   * had just been typed into it.
+   *
+   * The network answer is still preferred when it has something, because it
+   * is what everybody else can see. This is the fallback for the gap.
+   */
+  if (amHolder && !hasBeenWritten(current?.record?.entry?.Present?.entry)) {
+    const mine = await call("my_about_me", null, circle.cellId);
+    if (mine) {
+      original = mine.original;
+      current = {
+        record: mine.record,
+        // Only another of my own devices could disagree with me, and only the
+        // network would know about it. Nothing to report from here.
+        divergent_versions: current?.divergent_versions ?? 1,
+      };
+    }
+  }
 
   const entry = current?.record?.entry?.Present?.entry;
   const haveIt = Boolean(entry);
@@ -350,6 +377,9 @@ async function loadCircle() {
    * is a question about the person.
    */
   const written = hasBeenWritten(entry);
+  // What the screen is actually showing, for anything that needs to agree
+  // with it rather than with what was typed a moment ago.
+  showingSomething = written;
 
   record = haveIt ? { original, current } : null;
   renderRecord(haveIt ? current : null);
@@ -524,7 +554,12 @@ $("record-form").addEventListener("submit", async (event) => {
     // read. Saving a form with every box empty is a real thing to do, usually
     // by accident, and "Read this over" pointing at a bare name is the screen
     // telling somebody to check work that does not exist.
-    const somethingToRead = hasBeenWritten(aboutMe);
+    //
+    // Asked of the screen, not of the form. Judging it by what was typed put
+    // "Read this over" above "Nothing has been written yet" — one sentence
+    // describing the form and the other describing the page, disagreeing in
+    // public.
+    const somethingToRead = showingSomething;
 
     if (isHolder() && somethingToRead) {
       $("check-it-over").hidden = false;
