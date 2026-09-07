@@ -597,9 +597,10 @@ $("create-circle-form").addEventListener("submit", async (event) => {
           founder: asText(me),
           name: label,
           network_seed: crypto.randomUUID(),
-          // Part of the DNA hash, so this is decided once, here, and cannot be
-          // switched off later by somebody under pressure to switch it off.
-          seconder: $("seconder").value.trim() || null,
+          // A circle starts by asking one person. Somebody who wants a second
+          // yes appoints one from inside the circle afterwards, which re-forms
+          // it — see appointASecondYes.
+          seconder: null,
         }),
     );
     circle = { cellId: cell.cell_id };
@@ -1224,6 +1225,35 @@ function sayWhoIsNew() {
   );
 }
 
+/*
+ * Whether to offer a second yes, and who could be it.
+ *
+ * Only the holder, only where the circle does not already ask for one, and
+ * only listing people who are actually here. Appointing somebody who has not
+ * joined would mean a circle nobody can get into, including them.
+ */
+async function offerToAppointASecondYes() {
+  const panel = $("appoint-details");
+  const alreadyAsks = await call("who_seconds_here", null, circle.cellId);
+
+  panel.hidden = !isHolder() || Boolean(alreadyAsks);
+  if (panel.hidden) return;
+
+  const others = [...members].filter(([key]) => key !== asText(me));
+
+  const choose = $("appoint-who");
+  choose.replaceChildren();
+  for (const [key, entry] of others) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = entry.name?.trim() || "Somebody";
+    choose.append(option);
+  }
+
+  $("appoint-form").hidden = others.length === 0;
+  $("appoint-nobody").hidden = others.length > 0;
+}
+
 function renderPeople() {
   const list = $("people-list");
   list.replaceChildren();
@@ -1288,6 +1318,7 @@ async function loadMembers() {
    */
   sayWhoIsNew();
   renderPeople();
+  offerToAppointASecondYes();
 
   const mine = members.get(asText(me));
   $("introduce-section").hidden = Boolean(mine);
@@ -1577,6 +1608,73 @@ $("done-inviting").addEventListener("click", () => {
   forgetTheInvitation();
   $("circle-heading").scrollIntoView({ block: "start" });
   $("edit-record").focus();
+});
+
+/*
+ * Appoint a second yes by re-forming the circle around them.
+ *
+ * Everything here already exists: a circle can be made with a seconder, and
+ * the holder may author the record into a circle she founds. So this is the
+ * two of them in order, with the words carried across — no new machinery, and
+ * nothing that could not be done by hand.
+ *
+ * The old circle is left alone rather than taken away. People are still in it,
+ * and pulling it out from under them because she has made a new one would be
+ * the software deciding something on their behalf. She removes it herself when
+ * everybody has moved.
+ */
+$("appoint-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const seconder = $("appoint-who").value;
+    const seconderName = members.get(seconder)?.name?.trim() || "them";
+    const label = $("circle-heading").textContent;
+    const entry = entryOf(record?.current?.record);
+
+    if (!entry) {
+      throw new Error(
+        "There is nothing written in this circle yet to carry across. Write " +
+          "the record first.",
+      );
+    }
+
+    const cell = await whileWorking($("appoint-submit"), "Making the new circle…", () =>
+      call("create_circle", {
+        founder: asText(me),
+        name: label,
+        network_seed: crypto.randomUUID(),
+        seconder,
+      }),
+    );
+
+    const wasOwnRecord = isOwnRecord(circle.cellId);
+
+    circle = { cellId: cell.cell_id };
+    holder = asText(me);
+    markAsOwnRecord(circle.cellId, wasOwnRecord);
+    setLabelFor(circle.cellId, label);
+
+    // Her own words, moved over whole. display_name included, so the new
+    // circle is never nameless.
+    await call("create_about_me", entry, circle.cellId);
+
+    circles.push({ cellId: circle.cellId, name: label, madeWith: label });
+    peopleLastSeen = new Set();
+    forgetTheInvitation();
+    $("circle-heading").textContent = label;
+    $("appoint-details").open = false;
+
+    alwaysAWayBack();
+    show("circle");
+    await loadCircle();
+
+    announce(
+      `A new circle, where ${seconderName} has to agree to who joins. ` +
+        `Everyone needs inviting again, including ${seconderName}.`,
+    );
+  } catch (error) {
+    problem(error);
+  }
 });
 
 $("check-people").addEventListener("click", async () => {

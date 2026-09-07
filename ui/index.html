@@ -210,45 +210,6 @@
               aria-describedby="circle-name-hint"
             />
           </div>
-          <!--
-            Last, and folded away, because most circles will not want one and
-            an optional safeguard should not read like a required step.
-
-            It has to be decided here and nowhere else: it forms part of the
-            DNA hash, so a circle either asks two people or it does not, from
-            the first moment. That is deliberate. A safeguard the holder can
-            switch off alone is no help to a holder who is being leaned on,
-            and the whole reason for this is somebody being talked into
-            letting a person in.
-          -->
-          <details id="seconder-details">
-            <summary>Ask someone else to agree to who joins</summary>
-            <p class="hint">
-              Nobody will be able to join this circle unless two people say
-              yes: you, and whoever you name here. They do not join the circle
-              themselves and they never see what is written in it.
-            </p>
-            <div class="field">
-              <label for="seconder">Their identifier</label>
-              <p id="seconder-hint" class="hint">
-                The long line beginning uhCAk from their own Hearth. Leave this
-                blank if you do not want a second yes.
-              </p>
-              <input
-                id="seconder"
-                name="seconder"
-                type="text"
-                autocomplete="off"
-                aria-describedby="seconder-hint"
-              />
-            </div>
-            <p class="hint">
-              This cannot be changed afterwards. Changing it would mean making
-              a new circle, which is cheap to do but does mean inviting
-              everybody again.
-            </p>
-          </details>
-
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
       </section>
@@ -903,6 +864,59 @@
           power that does not exist anywhere in the system. You leave; the
           circle carries on without you.
         -->
+        <!--
+          Appointing somebody to agree to who joins, after the circle exists.
+
+          It was on the create form first, which put it in the wrong order: you
+          could not make a circle at all until you had a second person's
+          identifier in your hand. The circle has to come first.
+
+          The catch is that admission is enforced by what is baked into the
+          circle when it is made, so appointing somebody afterwards cannot be
+          enforced by itself — the circle would not know about them. So this
+          makes a new circle with them named in it and carries the record
+          across. That is the same answer this project gives to revocation, and
+          it works for the same reason: circles are clones, so a new one is
+          cheap.
+
+          What is not cheap is everybody re-joining, which is why the wording
+          says plainly that doing this early costs almost nothing and doing it
+          late costs everybody an invitation.
+        -->
+        <details id="appoint-details" hidden>
+          <summary>Ask someone to agree to who joins</summary>
+          <p>
+            Nobody would be able to join unless two people say yes: you, and
+            whoever you choose. It is meant for the situation where somebody
+            talks you into letting them in — so once it is set, you cannot
+            switch it off on your own.
+          </p>
+          <p class="notice">
+            This makes a fresh circle with them named in it and copies the
+            record across. Everyone who is in this one has to join the new one,
+            so it is easiest done now, while there are few people to ask again.
+          </p>
+          <form id="appoint-form">
+            <div class="field">
+              <label for="appoint-who">Who has to agree</label>
+              <p id="appoint-who-hint" class="hint">
+                Somebody already in this circle. They will need to join the new
+                one too, like everybody else.
+              </p>
+              <select id="appoint-who" name="appoint-who"></select>
+            </div>
+            <div class="actions">
+              <button type="submit" id="appoint-submit">
+                Make the new circle
+              </button>
+            </div>
+          </form>
+          <p id="appoint-nobody" class="hint" hidden>
+            There is nobody else in this circle yet. Invite the person you want
+            to ask first, and then come back here.
+          </p>
+        </details>
+
         <details id="leave-details">
           <summary>Take this off my device</summary>
           <p>
