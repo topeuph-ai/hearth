@@ -813,8 +813,6 @@ async function loadMembers() {
     members.set(asText(r.signed_action.hashed.content.author), entry);
   }
 
-  const mine = members.get(asText(me));
-
   /*
    * Only for somebody who has not said yet.
    *
@@ -823,7 +821,19 @@ async function loadMembers() {
    * the circle asks a person to introduce herself to a record she has just
    * written. Somebody who joined by invitation has not been asked, and this
    * is where they are.
+   *
+   * Asked of my own chain, not of the list above. That list comes from the
+   * network, and in the seconds after introducing myself my own entry is not
+   * in it yet — so this section reappeared, empty, on the screen I had just
+   * filled in. What I have said about myself is never a question for the
+   * network.
    */
+  const mine = await call("my_introduction", null, circle.cellId);
+
+  // And put myself in the list for the same reason: until my introduction
+  // comes back over the network I am in my own circle as a stranger.
+  if (mine) members.set(asText(me), mine);
+
   $("introduce-section").hidden = Boolean(mine);
   $("relationship-field").hidden = isOwnRecord(circle.cellId);
   if (mine) {

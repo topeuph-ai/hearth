@@ -113,6 +113,31 @@ pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
     Ok(out)
 }
 
+/// What I have already told this circle about myself, if anything.
+///
+/// Read from my own source chain rather than from the network, because that
+/// is where it certainly is. `get_members` asks the network, which is right
+/// for everybody else and wrong for me: in the seconds after I introduce
+/// myself the link has not come back yet, so the app concluded I had never
+/// said anything and asked me all over again — on the screen I had just
+/// finished filling in.
+///
+/// Latest wins, the same rule `get_members` uses. People correct how they
+/// describe themselves.
+#[hdk_extern]
+pub fn my_introduction(_: ()) -> ExternResult<Option<Member>> {
+    let records = query(
+        ChainQueryFilter::new()
+            .entry_type(UnitEntryTypes::Member.try_into()?)
+            .include_entries(true),
+    )?;
+
+    Ok(records
+        .into_iter()
+        .rev()
+        .find_map(|record| record.entry().to_app_option::<Member>().ok().flatten()))
+}
+
 #[hdk_extern]
 pub fn create_about_me(about_me: AboutMe) -> ExternResult<Record> {
     let action_hash = create_entry(EntryTypes::AboutMe(about_me))?;
