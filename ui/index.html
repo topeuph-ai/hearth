@@ -280,12 +280,22 @@
 
       <!-- Inside a circle -->
       <section id="circle" hidden>
-        <div class="actions">
+        <!--
+          Stays at the top of the window while the page scrolls.
+
+          This page is long — the record, then who is in the circle, then
+          suggestions, then the invitation. The only way back was a button at
+          the very top, which is off screen by the time anybody needs it: make
+          an invitation, and you are at the bottom of a wall of text with no
+          way out. Whose circle you are in, and the way out of it, should
+          never scroll away.
+        -->
+        <div class="circle-bar">
           <button type="button" id="back-to-circles" class="secondary" hidden>
             All people
           </button>
+          <h2 id="circle-heading">Circle</h2>
         </div>
-        <h2 id="circle-heading">Circle</h2>
 
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->
@@ -533,6 +543,14 @@
           <div class="actions">
             <button type="button" id="copy-invitation" class="secondary" hidden>
               Copy the invitation
+            </button>
+            <!--
+              Sending the invitation is the end of a job, and the end of a job
+              should say so. Without this the last thing on the page was a
+              wall of base64 and nowhere to go from it.
+            -->
+            <button type="button" id="done-inviting" class="secondary" hidden>
+              Back to <span class="about-whom">them</span>
             </button>
           </div>
         </section>

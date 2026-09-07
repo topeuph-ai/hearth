@@ -136,6 +136,32 @@ button.secondary {
   margin: 1.5rem 0;
 }
 
+/*
+ * Whose circle this is, and the way out of it, stay on screen.
+ *
+ * The page below is long. Somebody who has just made an invitation is at the
+ * bottom of it, and a button at the very top is no use to them. Named after
+ * the person rather than the section, so it also answers "whose record am I
+ * looking at" at any point on the way down.
+ */
+.circle-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0;
+  margin-bottom: 0.5rem;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.circle-bar h2 {
+  margin: 0;
+}
+
 dl {
   margin: 0;
 }

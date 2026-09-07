@@ -417,6 +417,7 @@ async function loadCircle() {
   // four empty headings is a confusing thing to be invited into.
   $("invite-section").hidden = !amHolder || !written;
 
+
   renderReaders(
     written
       ? await call(
@@ -636,6 +637,7 @@ $("invite-form").addEventListener("submit", async (event) => {
     output.hidden = false;
     output.textContent = invitationToToken(invitation);
     $("copy-invitation").hidden = false;
+    $("done-inviting").hidden = false;
     $("invitee").value = "";
     announce("Invitation ready. Send it to them however you like.");
   } catch (error) {
@@ -1134,6 +1136,17 @@ function renderCircles() {
 async function openCircle(item) {
   circle = { cellId: item.cellId };
 
+  /*
+   * An invitation is made for one person to join one circle. Left on screen
+   * it would still be showing after switching to somebody else's circle,
+   * which is how one gets sent to the wrong person.
+   *
+   * Here rather than in loadCircle, which runs again every time a signal
+   * arrives: clearing there would take the invitation off the screen while
+   * she was still copying it.
+   */
+  forgetTheInvitation();
+
   // Forget the last person before showing this one. A name carried over from
   // the circle just closed could otherwise be written into this one, which is
   // the worst thing a record about a person could get wrong.
@@ -1176,6 +1189,26 @@ $("leave-circle").addEventListener("click", async () => {
   } catch (error) {
     problem(error);
   }
+});
+
+/*
+ * Done inviting: back up to the record, not out of the circle.
+ *
+ * Somebody who has just sent an invitation has finished a job, and the thing
+ * they want next is the page they were on before it — not a list of people
+ * and not a wall of base64 with nowhere to go.
+ */
+function forgetTheInvitation() {
+  $("invitation-output").hidden = true;
+  $("invitation-output").textContent = "";
+  $("copy-invitation").hidden = true;
+  $("done-inviting").hidden = true;
+}
+
+$("done-inviting").addEventListener("click", () => {
+  forgetTheInvitation();
+  $("circle-heading").scrollIntoView({ block: "start" });
+  $("edit-record").focus();
 });
 
 $("back-to-circles").addEventListener("click", () => {
