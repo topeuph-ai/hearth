@@ -326,3 +326,30 @@ select {
   color: var(--muted);
   font-size: 1rem;
 }
+
+fieldset {
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem 1.2rem 1.2rem;
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.4rem;
+}
+
+/* A row you can press anywhere on, not a fiddly little circle. */
+.choice-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-weight: 400;
+  margin: 0.6rem 0;
+  cursor: pointer;
+}
+
+.choice-row input[type="radio"] {
+  width: 1.4rem;
+  height: 1.4rem;
+  accent-color: var(--accent);
+}

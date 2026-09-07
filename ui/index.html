@@ -77,8 +77,38 @@
           company holding a copy.
         </p>
         <form id="create-circle-form">
+          <!--
+            Ask first. Everything after this reads differently depending on the
+            answer, and asking somebody how they are connected to themselves is
+            a small absurdity that undermines the whole thing.
+          -->
+          <fieldset class="field">
+            <legend>Who is this circle about?</legend>
+            <label class="choice-row">
+              <input
+                type="radio"
+                name="about-whom"
+                id="about-someone-else"
+                value="someone-else"
+                checked
+              />
+              Someone I care for
+            </label>
+            <label class="choice-row">
+              <input
+                type="radio"
+                name="about-whom"
+                id="about-me"
+                value="me"
+              />
+              Me — this is my own record
+            </label>
+          </fieldset>
+
           <div class="field">
-            <label for="person-name">Their full name</label>
+            <label for="person-name" id="person-name-label">
+              Their full name
+            </label>
             <p id="person-name-hint" class="hint">
               As a nurse or social worker would need to see it. Everyone in the
               circle reads this one.
@@ -92,7 +122,7 @@
               aria-describedby="person-name-hint"
             />
           </div>
-          <div class="field">
+          <div class="field" id="private-label-field">
             <label for="circle-name">
               What you call <span id="call-them-whom">them</span>
             </label>
@@ -231,10 +261,17 @@
         <form id="record-form" hidden>
           <h3 id="record-form-heading">What people should know</h3>
 
-          <div class="field">
+          <!--
+            The name was given when the circle was made. Asking again here is
+            asking the same question twice, so it is tucked away — still
+            correctable, because people mistype names, and a misspelt name on
+            somebody's record is not a small thing.
+          -->
+          <details class="field" id="fix-name">
+            <summary>Their name is spelt wrong</summary>
             <label for="display-name">Their full name</label>
             <p id="display-name-hint" class="hint">
-              The name a professional needs. Not what you call them at home.
+              As a nurse or social worker would need to see it.
             </p>
             <input
               id="display-name"
@@ -243,7 +280,7 @@
               required
               aria-describedby="display-name-hint"
             />
-          </div>
+          </details>
 
           <div class="field">
             <label for="what-matters">
@@ -287,7 +324,11 @@
 
           <div class="actions">
             <button type="submit">Save</button>
-            <button type="button" id="cancel-edit" class="secondary" hidden>
+            <!--
+              Always offered. A form you can enter but not leave is a trap, and
+              a mistyped field should never cost more than a press to undo.
+            -->
+            <button type="button" id="cancel-edit" class="secondary">
               Cancel
             </button>
           </div>
@@ -325,7 +366,7 @@
                 autocomplete="name"
               />
             </div>
-            <div class="field">
+            <div class="field" id="relationship-field">
               <label for="member-relationship">
                 How are you connected to <span id="relationship-whom">them</span>?
               </label>

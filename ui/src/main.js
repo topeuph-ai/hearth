@@ -156,6 +156,30 @@ function nameHer(name) {
   }
 }
 
+/*
+ * Whether a circle is somebody's own record is a fact about how they use this
+ * device, not about the circle — a daughter and her mother could both be in it
+ * with different answers. So it lives here, per device, keyed by the cell.
+ */
+const ownRecordKey = (cellId) => `hearth:own:${asText(cellId?.[0])}`;
+
+function markAsOwnRecord(cellId, isOwn) {
+  try {
+    localStorage.setItem(ownRecordKey(cellId), isOwn ? "yes" : "no");
+  } catch {
+    // Private windows and locked-down browsers refuse this. It is a
+    // convenience, not a rule, so carry on without it.
+  }
+}
+
+function isOwnRecord(cellId) {
+  try {
+    return localStorage.getItem(ownRecordKey(cellId)) === "yes";
+  } catch {
+    return false;
+  }
+}
+
 function renderRecord(current) {
   const entry = current?.record?.entry?.Present?.entry;
   if (!entry) {
@@ -317,6 +341,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     });
     circle = { cellId: cell.cell_id };
     holder = asText(me);
+    markAsOwnRecord(circle.cellId, $("about-me").checked);
     $("circle-heading").textContent = label;
 
     // Start the record with their name in it, so it is never nameless.
@@ -344,6 +369,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     fillForm();
     $("record-form").hidden = false;
     $("record-actions").hidden = true;
+    $("fix-name").open = false;
     $("what-matters").focus();
   } catch (error) {
     problem(error);
@@ -354,7 +380,6 @@ $("edit-record").addEventListener("click", () => {
   fillForm();
   $("record-form").hidden = false;
   $("record-actions").hidden = true;
-  $("cancel-edit").hidden = !record;
   $("display-name").focus();
 });
 
@@ -674,6 +699,7 @@ async function loadMembers() {
 
   const mine = members.get(asText(me));
   $("introduce-section").hidden = false;
+  $("relationship-field").hidden = isOwnRecord(circle.cellId);
   if (mine) {
     $("member-name").value = mine.name;
     $("member-relationship").value = mine.relationship ?? "";
@@ -925,3 +951,24 @@ $("check-again").addEventListener("click", async () => {
     button.textContent = original;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Whose circle is this?
+// ---------------------------------------------------------------------------
+
+function updateWhoseCircle() {
+  const mine = $("about-me").checked;
+  $("person-name-label").textContent = mine
+    ? "Your full name"
+    : "Their full name";
+  $("person-name-hint").textContent = mine
+    ? "As a nurse or social worker would need to see it."
+    : "As a nurse or social worker would need to see it. Everyone in the circle reads this one.";
+  // You do not have a nickname for yourself.
+  $("private-label-field").hidden = mine;
+}
+
+for (const id of ["about-me", "about-someone-else"]) {
+  $(id).addEventListener("change", updateWhoseCircle);
+}
+updateWhoseCircle();
