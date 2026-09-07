@@ -115,9 +115,11 @@ async fn a_circle_with_a_member() -> (SweetConductor, CellId, CellId) {
         .await
         .expect("the founder needs no invitation to her own circle");
 
-    let invitation: Invitation = conductor.call(&zome(&alice_cell), "invite", bob.clone()).await;
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
 
-    let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&invitation))
+    let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&bundle.invitation))
         .await
         .expect("an invited agent should be admitted");
 
@@ -155,9 +157,11 @@ async fn an_invitation_cannot_be_passed_on() {
     let alice_cell = join(&conductor, "alice", &alice, &dna, None).await.unwrap();
 
     // Alice invites Bob. Bob hands his invitation to Dave.
-    let for_bob: Invitation = conductor.call(&zome(&alice_cell), "invite", bob.clone()).await;
+    let for_bob: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
 
-    let result = join(&conductor, "dave", &dave, &dna, Some(&for_bob)).await;
+    let result = join(&conductor, "dave", &dave, &dna, Some(&for_bob.invitation)).await;
     assert!(
         result.is_err(),
         "an invitation is signed over the invitee's own key and must not transfer"
@@ -173,18 +177,20 @@ async fn a_member_cannot_forge_an_invitation() {
     let dna = circle_dna(&alice).await;
 
     let alice_cell = join(&conductor, "alice", &alice, &dna, None).await.unwrap();
-    let for_bob: Invitation = conductor.call(&zome(&alice_cell), "invite", bob.clone()).await;
-    let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&for_bob))
+    let for_bob: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .await;
+    let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&for_bob.invitation))
         .await
         .unwrap();
 
     // Bob can call invite() — there is no permission check on it — but his
     // signature is not the founder's.
-    let forged: Invitation = conductor
-        .call(&zome(&bob_cell), "invite", mallory.clone())
+    let forged: aboutme::InvitationBundle = conductor
+        .call(&zome(&bob_cell), "invite", mallory.to_string())
         .await;
 
-    let result = join(&conductor, "mallory", &mallory, &dna, Some(&forged)).await;
+    let result = join(&conductor, "mallory", &mallory, &dna, Some(&forged.invitation)).await;
     assert!(
         result.is_err(),
         "only the founder's signature admits anyone"
@@ -442,7 +448,7 @@ async fn two_holders_circles_are_different_networks() {
             &zome(&alice_cell),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: alice_cell.agent_pubkey().clone(),
+                founder: alice_cell.agent_pubkey().to_string(),
                 name: "Alice".to_string(),
                 network_seed: "shared-seed".to_string(),
             },
@@ -455,7 +461,7 @@ async fn two_holders_circles_are_different_networks() {
             &zome(&bob_cell),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: bob_cell.agent_pubkey().clone(),
+                founder: bob_cell.agent_pubkey().to_string(),
                 name: "Bob".to_string(),
                 network_seed: "shared-seed".to_string(),
             },
@@ -494,7 +500,7 @@ async fn nobody_can_create_a_circle_in_another_persons_name() {
             &zome(&alice_cell),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: someone_else,
+                founder: someone_else.to_string(),
                 name: "Not mine to make".to_string(),
                 network_seed: "seed".to_string(),
             },
@@ -520,7 +526,7 @@ async fn one_person_can_have_separate_circles() {
                 &zome(&alice_cell),
                 "create_circle",
                 aboutme::CreateCircleInput {
-                    founder: alice.clone(),
+                    founder: alice.to_string(),
                     name: seed.to_string(),
                     network_seed: seed.to_string(),
                 },
@@ -597,7 +603,7 @@ async fn a_circle_can_be_cloned_from_the_lobby() {
             &zome(&lobby),
             "create_circle",
             aboutme::CreateCircleInput {
-                founder: alice.clone(),
+                founder: alice.to_string(),
                 name: "Alice".to_string(),
                 network_seed: "seed".to_string(),
             },
@@ -799,4 +805,102 @@ async fn a_member_cannot_change_somebody_elses_suggestion() {
         result.is_err(),
         "nobody may put words in another member's mouth"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The whole journey
+// ---------------------------------------------------------------------------
+
+/// Everything a real circle does, in order.
+///
+/// The individual rules are tested above. This exists because the parts can
+/// all be right while the journey is broken — which is exactly what happened
+/// by hand: the record was written, its reference reached the joiner, and the
+/// content did not follow. Nothing above would have caught that.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_whole_journey() {
+    let (conductor, alice, bob) = a_circle_with_a_member().await;
+
+    // 1. The person's record.
+    let written: Record = conductor
+        .call(
+            &zome(&alice),
+            "create_about_me",
+            an_about_me("Margaret Smythe"),
+        )
+        .await;
+    let original = written.action_address().clone();
+
+    // 2. It has to actually reach the other member. Gossip carries links and
+    //    entries separately, so the reference can arrive without the content —
+    //    poll for both, the way a person pressing "Check again" would.
+    let mut arrived = None;
+    for _ in 0..60 {
+        let originals: Vec<ActionHash> =
+            conductor.call(&zome(&bob), "get_circle_about_me", ()).await;
+
+        if let Some(found) = originals.first() {
+            let current: aboutme::CurrentAboutMe = conductor
+                .call(&zome(&bob), "get_current_about_me", found.clone())
+                .await;
+            if current.record.is_some() {
+                arrived = current.record;
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    assert!(
+        arrived.is_some(),
+        "the record must reach the other member — the reference and the content"
+    );
+
+    // 3. Bob says who he is. Nobody verifies it.
+    let _: Record = conductor
+        .call(
+            &zome(&bob),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "Gareth".to_string(),
+                relationship: "her son".to_string(),
+            },
+        )
+        .await;
+
+    // 4. He remembers something she enjoyed. He cannot write it himself.
+    let offered: Record = conductor.call(&zome(&bob), "suggest", a_suggestion()).await;
+
+    // 5. The holder sees it and decides.
+    let waiting: Vec<aboutme::SuggestionWithOutcome> =
+        conductor.call(&zome(&alice), "get_suggestions", ()).await;
+    assert_eq!(waiting.len(), 1, "the holder should see what was offered");
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice),
+            "decide_on_suggestion",
+            aboutme::DecideInput {
+                suggestion: offered.action_address().clone(),
+                accepted: true,
+            },
+        )
+        .await;
+
+    // 6. And Bob marks that he has read it: the whole professional workflow.
+    let _: Record = conductor
+        .call(
+            &zome(&bob),
+            "acknowledge",
+            aboutme::AcknowledgeInput {
+                about_me: original.clone(),
+                role: "her son".to_string(),
+            },
+        )
+        .await;
+
+    let readers: Vec<Record> = conductor
+        .call(&zome(&alice), "get_acknowledgements", original)
+        .await;
+    assert_eq!(readers.len(), 1, "the holder should know it was read");
 }
