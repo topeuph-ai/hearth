@@ -226,7 +226,10 @@ function nameHer(name) {
   const who = name?.trim() || "them";
   knownName = name?.trim() ?? knownName;
   $("relationship-whom").textContent = who;
-  $("suggest-whose").textContent = who;
+
+  // "in their own words" needs no apostrophe; "in Margaret Smythe own words"
+  // does. The sentence changes shape depending on whether we know her name.
+  $("suggest-whose").textContent = name?.trim() ? `${who}'s` : "their";
   for (const span of document.querySelectorAll(".about-whom")) {
     span.textContent = who;
   }
@@ -350,8 +353,12 @@ function renderRecord(current) {
     if (!entry[key]?.trim()) continue;
     const dt = document.createElement("dt");
     dt.textContent = label;
+    // So a suggestion can find the words it is about, and sit next to them
+    // rather than in a pile at the bottom of the page.
+    dt.dataset.field = key;
     const dd = document.createElement("dd");
     dd.textContent = entry[key];
+    dd.dataset.fieldValue = key;
     list.append(dt, dd);
   }
 
@@ -754,6 +761,10 @@ function watchForArrivals() {
     if (!circle || document.hidden) return;
     try {
       await loadMembers();
+      // And what has been offered for the record. This looked only at people,
+      // so a suggestion could be sitting on the machine, fetched and readable,
+      // with nothing on screen ever asking for it again.
+      await loadSuggestions();
     } catch {
       // Not being able to reach anybody is not an error worth a screen. It is
       // Tuesday, and somebody's laptop is shut.
@@ -831,79 +842,164 @@ let suggestions = [];
 function renderSuggestions() {
   const list = $("suggestions-list");
   list.replaceChildren();
-  $("suggestions-section").hidden = suggestions.length === 0;
 
-  const amHolder = isHolder();
+  for (const item of suggestions) {
+    const card = suggestionCard(item);
+    if (card) list.append(card);
+  }
 
+  /*
+   * The list at the bottom is now the fallback, not the main event.
+   *
+   * Everything in it also appears beside the words it is about, which is
+   * where somebody would look for it. It is still here for the case where
+   * there is no record on screen to attach anything to — nothing written yet,
+   * or not arrived on this device.
+   */
+  markSuggestionsOnTheRecord();
+  $("suggestions-section").hidden =
+    suggestions.length === 0 || !$("record").hidden;
+}
+
+/*
+ * Put what has been offered next to the words it is about.
+ *
+ * A suggestion is always about one part of the record, and reading it at the
+ * bottom of the page means holding the field in your head while you scroll.
+ * Beside the heading it is obvious what is being proposed and what it would
+ * replace.
+ *
+ * Folded away rather than shown open: the record is the thing on this page,
+ * and somebody else's proposal should not push it down the screen until she
+ * asks to see it.
+ */
+function markSuggestionsOnTheRecord() {
+  const list = $("record-fields");
+  if (!list) return;
+
+  for (const stale of list.querySelectorAll(".suggestion-marker, .field-suggestions")) {
+    stale.remove();
+  }
+  if ($("record").hidden) return;
+
+  const byField = new Map();
   for (const item of suggestions) {
     const entry = entryOf(item.suggestion);
     if (!entry) continue;
-
-    const author = authorOf(item.suggestion);
-    const mine = asText(author) === asText(me);
-    const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
-
-    const li = document.createElement("li");
-    li.className = "suggestion";
-
-    const who = document.createElement("p");
-    who.className = "who";
-    // No names exist in this build. Saying "someone" is honest; inventing a
-    // name would not be.
-    who.textContent = `${describe(author)} suggested this for “${label}”`;
-    li.append(who);
-
-    const text = document.createElement("p");
-    text.textContent = entry.text;
-    li.append(text);
-
-    if (entry.because?.trim()) {
-      const because = document.createElement("p");
-      because.className = "because";
-      because.textContent = entry.because;
-      li.append(because);
-    }
-
-    const outcome = entryOf(item.outcome);
-    if (outcome) {
-      const decided = document.createElement("p");
-      decided.className = "outcome";
-      // Set aside is shown, never hidden. Somebody took the trouble to notice
-      // something; letting it vanish silently is how people stop noticing.
-      decided.textContent = outcome.accepted
-        ? "Added to the record."
-        : "Set aside for now. Thank you for offering it.";
-      li.append(decided);
-    } else if (amHolder) {
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      const accept = document.createElement("button");
-      accept.type = "button";
-      accept.textContent = "Add this";
-      accept.addEventListener("click", () =>
-        decide(item, entry, true).catch(problem),
-      );
-
-      const setAside = document.createElement("button");
-      setAside.type = "button";
-      setAside.className = "secondary";
-      setAside.textContent = "Not this one";
-      setAside.addEventListener("click", () =>
-        decide(item, entry, false).catch(problem),
-      );
-
-      actions.append(accept, setAside);
-      li.append(actions);
-    } else {
-      const waiting = document.createElement("p");
-      waiting.className = "who";
-      waiting.textContent = "Not looked at yet.";
-      li.append(waiting);
-    }
-
-    list.append(li);
+    const [key] = FIELD_LABELS[entry.field] ?? [];
+    if (!key) continue;
+    if (!byField.has(key)) byField.set(key, []);
+    byField.get(key).push(item);
   }
+
+  for (const [key, items] of byField) {
+    const dt = list.querySelector(`dt[data-field="${key}"]`);
+    const dd = list.querySelector(`dd[data-field-value="${key}"]`);
+    if (!dt || !dd) continue;
+
+    // Only the ones nobody has decided about are worth flagging. A suggestion
+    // already added or set aside is still readable, it just does not ask for
+    // anything.
+    const waiting = items.filter((item) => !item.outcome).length;
+
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "suggestion-marker";
+    marker.setAttribute("aria-expanded", "false");
+    marker.textContent = waiting
+      ? waiting === 1
+        ? "1 suggestion"
+        : `${waiting} suggestions`
+      : "Suggested before";
+    dt.append(" ", marker);
+
+    const panel = document.createElement("div");
+    panel.className = "field-suggestions";
+    panel.hidden = true;
+    for (const item of items) {
+      const card = suggestionCard(item);
+      if (card) panel.append(card);
+    }
+    dd.after(panel);
+
+    marker.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      marker.setAttribute("aria-expanded", String(!panel.hidden));
+    });
+  }
+}
+
+/** One suggestion, as it is shown wherever it is shown. */
+function suggestionCard(item) {
+  const amHolder = isHolder();
+
+  const entry = entryOf(item.suggestion);
+  if (!entry) return null;
+
+  const author = authorOf(item.suggestion);
+  const mine = asText(author) === asText(me);
+  const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
+
+  const li = document.createElement("li");
+  li.className = "suggestion";
+
+  const who = document.createElement("p");
+  who.className = "who";
+  // No names exist in this build. Saying "someone" is honest; inventing a
+  // name would not be.
+  who.textContent = `${describe(author)} suggested this for “${label}”`;
+  li.append(who);
+
+  const text = document.createElement("p");
+  text.textContent = entry.text;
+  li.append(text);
+
+  if (entry.because?.trim()) {
+    const because = document.createElement("p");
+    because.className = "because";
+    because.textContent = entry.because;
+    li.append(because);
+  }
+
+  const outcome = entryOf(item.outcome);
+  if (outcome) {
+    const decided = document.createElement("p");
+    decided.className = "outcome";
+    // Set aside is shown, never hidden. Somebody took the trouble to notice
+    // something; letting it vanish silently is how people stop noticing.
+    decided.textContent = outcome.accepted
+      ? "Added to the record."
+      : "Set aside for now. Thank you for offering it.";
+    li.append(decided);
+  } else if (amHolder) {
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.textContent = "Add this";
+    accept.addEventListener("click", () =>
+      decide(item, entry, true).catch(problem),
+    );
+
+    const setAside = document.createElement("button");
+    setAside.type = "button";
+    setAside.className = "secondary";
+    setAside.textContent = "Not this one";
+    setAside.addEventListener("click", () =>
+      decide(item, entry, false).catch(problem),
+    );
+
+    actions.append(accept, setAside);
+    li.append(actions);
+  } else {
+    const waiting = document.createElement("p");
+    waiting.className = "who";
+    waiting.textContent = "Not looked at yet.";
+    li.append(waiting);
+  }
+
+  return li;
 }
 
 /** Accept or set aside. Accepting also puts the words into the record. */

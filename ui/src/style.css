@@ -162,6 +162,35 @@ button.secondary {
   margin: 0;
 }
 
+/*
+ * "1 suggestion", beside the words it is about.
+ *
+ * Reads as part of the heading rather than as a badge on it. Nothing here
+ * counts anything anybody has to clear — it says a thing has been offered, and
+ * disappears once it has been looked at.
+ */
+.suggestion-marker {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.suggestion-marker:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.field-suggestions {
+  margin: 0.5rem 0 1rem 0;
+}
+
 /* A quiet, once-ever control sitting beside something used every visit. */
 .linky {
   background: none;
