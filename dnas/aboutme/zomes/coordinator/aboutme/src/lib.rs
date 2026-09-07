@@ -94,6 +94,51 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("Could not read the introduction just written"))
 }
 
+// ---------------------------------------------------------------------------
+// One rule, applied everywhere below it
+// ---------------------------------------------------------------------------
+
+/*
+ * What I wrote myself is never a question for the network.
+ *
+ * Every list in this zome is assembled from links fetched with
+ * `GetStrategy::Network`. That is right for other people's contributions and
+ * wrong for my own: for the first seconds after I write something the network
+ * has not heard of it, so the screen tells me I never did it. That produced,
+ * in turn, a "Who are you?" form on the page I had just filled in, and
+ * "Nothing has been written yet" printed above "Read this over".
+ *
+ * They were fixed one at a time until it was obvious they were one fault. So
+ * the answer is not another special case: every list here reads the network
+ * for everybody, and my own chain for me, and merges the two.
+ */
+
+/// Everything of one entry type on my own chain, oldest first.
+fn on_my_own_chain(entry_type: UnitEntryTypes) -> ExternResult<Vec<Record>> {
+    query(
+        ChainQueryFilter::new()
+            .entry_type(entry_type.try_into()?)
+            .include_entries(true),
+    )
+}
+
+/// Add anything of mine the network did not know about yet.
+///
+/// Appended rather than prepended: where a list is read latest-wins, what I
+/// have just written should be the latest.
+fn and_my_own(records: &mut Vec<Record>, mine: Vec<Record>) {
+    let already: BTreeSet<ActionHash> = records
+        .iter()
+        .map(|r| r.action_address().clone())
+        .collect();
+
+    for record in mine {
+        if !already.contains(record.action_address()) {
+            records.push(record);
+        }
+    }
+}
+
 #[hdk_extern]
 pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
     let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
@@ -110,76 +155,11 @@ pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
             }
         }
     }
+
+    // Including me, so I am not a stranger in a circle I just introduced
+    // myself to.
+    and_my_own(&mut out, on_my_own_chain(UnitEntryTypes::Member)?);
     Ok(out)
-}
-
-/// What I have already told this circle about myself, if anything.
-///
-/// Read from my own source chain rather than from the network, because that
-/// is where it certainly is. `get_members` asks the network, which is right
-/// for everybody else and wrong for me: in the seconds after I introduce
-/// myself the link has not come back yet, so the app concluded I had never
-/// said anything and asked me all over again — on the screen I had just
-/// finished filling in.
-///
-/// Latest wins, the same rule `get_members` uses. People correct how they
-/// describe themselves.
-#[hdk_extern]
-pub fn my_introduction(_: ()) -> ExternResult<Option<Member>> {
-    let records = query(
-        ChainQueryFilter::new()
-            .entry_type(UnitEntryTypes::Member.try_into()?)
-            .include_entries(true),
-    )?;
-
-    Ok(records
-        .into_iter()
-        .rev()
-        .find_map(|record| record.entry().to_app_option::<Member>().ok().flatten()))
-}
-
-/// The About Me on my own chain, if I wrote one.
-///
-/// Same rule as `my_introduction`, for the same reason. `get_circle_about_me`
-/// asks the network, and in the seconds after saving, what I have just
-/// written is not back yet — so the screen said "Nothing has been written
-/// yet" directly above "Read this over", about the words I had just typed.
-///
-/// Only the person the circle is about may author this, which validation
-/// enforces, so for them their own chain is the whole of it. For everybody
-/// else the network is the only place it could come from.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MyAboutMe {
-    /// The original create, which is the stable identity of the record.
-    pub original: ActionHash,
-    /// The newest version on this chain.
-    pub record: Record,
-}
-
-#[hdk_extern]
-pub fn my_about_me(_: ()) -> ExternResult<Option<MyAboutMe>> {
-    // Chain order, oldest first.
-    let records = query(
-        ChainQueryFilter::new()
-            .entry_type(UnitEntryTypes::AboutMe.try_into()?)
-            .include_entries(true),
-    )?;
-
-    let Some(newest) = records.last().cloned() else {
-        return Ok(None);
-    };
-
-    // The create is the identity; every later version is an update of it.
-    let original = records
-        .iter()
-        .find(|r| matches!(r.action().data, ActionData::Create(_)))
-        .map(|r| r.action_address().clone())
-        .unwrap_or_else(|| newest.action_address().clone());
-
-    Ok(Some(MyAboutMe {
-        original,
-        record: newest,
-    }))
 }
 
 #[hdk_extern]
@@ -231,10 +211,25 @@ pub fn get_circle_about_me(_: ()) -> ExternResult<Vec<ActionHash>> {
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToAboutMe)?,
         GetStrategy::Network,
     )?;
-    Ok(links
+
+    let mut originals: Vec<ActionHash> = links
         .into_iter()
         .filter_map(|l| l.target.into_action_hash())
-        .collect())
+        .collect();
+
+    // Mine too, if I am the one this circle is about. The create, not the
+    // updates: this is the record's identity, and it has exactly one.
+    for record in on_my_own_chain(UnitEntryTypes::AboutMe)? {
+        if !matches!(record.action().data, ActionData::Create(_)) {
+            continue;
+        }
+        let hash = record.action_address().clone();
+        if !originals.contains(&hash) {
+            originals.push(hash);
+        }
+    }
+
+    Ok(originals)
 }
 
 /// Every version of an About Me, oldest first.
@@ -253,10 +248,40 @@ pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<V
     // unit tested directly — in particular the tie case, which cannot be
     // provoked through a conductor because timestamps cannot be made to collide
     // on demand. See `order_versions`.
-    let updates: Vec<(Timestamp, ActionHash)> = links
+    let mut updates: Vec<(Timestamp, ActionHash)> = links
         .into_iter()
         .filter_map(|l| l.target.into_action_hash().map(|hash| (l.timestamp, hash)))
         .collect();
+
+    // My own edits, which the network has not necessarily heard about yet.
+    // Without these, correcting a line and looking straight at it showed the
+    // version before the correction.
+    //
+    // Followed from the original outwards rather than taken wholesale, so an
+    // edit belongs to this record because it can be traced to it, not because
+    // it happens to be on my chain.
+    let mine = on_my_own_chain(UnitEntryTypes::AboutMe)?;
+    let mut belongs: BTreeSet<ActionHash> = BTreeSet::from([original_action_hash.clone()]);
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for record in &mine {
+            let hash = record.action_address().clone();
+            if belongs.contains(&hash) {
+                continue;
+            }
+            let ActionData::Update(update) = &record.action().data else {
+                continue;
+            };
+            if belongs.contains(&update.original_action_address) {
+                belongs.insert(hash.clone());
+                if !updates.iter().any(|(_, h)| h == &hash) {
+                    updates.push((record.action().timestamp(), hash));
+                }
+                grew = true;
+            }
+        }
+    }
 
     let mut versions = vec![original_action_hash];
     versions.extend(order_versions(updates));
@@ -365,6 +390,7 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
 /// Who has read a given version of About Me.
 #[hdk_extern]
 pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
+    let wanted = about_me.clone();
     let links = get_links(
         LinkQuery::try_new(about_me, LinkTypes::AboutMeToAcknowledgement)?,
         GetStrategy::Network,
@@ -378,6 +404,20 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
             }
         }
     }
+
+    // Including my own "I have read this", so pressing it visibly does
+    // something. Only the ones about the version asked for.
+    let mut mine = on_my_own_chain(UnitEntryTypes::Acknowledgement)?;
+    mine.retain(|record| {
+        record
+            .entry()
+            .to_app_option::<Acknowledgement>()
+            .ok()
+            .flatten()
+            .is_some_and(|a| a.about_me == wanted)
+    });
+    and_my_own(&mut records, mine);
+
     Ok(records)
 }
 
@@ -627,26 +667,53 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
         GetStrategy::Network,
     )?;
 
-    let mut out = Vec::new();
+    let mut suggestions = Vec::new();
     for link in links {
-        let Some(hash) = link.target.into_action_hash() else {
-            continue;
-        };
-        let Some(suggestion) = get(hash.clone(), GetOptions::default())? else {
-            continue;
-        };
+        if let Some(hash) = link.target.into_action_hash() {
+            if let Some(record) = get(hash, GetOptions::default())? {
+                suggestions.push(record);
+            }
+        }
+    }
+
+    // Including anything I have offered myself, so a carer can see that what
+    // she noticed was actually written down.
+    and_my_own(&mut suggestions, on_my_own_chain(UnitEntryTypes::Suggestion)?);
+
+    // My own decisions too. Without this the holder accepts something, the
+    // list still shows it as undecided, and the obvious thing to do is decide
+    // it again.
+    let my_decisions = on_my_own_chain(UnitEntryTypes::SuggestionOutcome)?;
+
+    let mut out = Vec::new();
+    for suggestion in suggestions {
+        let hash = suggestion.action_address().clone();
 
         let decisions = get_links(
-            LinkQuery::try_new(hash, LinkTypes::SuggestionToOutcome)?,
+            LinkQuery::try_new(hash.clone(), LinkTypes::SuggestionToOutcome)?,
             GetStrategy::Network,
         )?;
-        let outcome = match decisions
+        let mut outcome = match decisions
             .first()
             .and_then(|l| l.target.clone().into_action_hash())
         {
             Some(h) => get(h, GetOptions::default())?,
             None => None,
         };
+
+        if outcome.is_none() {
+            outcome = my_decisions
+                .iter()
+                .find(|record| {
+                    record
+                        .entry()
+                        .to_app_option::<SuggestionOutcome>()
+                        .ok()
+                        .flatten()
+                        .is_some_and(|o| o.suggestion == hash)
+                })
+                .cloned();
+        }
 
         out.push(SuggestionWithOutcome {
             suggestion,

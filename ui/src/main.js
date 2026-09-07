@@ -331,36 +331,22 @@ async function loadCircle() {
   const amHolder = isHolder();
   $("check-it-over").hidden = true;
 
+  /*
+   * No special case for "but I only just wrote it".
+   *
+   * These two used to ask the network alone, so for a few seconds after
+   * saving the answer was "nothing" — which is how the screen came to say
+   * "Nothing has been written yet" directly above "Read this over", about
+   * words that had just been typed into it. The zome now reads the network
+   * for everybody and my own chain for me, so there is nothing left here to
+   * work around.
+   */
   const originals = await call("get_circle_about_me", null, circle.cellId);
-  let original = originals[0] ?? null;
+  const original = originals[0] ?? null;
 
-  let current = original
+  const current = original
     ? await call("get_current_about_me", original, circle.cellId)
     : null;
-
-  /*
-   * If I wrote it, my own chain is where it certainly is.
-   *
-   * The two calls above ask the network, and for a few seconds after saving
-   * the answer is "nothing" — which is how the screen came to say "Nothing
-   * has been written yet" directly above "Read this over", about words that
-   * had just been typed into it.
-   *
-   * The network answer is still preferred when it has something, because it
-   * is what everybody else can see. This is the fallback for the gap.
-   */
-  if (amHolder && !hasBeenWritten(current?.record?.entry?.Present?.entry)) {
-    const mine = await call("my_about_me", null, circle.cellId);
-    if (mine) {
-      original = mine.original;
-      current = {
-        record: mine.record,
-        // Only another of my own devices could disagree with me, and only the
-        // network would know about it. Nothing to report from here.
-        divergent_versions: current?.divergent_versions ?? 1,
-      };
-    }
-  }
 
   const entry = current?.record?.entry?.Present?.entry;
   const haveIt = Boolean(entry);
@@ -857,18 +843,11 @@ async function loadMembers() {
    * written. Somebody who joined by invitation has not been asked, and this
    * is where they are.
    *
-   * Asked of my own chain, not of the list above. That list comes from the
-   * network, and in the seconds after introducing myself my own entry is not
-   * in it yet — so this section reappeared, empty, on the screen I had just
-   * filled in. What I have said about myself is never a question for the
-   * network.
+   * The list above includes me from the moment I introduce myself, because
+   * the zome reads my own chain alongside the network. It did not always, and
+   * this section reappeared empty on the screen I had just filled in.
    */
-  const mine = await call("my_introduction", null, circle.cellId);
-
-  // And put myself in the list for the same reason: until my introduction
-  // comes back over the network I am in my own circle as a stranger.
-  if (mine) members.set(asText(me), mine);
-
+  const mine = members.get(asText(me));
   $("introduce-section").hidden = Boolean(mine);
   $("relationship-field").hidden = isOwnRecord(circle.cellId);
   if (mine) {

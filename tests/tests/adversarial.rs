@@ -216,6 +216,123 @@ async fn the_person_can_write_their_own_about_me() {
     assert!(record.action().entry_hash().is_some());
 }
 
+/// The fault that produced four separate bugs on four screens.
+///
+/// Every list is fetched from the network, which is right for other people
+/// and wrong for me: for the first seconds after I write something the
+/// network has not heard of it. The screens said so — a "Who are you?" form
+/// on the page just filled in, "Nothing has been written yet" above "Read
+/// this over".
+///
+/// These read immediately after writing, with no wait and no polling,
+/// because that is the moment the person is looking at the screen.
+#[tokio::test(flavor = "multi_thread")]
+async fn what_i_just_wrote_is_there_the_instant_i_look() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // Bob introduces himself and must be in the list at once.
+    let _: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "Gareth".to_string(),
+                relationship: "her son".to_string(),
+            },
+        )
+        .await;
+
+    let members: Vec<Record> = conductor.call(&zome(&bob_cell), "get_members", ()).await;
+    assert!(
+        !members.is_empty(),
+        "a person who has just said who they are must not be asked again"
+    );
+
+    // Alice writes her record and must find it at once.
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let original = created.action_address().clone();
+
+    let originals: Vec<ActionHash> = conductor
+        .call(&zome(&alice_cell), "get_circle_about_me", ())
+        .await;
+    assert!(
+        originals.contains(&original),
+        "\"Nothing has been written yet\" about words just typed in"
+    );
+
+    // And a correction must be what she sees, not the version before it.
+    let mut corrected = an_about_me("Alice Bell");
+    corrected.what_matters_to_me = "Seeing my grandchildren on Sundays".into();
+    let updated: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "update_about_me",
+            aboutme::UpdateAboutMeInput {
+                original_action_hash: original.clone(),
+                previous_action_hash: original.clone(),
+                about_me: corrected,
+            },
+        )
+        .await;
+
+    let current: aboutme::CurrentAboutMe = conductor
+        .call(&zome(&alice_cell), "get_current_about_me", original)
+        .await;
+    assert_eq!(
+        current.record.as_ref().map(|r| r.action_address().clone()),
+        Some(updated.action_address().clone()),
+        "a correction must be the version she is looking at"
+    );
+
+    // Bob offers something and must see that it was written down.
+    let suggestion: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "suggest",
+            a_suggestion(),
+        )
+        .await;
+
+    let offered: Vec<aboutme::SuggestionWithOutcome> = conductor
+        .call(&zome(&bob_cell), "get_suggestions", ())
+        .await;
+    assert!(
+        offered
+            .iter()
+            .any(|s| s.suggestion.action_address() == suggestion.action_address()),
+        "somebody who offers something must be able to see that it was taken"
+    );
+
+    // And Alice's decision must stick, or she will decide it twice.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_on_suggestion",
+            aboutme::DecideInput {
+                suggestion: suggestion.action_address().clone(),
+                accepted: true,
+            },
+        )
+        .await;
+
+    let decided: Vec<aboutme::SuggestionWithOutcome> = conductor
+        .call(&zome(&alice_cell), "get_suggestions", ())
+        .await;
+    assert!(
+        decided
+            .iter()
+            .find(|s| s.suggestion.action_address() == suggestion.action_address())
+            .is_some_and(|s| s.outcome.is_some()),
+        "a suggestion just decided must not still look undecided"
+    );
+}
+
 /// Correcting your own record is not a disagreement with yourself.
 ///
 /// This shipped, and it was found by looking at the screen rather than by any
