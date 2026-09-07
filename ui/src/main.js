@@ -383,3 +383,41 @@ $("check-again").addEventListener("click", async () => {
     button.textContent = original;
   }
 });
+
+/**
+ * Wire up a copy button so that pressing it visibly does something.
+ *
+ * An earlier version only called announce(), which writes to a screen-reader
+ * live region. A sighted person pressed it, saw nothing, and reasonably
+ * concluded it was broken. Feedback that exists only for assistive technology
+ * is not feedback — so this says it on the button and announces it.
+ */
+function wireCopyButton(buttonId, getText, doneLabel = "Copied") {
+  const button = $(buttonId);
+  if (!button) return;
+  const original = button.textContent;
+  let resetAfter;
+
+  button.addEventListener("click", async () => {
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(getText());
+    } catch {
+      ok = false;
+    }
+
+    button.textContent = ok ? doneLabel : "Press Ctrl+C instead";
+    announce(
+      ok
+        ? `${doneLabel}. Send it to them however you like.`
+        : "Could not copy. Select the text and copy it yourself.",
+    );
+
+    clearTimeout(resetAfter);
+    resetAfter = setTimeout(() => {
+      button.textContent = original;
+    }, 2500);
+  });
+}
+
+wireCopyButton("copy-identifier", () => asText(me), "Copied");
