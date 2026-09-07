@@ -162,6 +162,21 @@ button.secondary {
   margin: 0;
 }
 
+/* A quiet, once-ever control sitting beside something used every visit. */
+.linky {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.linky:hover {
+  color: var(--ink);
+}
+
 dl {
   margin: 0;
 }

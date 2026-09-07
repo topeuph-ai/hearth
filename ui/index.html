@@ -239,9 +239,54 @@
               aria-describedby="invitation-in-hint"
             ></textarea>
           </div>
+          <!--
+            Joining and saying who you are used to be two separate acts, and
+            only the second one told anybody. A nephew pasted his invitation,
+            landed in the circle, and stopped — so the person who invited him
+            had no way of knowing it had worked, because nothing had been
+            written with his name on it.
+
+            The same three questions the holder answers when she makes a
+            circle, asked in the same order, on the way in.
+          -->
+          <div class="field">
+            <label for="joiner-name">Your name</label>
+            <p id="joiner-name-hint" class="hint">
+              So the circle knows who said what. Nobody checks it — it is how
+              you describe yourself, not a credential.
+            </p>
+            <input
+              id="joiner-name"
+              name="joiner-name"
+              type="text"
+              required
+              autocomplete="name"
+              aria-describedby="joiner-name-hint"
+            />
+          </div>
+
+          <div class="field">
+            <label for="joiner-relationship">
+              How are you connected to
+              <span id="join-relationship-whom">them</span>?
+            </label>
+            <p id="joiner-relationship-hint" class="hint">
+              In your own words. “Her son”, “district nurse”, “support worker,
+              Tuesdays”.
+            </p>
+            <input
+              id="joiner-relationship"
+              name="joiner-relationship"
+              type="text"
+              autocomplete="off"
+              aria-describedby="joiner-relationship-hint"
+            />
+          </div>
+
           <div class="field">
             <label for="join-label">
-              What you call the person this circle is about
+              What you call <span id="join-label-whom">the person this circle
+              is about</span>
             </label>
             <p id="join-label-hint" class="hint">
               Only on your own device, and only if you want to. Leave it blank
@@ -295,7 +340,41 @@
             All people
           </button>
           <h2 id="circle-heading">Circle</h2>
+          <!--
+            Next to the name, because that is what it changes, and quiet
+            because it is not something anybody does twice.
+
+            Only on this device. The name a circle is made with is fixed for
+            the life of the cell, so two circles about the same person were
+            two identical rows with no way to tell which was which.
+          -->
+          <button type="button" id="rename-circle" class="linky">
+            Rename on this device
+          </button>
         </div>
+
+        <form id="rename-form" hidden>
+          <div class="field">
+            <label for="circle-label">What you call them here</label>
+            <p id="circle-label-hint" class="hint">
+              Only on this device. Nobody else sees it, and it changes nothing
+              about the record. Leave it blank to go back to their full name.
+            </p>
+            <input
+              id="circle-label"
+              name="circle-label"
+              type="text"
+              autocomplete="off"
+              aria-describedby="circle-label-hint"
+            />
+          </div>
+          <div class="actions">
+            <button type="submit">Save</button>
+            <button type="button" id="cancel-rename" class="secondary">
+              Cancel
+            </button>
+          </div>
+        </form>
 
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->

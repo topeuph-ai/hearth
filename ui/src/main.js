@@ -261,6 +261,39 @@ function isOwnRecord(cellId) {
   }
 }
 
+/*
+ * What this device calls a circle.
+ *
+ * The name a circle is created with is fixed for the life of the cell, so two
+ * circles about the same person were two identical rows in the list, and
+ * "Take this off my device" was no use when you could not tell which one to
+ * take off.
+ *
+ * Kept here rather than written to the circle because it is nobody else's
+ * business: this is what you call her on your own machine. Changing it costs
+ * nothing, tells nobody, and is the only thing that can tell two otherwise
+ * identical rows apart.
+ */
+const labelKey = (cellId) => `hearth:label:${asText(cellId?.[0])}`;
+
+function labelFor(cellId, fallback) {
+  try {
+    return localStorage.getItem(labelKey(cellId))?.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setLabelFor(cellId, label) {
+  try {
+    const trimmed = label.trim();
+    if (trimmed) localStorage.setItem(labelKey(cellId), trimmed);
+    else localStorage.removeItem(labelKey(cellId));
+  } catch {
+    // Same as above: a convenience, not a rule.
+  }
+}
+
 /**
  * Is there anything here a person would call written?
  *
@@ -510,7 +543,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
       );
     }
 
-    circles.push({ cellId: circle.cellId, name: label });
+    circles.push({ cellId: circle.cellId, name: label, madeWith: label });
     alwaysAWayBack();
     show("circle");
     announce(`Circle made for ${fullName}. Now write what people should know.`);
@@ -1027,7 +1060,26 @@ $("join-form").addEventListener("submit", async (event) => {
     circle = { cellId: cell.cell_id };
     holder = bundle.founder; // already text, out of the invitation
     $("circle-heading").textContent = label;
-    circles.push({ cellId: circle.cellId, name: label });
+    circles.push({ cellId: circle.cellId, name: label, madeWith: label });
+
+    /*
+     * Say who you are in the same breath as arriving.
+     *
+     * These were two separate acts, and only the second one told anybody: a
+     * nephew joined, stopped there, and the person who had invited him saw
+     * nothing at all, because nothing on the chain had his name on it. It is
+     * also what tells her the invitation was taken up — the signal goes out
+     * from here.
+     */
+    await call(
+      "introduce_myself",
+      {
+        name: $("joiner-name").value.trim(),
+        relationship: $("joiner-relationship").value.trim(),
+      },
+      circle.cellId,
+    );
+
     alwaysAWayBack();
     show("circle");
     announce(`You have joined ${bundle.about || "the circle"}.`);
@@ -1104,7 +1156,15 @@ async function loadCircles() {
     // A circle taken off this device is disabled, not deleted, so the
     // conductor still lists it. It should not be on her screen.
     .filter((c) => c.enabled !== false)
-    .map((c) => ({ cellId: c.cell_id, name: c.name || "Circle" }));
+    // What this device calls it wins over the name the cell was made with,
+    // which cannot be changed afterwards.
+    .map((c) => ({
+      cellId: c.cell_id,
+      name: labelFor(c.cell_id, c.name || "Circle"),
+      // Kept so clearing the label can go back to it. The label overrides
+      // this; it does not replace it.
+      madeWith: c.name || "Circle",
+    }));
 
   if (circles.length === 0) {
     show("choose");
@@ -1211,6 +1271,40 @@ $("done-inviting").addEventListener("click", () => {
   $("edit-record").focus();
 });
 
+$("rename-circle").addEventListener("click", () => {
+  $("circle-label").value = $("circle-heading").textContent;
+  $("rename-form").hidden = false;
+  $("rename-circle").hidden = true;
+  $("circle-label").focus();
+  $("circle-label").select();
+});
+
+$("cancel-rename").addEventListener("click", () => {
+  $("rename-form").hidden = true;
+  $("rename-circle").hidden = false;
+  $("rename-circle").focus();
+});
+
+$("rename-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  // Blank goes back to the name the circle was made with, rather than leaving
+  // somebody with an unnamed row they cannot fix.
+  const inList = circles.find(
+    (c) => asText(c.cellId?.[0]) === asText(circle.cellId?.[0]),
+  );
+  setLabelFor(circle.cellId, $("circle-label").value);
+
+  const now = labelFor(circle.cellId, inList?.madeWith || "Circle");
+  $("circle-heading").textContent = now;
+  if (inList) inList.name = now;
+
+  $("rename-form").hidden = true;
+  $("rename-circle").hidden = false;
+  $("rename-circle").focus();
+  announce(`Called ${now} on this device.`);
+});
+
 $("back-to-circles").addEventListener("click", () => {
   renderCircles();
   show("circles");
@@ -1236,6 +1330,26 @@ $("person-name").addEventListener("input", () => {
   const who = $("person-name").value.trim() || "them";
   $("create-relationship-whom").textContent = who;
   $("call-them-whom").textContent = who;
+});
+
+/*
+ * The invitation carries her name, so use it the moment it is pasted.
+ *
+ * Two questions on this form are about her — how you are connected to her,
+ * and what you call her — and "them" stops meaning anything once there is a
+ * name available. Quietly ignores anything that will not parse: this fires on
+ * every keystroke of a long paste, and half an invitation is not an error,
+ * just an unfinished one.
+ */
+$("invitation-in").addEventListener("input", () => {
+  let about = "";
+  try {
+    about = tokenToInvitation($("invitation-in").value)?.about?.trim() ?? "";
+  } catch {
+    about = "";
+  }
+  $("join-relationship-whom").textContent = about || "them";
+  $("join-label-whom").textContent = about || "the person this circle is about";
 });
 
 $("go-back").addEventListener("click", () => {
