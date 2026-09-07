@@ -510,7 +510,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     }
 
     circles.push({ cellId: circle.cellId, name: label });
-    $("back-to-circles").hidden = circles.length < 2;
+    alwaysAWayBack();
     show("circle");
     announce(`Circle made for ${fullName}. Now write what people should know.`);
     await loadCircle();
@@ -683,7 +683,14 @@ async function start() {
 
   // Someone read the record. Told to us by their device, not by a server.
   client.on("signal", async (signal) => {
-    const payload = signal?.payload ?? signal;
+    /*
+     * A signal arrives as { type: "app", value: { cell_id, zome_name, payload } }.
+     * Read from signal.payload it is undefined, so every handler below was
+     * dead: somebody suggested something and the screen it was meant for
+     * never heard. Same shape mistake as the author on an action, in a third
+     * place — worth saying out loud, because it is silent every time.
+     */
+    const payload = signal?.value?.payload ?? signal?.payload ?? signal;
     if (payload?.kind === "Acknowledged") {
       announce(`Someone read this. They said they are: ${payload.role}`);
       if (circle) await loadCircle();
@@ -837,6 +844,47 @@ $("suggest-form").addEventListener("submit", async (event) => {
   }
 });
 
+/**
+ * Everybody in the circle, as they describe themselves.
+ *
+ * Deliberately not "2 members" and not a count anywhere. A district nurse
+ * could be in thirty of these; a number to compare against is the beginning
+ * of a queue. Names, and what each person says they are.
+ *
+ * Hidden while nobody has said who they are, because an empty heading answers
+ * nothing. It is not hidden for a circle of one — seeing only yourself listed
+ * is the honest answer to "has anybody joined yet".
+ */
+/*
+ * Always a way out of a circle, even the only one there is.
+ *
+ * This used to appear only once somebody had two, on the reasoning that a
+ * button back to a list of one is noise. It is not: it left a person at the
+ * bottom of a page of invitation text with nowhere to go, and no way to make
+ * the page look again for anything that had arrived since.
+ */
+function alwaysAWayBack() {
+  $("back-to-circles").hidden = false;
+}
+
+function renderPeople() {
+  const list = $("people-list");
+  list.replaceChildren();
+  $("people").hidden = members.size === 0;
+
+  for (const [key, entry] of members) {
+    const li = document.createElement("li");
+    const who = entry.name?.trim() || "Somebody";
+    const said = entry.relationship?.trim();
+
+    // Never "Dave Smythe, Nephew" as though the circle had checked. The
+    // relationship is what he said about himself, and the sentence says so.
+    li.textContent = said ? `${who} — ${said}` : who;
+    if (key === asText(me)) li.textContent += " (you)";
+    list.append(li);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Who is who
 // ---------------------------------------------------------------------------
@@ -881,6 +929,8 @@ async function loadMembers() {
    * the zome reads my own chain alongside the network. It did not always, and
    * this section reappeared empty on the screen I had just filled in.
    */
+  renderPeople();
+
   const mine = members.get(asText(me));
   $("introduce-section").hidden = Boolean(mine);
   $("relationship-field").hidden = isOwnRecord(circle.cellId);
@@ -955,7 +1005,7 @@ $("join-form").addEventListener("submit", async (event) => {
     holder = bundle.founder; // already text, out of the invitation
     $("circle-heading").textContent = label;
     circles.push({ cellId: circle.cellId, name: label });
-    $("back-to-circles").hidden = circles.length < 2;
+    alwaysAWayBack();
     show("circle");
     announce(`You have joined ${bundle.about || "the circle"}.`);
     await loadCircle();
@@ -1078,7 +1128,7 @@ async function openCircle(item) {
   }
 
   $("circle-heading").textContent = item.name;
-  $("back-to-circles").hidden = circles.length < 2;
+  alwaysAWayBack();
   show("circle");
   await loadCircle();
 }
