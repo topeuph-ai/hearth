@@ -843,6 +843,113 @@ async fn a_circle_can_be_cloned_from_the_lobby() {
 
 /// The thing families currently have no way of knowing: whether anybody read
 /// it. No polling, no server, no notification service — the professional's
+/// She sends an invitation and then has no way of knowing whether it worked.
+///
+/// Everything arrived correctly and the screen said nothing, so the only way
+/// to find out whether a nephew had joined was to ring him up. The list of
+/// people is the record of who is here; this signal only saves her going to
+/// look at it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_is_told_when_her_invitation_is_taken_up() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let mut alice_hears = conductor.subscribe_to_app_signals("alice".to_string());
+
+    let _: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "Dave Smythe".to_string(),
+                relationship: "her nephew".to_string(),
+            },
+        )
+        .await;
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(60), alice_hears.recv())
+        .await
+        .expect("the person who sent the invitation should be told")
+        .expect("the signal channel should stay open");
+
+    match signal {
+        Signal::App { signal, .. } => {
+            let decoded: aboutme::Signal = signal
+                .into_inner()
+                .decode()
+                .expect("the signal should be one of ours");
+            let aboutme::Signal::Introduced {
+                by,
+                name,
+                relationship,
+                joined,
+            } = decoded
+            else {
+                panic!("expected an Introduced signal, got {decoded:?}");
+            };
+            assert_eq!(by, *bob_cell.agent_pubkey());
+            assert_eq!(name, "Dave Smythe");
+            assert_eq!(relationship, "her nephew", "in his own words, unchecked");
+            assert!(joined, "the first time somebody speaks up, they have joined");
+        }
+        other => panic!("expected an app signal, got {other:?}"),
+    }
+}
+
+/// And correcting yourself is not joining twice.
+#[tokio::test(flavor = "multi_thread")]
+async fn correcting_your_own_introduction_is_not_another_arrival() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let _: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "Dave Smyth".to_string(),
+                relationship: "her nephew".to_string(),
+            },
+        )
+        .await;
+
+    // Subscribed only now, so the first introduction cannot be mistaken for
+    // the one under test.
+    let mut alice_hears = conductor.subscribe_to_app_signals("alice".to_string());
+
+    let _: Record = conductor
+        .call(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "Dave Smythe".to_string(),
+                relationship: "her nephew".to_string(),
+            },
+        )
+        .await;
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(60), alice_hears.recv())
+        .await
+        .expect("she should still be told")
+        .expect("the signal channel should stay open");
+
+    match signal {
+        Signal::App { signal, .. } => {
+            let decoded: aboutme::Signal = signal
+                .into_inner()
+                .decode()
+                .expect("the signal should be one of ours");
+            let aboutme::Signal::Introduced { joined, name, .. } = decoded else {
+                panic!("expected an Introduced signal, got {decoded:?}");
+            };
+            assert_eq!(name, "Dave Smythe");
+            assert!(
+                !joined,
+                "somebody fixing the spelling of their own name has not arrived again"
+            );
+        }
+        other => panic!("expected an app signal, got {other:?}"),
+    }
+}
+
 /// device tells the holder's device directly.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_holder_is_told_when_someone_reads_the_record() {

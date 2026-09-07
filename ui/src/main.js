@@ -691,6 +691,27 @@ async function start() {
      * place — worth saying out loud, because it is silent every time.
      */
     const payload = signal?.value?.payload ?? signal?.payload ?? signal;
+    /*
+     * Her invitation was taken up. This is the one arrival worth interrupting
+     * somebody for, and it goes only to the person who sent the invitation —
+     * she is the one who has been waiting to hear.
+     *
+     * "They say" rather than "is": the relationship is what he wrote about
+     * himself, and nothing checked it. Nobody is given a pronoun they have
+     * not chosen either.
+     */
+    if (payload?.kind === "Introduced") {
+      const who = payload.name?.trim() || "Somebody";
+      const said = payload.relationship?.trim();
+      announce(
+        payload.joined
+          ? said
+            ? `${who} has joined. They say: ${said}.`
+            : `${who} has joined.`
+          : `${who} has changed what they say about themselves.`,
+      );
+      if (circle) await loadCircle();
+    }
     if (payload?.kind === "Acknowledged") {
       announce(`Someone read this. They said they are: ${payload.role}`);
       if (circle) await loadCircle();

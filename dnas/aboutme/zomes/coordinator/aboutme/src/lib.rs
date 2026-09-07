@@ -79,7 +79,10 @@ pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
 /// dress it up as anything more.
 #[hdk_extern]
 pub fn introduce_myself(member: Member) -> ExternResult<Record> {
-    let action_hash = create_entry(EntryTypes::Member(member))?;
+    // Before writing, so the count below does not include this one.
+    let said_before = !on_my_own_chain(UnitEntryTypes::Member)?.is_empty();
+
+    let action_hash = create_entry(EntryTypes::Member(member.clone()))?;
 
     let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
     path.ensure()?;
@@ -89,6 +92,26 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
         LinkTypes::CircleToMember,
         (),
     )?;
+
+    // Tell the holder her invitation was taken up. Fire and forget: the
+    // introduction is written either way, and a signal that does not arrive
+    // must never be the difference between somebody being in the circle and
+    // not. The list on her screen is the record of who is here; this only
+    // saves her going to look.
+    if let Membrane::Founder(founder) = membrane()? {
+        let me = agent_info()?.agent_initial_pubkey;
+        if founder != me {
+            let _ = send_remote_signal(
+                Signal::Introduced {
+                    by: me,
+                    name: member.name,
+                    relationship: member.relationship,
+                    joined: !said_before,
+                },
+                vec![founder],
+            );
+        }
+    }
 
     get(action_hash, GetOptions::default())?
         .ok_or_else(|| wasm_error!("Could not read the introduction just written"))
@@ -567,6 +590,21 @@ pub enum Signal {
         by: AgentPubKey,
         /// Claimed, never verified. See the note on `Acknowledgement`.
         role: String,
+    },
+    /// Somebody said who they are — for the first time, or corrected it.
+    ///
+    /// Sent only to the holder, and deliberately not to the whole circle. She
+    /// sent the invitation and is the one waiting to hear whether it worked. A
+    /// district nurse in thirty circles does not need telling every time
+    /// somebody else's nephew arrives; that is the inbox this is built not to
+    /// be.
+    Introduced {
+        by: AgentPubKey,
+        name: String,
+        relationship: String,
+        /// False when they are correcting what they said before, so the
+        /// interface can say "has joined" without ever saying it twice.
+        joined: bool,
     },
     /// Somebody offered something for the record.
     Suggested {
