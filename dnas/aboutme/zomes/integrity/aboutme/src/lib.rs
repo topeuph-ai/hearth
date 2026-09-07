@@ -321,6 +321,21 @@ fn check_membrane(
     // over the same key, and it is checked here by every peer rather than
     // anywhere it could be skipped.
     if let Some(seconder) = seconder {
+        /*
+         * The seconder needs no second agreement to their own admission.
+         *
+         * They were chosen by the holder, and asking them to countersign
+         * their own way in adds nothing anybody could check. It also removes
+         * a bootstrap problem that made the whole feature awkward: without
+         * this, the one person who must agree to every arrival cannot get in
+         * without agreeing to themselves from outside a circle they are not
+         * in yet. They come in first, on the holder's invitation alone, and
+         * from then on nobody else arrives without them.
+         */
+        if agent == &seconder {
+            return Ok(ValidateCallbackResult::Valid);
+        }
+
         let Some(seconded) = invitation.seconded else {
             return invalid(
                 "This circle asks two people to agree before anybody joins, and \

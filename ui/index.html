@@ -68,14 +68,6 @@
               A private space about one person — you decide who is in it.
             </span>
           </button>
-          <button type="button" id="choose-second">
-            <span class="choice-title">Agree to an invitation</span>
-            <span class="choice-detail">
-              Somebody has asked you to be the second yes on who joins their
-              circle. You do not join it yourself.
-            </span>
-          </button>
-
           <button type="button" id="choose-join">
             <span class="choice-title">Join a circle</span>
             <span class="choice-detail">
@@ -212,49 +204,6 @@
           </div>
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
-      </section>
-
-      <!--
-        For whoever was named as a second yes. They do not need to be in the
-        circle and cannot read it: all they hold is a key, and all they do is
-        sign the same thing the holder signed — one person's identifier.
-
-        Which is also why this lives out here rather than inside a circle. A
-        solicitor, an advocate or a sister two hundred miles away can be the
-        second yes without ever seeing a word of somebody's record.
-      -->
-      <section id="second" hidden>
-        <div class="actions">
-          <button type="button" id="second-back" class="secondary">Back</button>
-        </div>
-        <h2>Agree to an invitation</h2>
-        <p>
-          Somebody has named you as the person who agrees to who joins their
-          circle. Nobody can join it unless you say yes as well.
-        </p>
-        <form id="second-form">
-          <div class="field">
-            <label for="half-invitation">Paste what they sent you</label>
-            <p id="half-invitation-hint" class="hint">
-              One long line. It is half an invitation until you agree to it.
-            </p>
-            <textarea
-              id="half-invitation"
-              name="half-invitation"
-              rows="3"
-              required
-              aria-describedby="half-invitation-hint"
-            ></textarea>
-          </div>
-          <p id="second-who" class="notice" hidden></p>
-          <button type="submit" id="second-submit">I agree to this</button>
-        </form>
-        <output id="seconded-output" hidden></output>
-        <div class="actions">
-          <button type="button" id="copy-seconded" class="secondary" hidden>
-            Copy the finished invitation
-          </button>
-        </div>
       </section>
 
       <section id="join" hidden>
@@ -883,6 +832,46 @@
           says plainly that doing this early costs almost nothing and doing it
           late costs everybody an invitation.
         -->
+        <!--
+          Agreeing to who joins, for the person asked to do it.
+
+          This was a card on the front page, for somebody outside the circle,
+          which stopped being true: the second yes is now appointed from among
+          the people already in a circle, so this is where they are. They come
+          in on the holder's invitation alone — nobody has to countersign their
+          own way in — and from then on nobody else arrives without them.
+        -->
+        <section id="second-here" hidden>
+          <h3>Invitations for you to agree to</h3>
+          <p>
+            This circle asks two people to agree before anybody joins, and you
+            are the second. Paste what you have been sent.
+          </p>
+          <form id="second-form">
+            <div class="field">
+              <label for="half-invitation">Paste what they sent you</label>
+              <p id="half-invitation-hint" class="hint">
+                One long line. It is half an invitation until you agree to it.
+              </p>
+              <textarea
+                id="half-invitation"
+                name="half-invitation"
+                rows="3"
+                required
+                aria-describedby="half-invitation-hint"
+              ></textarea>
+            </div>
+            <p id="second-who" class="notice" hidden></p>
+            <button type="submit" id="second-submit">I agree to this</button>
+          </form>
+          <output id="seconded-output" hidden></output>
+          <div class="actions">
+            <button type="button" id="copy-seconded" class="secondary" hidden>
+              Copy the finished invitation
+            </button>
+          </div>
+        </section>
+
         <details id="appoint-details" hidden>
           <summary>Ask someone to agree to who joins</summary>
           <p>

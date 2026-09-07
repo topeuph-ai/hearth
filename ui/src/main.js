@@ -160,7 +160,6 @@ function show(...ids) {
     "starting",
     "choose",
     "create",
-    "second",
     "join",
     "circles",
     "circle",
@@ -1236,6 +1235,12 @@ async function offerToAppointASecondYes() {
   const panel = $("appoint-details");
   const alreadyAsks = await call("who_seconds_here", null, circle.cellId);
 
+  // And the other side of the same fact: if the circle asks somebody, and it
+  // is me, this is where I agree to who joins.
+  const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
+  $("second-here").hidden = !asksMe;
+  if (!asksMe) forgetTheSeconding();
+
   panel.hidden = !isHolder() || Boolean(alreadyAsks);
   if (panel.hidden) return;
 
@@ -1775,17 +1780,6 @@ $("invitation-in").addEventListener("input", () => {
   $("join-label-whom").textContent = about || "the person this circle is about";
 });
 
-$("choose-second").addEventListener("click", () => {
-  forgetTheSeconding();
-  show("second");
-  $("half-invitation").focus();
-});
-
-$("second-back").addEventListener("click", () => {
-  forgetTheSeconding();
-  show("choose");
-});
-
 function forgetTheSeconding() {
   $("half-invitation").value = "";
   $("second-who").hidden = true;
@@ -1836,7 +1830,7 @@ $("second-form").addEventListener("submit", async (event) => {
      * somebody's record.
      */
     const seconded = await whileWorking($("second-submit"), "Agreeing…", () =>
-      call("second_an_invitation", bundle.invitee),
+      call("second_an_invitation", bundle.invitee, circle.cellId),
     );
 
     const finished = invitationToToken({

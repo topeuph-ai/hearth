@@ -158,12 +158,23 @@ in 2024, with a named Data Protection Officer.
 **It is genuinely person-held.** The person decides what to share and with
 whom. It is not a provider system with a family portal bolted on.
 
-**It has a safeguarding idea this project does not have.** A user's **Buddy can
-veto** what the user shares. That is a real answer to a real problem — somebody
-who might be persuaded to over-share — and Hearth has no equivalent. Its
-membership model is all-or-nothing: everybody in a circle reads everything, and
-the holder decides who is in. **That is a gap here that studying a comparator
-surfaced, not a point in our favour.**
+**It has a safeguarding idea this project did not have.** A user's **Buddy can
+veto** what the user shares — a real answer to a real problem, somebody who
+might be persuaded to over-share.
+
+*Addressed 2026-09-07.* A circle may now appoint a **second yes**: somebody
+already in it, without whose signature nobody else may join. Deliberately the
+opposite way round to a veto — nothing happens unless they actively agree,
+because a veto must arrive in time to stop something already moving whereas a
+signature that was never given stops nothing. It is enforced by the membrane
+rather than by the interface, so the holder cannot waive it under pressure,
+which is the situation it exists for. Appointing one re-forms the circle, which
+is cheap because circles are clones.
+
+**What is still all-or-nothing is reading.** Everybody in a circle reads
+everything in it; there is no per-item sharing to veto, so RIX's control has no
+equivalent at that level and may not need one. Worth revisiting only if
+somebody asks for it.
 
 **Who pays.** Wikis are commonly paid for by a **local authority, school or
 other organisation** — piloted in Herefordshire, Oxfordshire and Abingdon &

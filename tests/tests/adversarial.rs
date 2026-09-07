@@ -539,6 +539,40 @@ async fn two_people_agreeing_lets_somebody_in() {
     );
 }
 
+/// The person who must agree does not have to agree to themselves.
+///
+/// Without this the feature eats its own tail: the one person who has to
+/// approve every arrival cannot arrive, because approving their own way in
+/// would mean doing it from outside a circle they are not in yet. They come in
+/// on the holder's invitation alone, and from then on nobody else does.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_second_yes_needs_no_second_yes_of_their_own() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ruth = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = circle_dna_with_seconder(&alice, Some(&ruth)).await;
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(&zome(&alice_cell), "invite", ruth.to_string())
+        .await;
+
+    assert!(
+        bundle.invitation.seconded.is_none(),
+        "an ordinary invitation, with only the holder's signature on it"
+    );
+
+    assert!(
+        join(&conductor, "ruth", &ruth, &dna, Some(&bundle.invitation))
+            .await
+            .is_ok(),
+        "the person the circle asks must be able to get into it"
+    );
+}
+
 /// The holder cannot be both people. That is the entire point.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_holder_cannot_give_the_second_yes_herself() {

@@ -649,6 +649,21 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
             wasm_error!("That invitation is damaged: the second agreement names nobody readable")
         })?;
 
+        // The seconder needs no second agreement to their own admission; see
+        // the membrane, which is where this is actually enforced.
+        if me == seconder {
+            let proof = SerializedBytes::try_from(input.invitation)
+                .map(MembraneProof::new)
+                .map_err(|e| wasm_error!(format!("Could not read that invitation: {e:?}")))?;
+
+            return create_clone_cell(CreateCloneCellInput {
+                cell_id: this_cell()?,
+                modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+                membrane_proof: Some(proof),
+                name: Some(input.name),
+            });
+        }
+
         let Some(seconded) = input.invitation.seconded.clone() else {
             return Err(wasm_error!(
                 "This invitation is not finished. This circle asks two people to \
