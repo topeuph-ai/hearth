@@ -712,6 +712,23 @@ pub fn leave_circle(dna_hash: DnaHash) -> ExternResult<()> {
     })
 }
 
+/// Come back to a circle you took off this device.
+///
+/// Leaving disables the clone rather than deleting it, so the cell is still
+/// there and its id is still taken. Joining again with the same invitation
+/// therefore tried to build a cell that already existed and failed with
+/// "Tried to create a cell with an existing id" — a wasm error, in front of
+/// somebody who had done nothing wrong except change their mind.
+///
+/// Nothing needs rebuilding. The cell is intact, with everything that was in
+/// it; it was only switched off. So this switches it back on.
+#[hdk_extern]
+pub fn rejoin_circle(dna_hash: DnaHash) -> ExternResult<ClonedCell> {
+    enable_clone_cell(EnableCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Signals: telling someone their record was read, without polling or a server
 // ---------------------------------------------------------------------------

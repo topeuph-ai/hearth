@@ -1255,7 +1255,10 @@ async function offerToAppointASecondYes() {
     choose.append(option);
   }
 
+  // The explanation goes with the form: both are about a thing you can do.
+  // When you cannot, only the reason shows.
   $("appoint-form").hidden = others.length === 0;
+  $("appoint-explains").hidden = others.length === 0;
   $("appoint-nobody").hidden = others.length > 0;
 }
 
@@ -1383,19 +1386,38 @@ $("join-form").addEventListener("submit", async (event) => {
     const bundle = tokenToInvitation(pasted);
     const label = $("join-label").value.trim() || bundle.about || "Circle";
 
+    /*
+     * Have I been here before?
+     *
+     * Taking a circle off this device disables the clone rather than deleting
+     * it, so the cell is still there and its id is still taken. Joining again
+     * therefore tried to build something that already existed and failed with
+     * "Tried to create a cell with an existing id" — a wasm error in front of
+     * somebody whose only mistake was changing their mind.
+     *
+     * Matched on what the invitation carries rather than on a hash we would
+     * have to compute: a circle is its founder, its seed and whoever it asks
+     * to agree, and those three are exactly what the DNA is built from.
+     */
+    const known = await circleAlreadyHere(bundle);
+
     const cell = await whileWorking(
       $("join-circle-submit"),
-      "Joining…",
+      known ? "Coming back…" : "Joining…",
       () =>
-        call("join_circle", {
-          founder: bundle.founder,
-          name: label,
-          network_seed: bundle.network_seed,
-          invitation: bundle.invitation,
-          // Out of the invitation, because it forms part of the DNA hash: get
-          // this wrong and you compute a different circle and arrive nowhere.
-          seconder: bundle.seconder ?? null,
-        }),
+        known
+          ? // Intact, with everything that was in it. It was only switched off.
+            call("rejoin_circle", known.cellId[0])
+          : call("join_circle", {
+              founder: bundle.founder,
+              name: label,
+              network_seed: bundle.network_seed,
+              invitation: bundle.invitation,
+              // Out of the invitation, because it forms part of the DNA hash:
+              // get this wrong and you compute a different circle and arrive
+              // nowhere.
+              seconder: bundle.seconder ?? null,
+            }),
     );
 
     circle = { cellId: cell.cell_id };
@@ -1412,18 +1434,27 @@ $("join-form").addEventListener("submit", async (event) => {
      * also what tells her the invitation was taken up — the signal goes out
      * from here.
      */
-    await call(
-      "introduce_myself",
-      {
-        name: $("joiner-name").value.trim(),
-        relationship: $("joiner-relationship").value.trim(),
-      },
-      circle.cellId,
-    );
+    // Not when coming back to one you left. You introduced yourself the first
+    // time, and saying it again with whatever happens to be in the form would
+    // overwrite what you said with blanks.
+    if (!known) {
+      await call(
+        "introduce_myself",
+        {
+          name: $("joiner-name").value.trim(),
+          relationship: $("joiner-relationship").value.trim(),
+        },
+        circle.cellId,
+      );
+    }
 
     alwaysAWayBack();
     show("circle");
-    announce(`You have joined ${bundle.about || "the circle"}.`);
+    announce(
+      known
+        ? `${bundle.about || "The circle"} is back on this device.`
+        : `You have joined ${bundle.about || "the circle"}.`,
+    );
     await loadCircle();
   } catch (error) {
     // The commonest cause by far is a half-copied invitation.
@@ -1487,6 +1518,40 @@ wireCopyButton("copy-identifier", () => asText(me), "Copied");
 // ---------------------------------------------------------------------------
 
 /** Every circle this person belongs to. Circles are clones of the lobby. */
+/**
+ * A circle already on this device that this invitation would rebuild.
+ *
+ * Returns the cell whether it is switched on or off: coming back to one you
+ * left and being invited again to one you are already in are the same thing
+ * from here, and neither should try to create anything.
+ */
+async function circleAlreadyHere(bundle) {
+  const info = await client.appInfo();
+
+  for (const raw of info.cell_info[ROLE] ?? []) {
+    const c = raw?.value ?? raw?.cloned ?? raw;
+    if (!c?.clone_id) continue;
+
+    const seed = c.dna_modifiers?.network_seed;
+    if (seed !== bundle.network_seed) continue;
+
+    // The founder is in the properties, which arrive as packed bytes.
+    let props = c.dna_modifiers?.properties;
+    if (props instanceof Uint8Array) {
+      try {
+        props = decode(props);
+      } catch {
+        continue;
+      }
+    }
+    if (props?.founder !== bundle.founder) continue;
+
+    return { cellId: c.cell_id, enabled: c.enabled !== false, name: c.name };
+  }
+
+  return null;
+}
+
 async function loadCircles() {
   const info = await client.appInfo();
   const cells = info.cell_info[ROLE] ?? [];

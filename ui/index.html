@@ -874,17 +874,36 @@
 
         <details id="appoint-details" hidden>
           <summary>Ask someone to agree to who joins</summary>
-          <p>
-            Nobody would be able to join unless two people say yes: you, and
-            whoever you choose. It is meant for the situation where somebody
-            talks you into letting them in — so once it is set, you cannot
-            switch it off on your own.
+
+          <!--
+            When there is nobody to ask, say so first.
+
+            This used to explain the whole feature at length and then finish
+            with "there is nobody else in this circle yet". Somebody read three
+            paragraphs about a thing they could not do, and the sentence that
+            mattered was the last one on the page. What you cannot do yet, and
+            why, belongs at the top.
+          -->
+          <p id="appoint-nobody" class="notice" hidden>
+            <strong>Not yet — there is nobody to ask.</strong> Invite the person
+            you want to ask, wait for them to join, then come back here.
           </p>
-          <p class="notice">
-            This makes a fresh circle with them named in it and copies the
-            record across. Everyone who is in this one has to join the new one,
-            so it is easiest done now, while there are few people to ask again.
-          </p>
+
+          <div id="appoint-explains">
+            <p>
+              Nobody would be able to join unless two people say yes: you, and
+              whoever you choose. It is meant for the situation where somebody
+              talks you into letting them in — so once it is set, you cannot
+              switch it off on your own.
+            </p>
+            <p class="notice">
+              This makes a fresh circle with them named in it and copies the
+              record across. Everyone who is in this one has to join the new
+              one, so it is easiest done now, while there are few people to ask
+              again.
+            </p>
+          </div>
+
           <form id="appoint-form">
             <div class="field">
               <label for="appoint-who">Who has to agree</label>
@@ -900,10 +919,6 @@
               </button>
             </div>
           </form>
-          <p id="appoint-nobody" class="hint" hidden>
-            There is nobody else in this circle yet. Invite the person you want
-            to ask first, and then come back here.
-          </p>
         </details>
 
         <details id="leave-details">
