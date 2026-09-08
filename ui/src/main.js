@@ -584,8 +584,17 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     // What this device lists her under. Hers alone: the clone's name is set by
     // each member for themselves, so it never travels.
     const label = (myOwn ? "" : $("circle-name").value.trim()) || fullName;
-    // Nobody introduces themselves to their own record.
-    const carerName = myOwn ? "" : $("carer-name").value.trim();
+    /*
+     * Somebody writing their own record is still in it, and used to be the
+     * only person who never appeared in "Who is in this circle" — which, with
+     * nobody else there either, hid the whole list, and with it the "Check
+     * again" button, and with that any way of ever noticing that somebody had
+     * arrived.
+     *
+     * So she introduces herself too, under her own name and with no
+     * relationship, because she is not related to herself.
+     */
+    const carerName = myOwn ? fullName : $("carer-name").value.trim();
     const carerRelationship = myOwn ? "" : $("carer-relationship").value.trim();
 
     const cell = await whileWorking(
@@ -1265,7 +1274,17 @@ async function offerToAppointASecondYes() {
 function renderPeople() {
   const list = $("people-list");
   list.replaceChildren();
-  $("people").hidden = members.size === 0;
+
+  /*
+   * Shown even when it is empty, which it should not be any more but can be
+   * for a circle made before people introduced themselves on the way in.
+   *
+   * Hiding it took "Check again" with it, so a circle with nobody in it had no
+   * way to look for anybody — the one screen where looking again is the whole
+   * point. An empty list with an honest line under it is better than no list.
+   */
+  $("people").hidden = false;
+  $("people-empty").hidden = members.size > 0;
 
   for (const [key, entry] of members) {
     const li = document.createElement("li");
