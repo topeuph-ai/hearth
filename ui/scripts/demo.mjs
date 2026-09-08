@@ -142,6 +142,31 @@ for (const [what, where] of [
 }
 if (!existsSync(happ)) die(`No hApp at ${happ}`);
 
+/*
+ * Say which network this is, out loud, every time.
+ *
+ * A circle is a cloned cell whose DNA hash is computed over the compiled wasm.
+ * Two people who built this with different compilers are on genuinely separate
+ * networks, and the way that fails is the worst kind: invitations are made and
+ * accepted, and nobody ever arrives. It looks exactly like a network fault.
+ *
+ * So it is printed. Two machines that mean to talk to each other can compare
+ * one line and know in seconds, instead of blaming a firewall for an hour.
+ * rust-toolchain.toml exists so that they match; this is how you check.
+ */
+const dnaHash = spawnSync(exe("hc"), ["dna", "hash", join(root, "dnas", "aboutme", "workdir", "aboutme.dna")], {
+  encoding: "utf8",
+});
+const hash = (dnaHash.stdout ?? "").trim().split(/\r?\n/).pop();
+
+if (hash) {
+  console.log(`\nThis network: ${hash}`);
+  console.log(
+    "Every machine that is meant to reach the others must print this exact " +
+      "line. A different one is a different network.",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The interface server
 // ---------------------------------------------------------------------------

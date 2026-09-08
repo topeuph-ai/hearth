@@ -187,8 +187,47 @@ than loopback, which is the same code path a second machine takes:
 - that server logged 65 client connections and 8 relay WebSocket upgrades from
   them
 
-What is still untested is the hop itself: a genuinely second computer, and
-whatever a home router or a firewall does to it.
+Reachability from another device was checked separately, and is the right first
+test if anything goes wrong: open **`http://<that-address>:8888/health`** in a
+phone's browser. It answers `{}` — two bytes of JSON — so a blank-looking page
+is a pass and "site can't be reached" is a firewall. It took ten seconds and
+proved a Windows machine running Norton needed no rule added.
+
+What is still untested is a genuinely second computer running a node, and
+whatever a home router does to the hop.
+
+### The thing most likely to defeat two machines, and it is not the network
+
+**A circle's DNA hash is computed over the compiled wasm.** Two people who
+build this with different compilers get different hashes, which are genuinely
+separate networks — and it fails in the worst way imaginable. Invitations are
+made and accepted, nothing errors, and nobody ever arrives. It looks exactly
+like a firewall problem and no amount of firewall work will fix it.
+
+Two things guard against that:
+
+1. **`rust-toolchain.toml` pins the compiler.** Do not remove it, and raise it
+   only deliberately — bumping it changes the DNA hash, so everybody must be on
+   the new build before anybody can reach anybody.
+2. **`npm run demo` prints the DNA hash on startup:**
+
+   ```
+   This network: uhC0ksZDuOqtYLhruRSamMI6uvlXHY7WNvHAONxJjhdLdXZCa0qvD
+   ```
+
+   Every machine meant to reach the others must print that exact line. **Check
+   this before investigating anything else** — it is one line and it rules out
+   the whole class.
+
+You can also ask for it directly:
+
+```bash
+./bin/hc dna hash dnas/aboutme/workdir/aboutme.dna
+```
+
+**Reviewers currently need Rust** to build the wasm, because `*.happ` and
+`*.dna` are gitignored and no prebuilt bundle ships. The pinned toolchain makes
+that build reliable; it does not make it unnecessary.
 
 **The desktop build is the other route.** Kangaroo ships pointing at
 Holochain's dev-test bootstrap and relay servers, which are public — see the

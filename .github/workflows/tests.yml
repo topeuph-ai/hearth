@@ -21,9 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Not @stable. rust-toolchain.toml pins the compiler because the DNA
+      # hash is computed over the wasm it produces, and a different compiler
+      # means a different network. CI must build what everybody else builds,
+      # or it is testing something nobody is running.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.98.0"
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo

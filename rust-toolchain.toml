@@ -1,0 +1,21 @@
+# Pinned, and this is not tidiness.
+#
+# A circle is a cloned cell whose DNA hash is computed over the compiled wasm.
+# Two people who build this with different compilers get different wasm, so
+# different hashes, so genuinely separate networks — and the symptom is the
+# worst kind there is. Everything appears to work, invitations are made and
+# accepted, and nobody ever arrives. It looks exactly like a network fault and
+# it is not one.
+#
+# So everybody building this builds it the same way. `npm run demo` prints the
+# DNA hash on startup; two machines that disagree are not on the same network,
+# whatever else is true.
+#
+# Raising this is a deliberate act, not a drift: it changes the DNA hash, which
+# means everybody has to be running the new build before anybody can reach
+# anybody. Change it on purpose, say so, and re-check the hash afterwards.
+
+[toolchain]
+channel = "1.98.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
