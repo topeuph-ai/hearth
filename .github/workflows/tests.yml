@@ -51,6 +51,39 @@ jobs:
       - name: Unit tests
         run: cargo test -p aboutme_integrity
 
+      # The frozen integrity zome must not move.
+      #
+      # A circle is the hash of this wasm, so any change to it strands every
+      # circle in existence, silently, with no error shown to anybody. The
+      # freeze is a promise; this step is what makes it more than one.
+      # See dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256.
+      - name: The integrity zome is frozen
+        run: |
+          pin_file=dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256
+          expected=$(grep '^linux' "$pin_file" | awk '{print $2}')
+          actual=$(sha256sum target/wasm32-unknown-unknown/release/aboutme_integrity.wasm | awk '{print $1}')
+
+          if [ "$expected" = "UNKNOWN-until-the-first-CI-run" ]; then
+            echo "::error::The Linux hash has never been recorded. It is:"
+            echo "::error::  $actual"
+            echo "::error::Put that on the 'linux' line of $pin_file and push."
+            exit 1
+          fi
+
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::THE INTEGRITY ZOME HAS CHANGED."
+            echo "::error::  expected  $expected"
+            echo "::error::  built     $actual"
+            echo "::error::"
+            echo "::error::Every circle anybody has made is unreachable to this build."
+            echo "::error::If it was accidental - a comment, a reformat, a tidy-up - revert it."
+            echo "::error::If it is deliberate it is a migration: see docs/to-a-product.md,"
+            echo "::error::and update $pin_file in the same commit."
+            exit 1
+          fi
+
+          echo "Integrity zome unchanged: $actual"
+
       - name: Fetch the hc CLI
         env:
           GH_TOKEN: ${{ github.token }}

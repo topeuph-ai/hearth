@@ -1,0 +1,20 @@
+# The frozen integrity zome.
+#
+# A circle IS the hash of this compiled wasm. Change the source — including a
+# comment, which was measured to change it — and every circle anybody has ever
+# made becomes unreachable. Their records stay on their own disks and no build
+# of this app will ever show them again, with no error anywhere.
+#
+# So the wasm hash is pinned here and CI fails if it moves. See the README, and
+# docs/to-a-product.md for what to do if it genuinely has to change (short
+# answer: that is a migration with everybody re-invited, not a commit).
+#
+# Frozen 2026-09-08, at release v0.1.0.
+#
+# One line per platform, because the compiler does not necessarily produce
+# identical bytes on each. If these two ever differ, that is worth knowing on
+# its own: it would mean a circle made from a Windows build and one made from a
+# Linux build are different networks, from the same source.
+
+linux    UNKNOWN-until-the-first-CI-run
+windows  dd942cacc54fa741677dc5128d0469ce22cb1a022206345f0f69e31d9a541de6
