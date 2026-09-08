@@ -108,6 +108,46 @@ What this does *not* settle is the part that was never software: how a proxy com
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
 | A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |
 | Content is wrong or out of date and someone relies on it | Medium | Medium | Acknowledgements record which version was read |
+| **An invitation reveals the person's name to anyone who sees it** | Medium | Low–Medium | Deliberate, and worth restating before production — see below |
+
+### An invitation carries the person's name in the clear
+
+**What happens.** An invitation is a base64 blob, meant to be sent by text
+message or read down a phone. It is not encrypted. Anyone who sees one can
+decode it and read the `about` field, which holds the name of the person the
+circle is about.
+
+**Why it is there.** So that whoever is invited knows whose circle they are
+accepting *before* they accept it, and so the joining screen can ask "How are
+you connected to Margaret Smythe?" rather than "connected to them". Accepting
+an invitation into an unnamed circle is worse, not better.
+
+**What it does not do.** The invitation admits nobody but the one key it was
+made for — the founder's signature is over the invitee's public key, and every
+peer checks it independently. So an intercepted invitation is useless for
+getting in. **"Safe to send" means it cannot let anyone in; it does not mean it
+reveals nothing.** That distinction should be in any wording shown to users,
+and it currently is not.
+
+**Scale of the exposure.** One name, and only for invitations that are actually
+intercepted — a misdirected text, a shared screen, a phone left unlocked. It
+discloses nothing about the person's health, their circumstances, or anything
+written in the record. It does disclose that somebody is the subject of a care
+record, which for some people is itself sensitive.
+
+**Options, none of them taken yet.**
+
+- Drop `about` from the invitation. The joiner then names the circle
+  themselves and accepts it blind. Removes the exposure, costs the thing that
+  makes accepting an informed act.
+- Encrypt the invitation to the invitee's key. They already have one — the
+  invitation is signed over it — so this is possible without new machinery, and
+  is the answer that keeps both properties.
+- Shorten the invitation generally. It is far longer than anything a person
+  would read down a phone, which is a usability problem in its own right and
+  probably wants solving at the same time. **[DECISION: how invitations are
+  issued needs revisiting before production. Noted 2026-09-08; not urgent for a
+  demonstration, where no real person's name goes in.]**
 
 ### The availability risk
 
@@ -169,6 +209,11 @@ Entries are held on other members' devices, so "delete everything" is not a sing
 4. Write down how proxy decision-making works where someone lacks capacity
 5. Ask NHS England how a no-operator system should be assessed under DTAC
 6. Get a qualified view on lawful basis and on erasure
+7. Revisit how invitations are issued: they carry the person's name in the
+   clear, and they are far longer than anything anybody would read down a
+   phone. Encrypting the invitation to the invitee's key would answer both the
+   privacy point and, done properly, the length. Not urgent for a
+   demonstration; needed before any real person's name goes in one
 
 **Not needed yet:** Cyber Essentials and clinical safety certification are procurement gates. They apply when an organisation is buying something. That is years away, and neither costs anything today.
 
