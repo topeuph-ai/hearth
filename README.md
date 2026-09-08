@@ -23,6 +23,10 @@ anything below sounds more finished than it is.
 
 ### ⬇️ [Download the Windows installer](https://github.com/topeuph-ai/hearth/releases/latest)
 
+> **This is an early demo and it may not yet do what it should.** It exists to
+> show that the idea is possible, not to be relied on. Expect rough edges, and
+> please do not put anybody real information into it.
+
 Windows only for now. Linux and macOS build from source with the same command —
 see [The desktop app](#the-desktop-app).
 
