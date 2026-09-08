@@ -225,11 +225,49 @@ everywhere. Which is arguably what it should be anyway: a nurse should not
 accumulate copies of the records of everybody she visits, and this makes that
 structural rather than a promise.
 
-**Whether a leacher can still make and receive remote calls is reasoned, not
-tested.** The arc governs what an agent stores and gossips; calls are
-agent-to-agent messaging. Nothing found suggests the arc gates them, and the
-word "leacher" implies fetching from peers works. **Not proven. Prove it before
-building on it.**
+**There is a whole test suite for this**, in `holochain-0.7.0/tests/tests/zero_arc/`
+— 621 lines of it, with `target_arc_factor = 0` set explicitly. What it proves:
+
+- `get_missing_from_coordinator` — "zero arc nodes can use the various get host
+  functions to get missing records, actions and entries from authorities."
+- `self_validation_get_missing` — they can fetch what they need to validate.
+- `zero_arc_get_details_discover_updates` — they see updates made by others.
+- `zero_arc_delete_link_get_links` — deleted links stop coming back.
+
+So **a leacher can read from the DHT**, tested by the people who wrote it. That
+is more than was hoped for.
+
+**And it changes the design, because reading from the DHT is the wrong tool
+here.** A `get` returns the whole entry. `AboutMe` is one entry with nine
+fields, so a leacher who can `get` can read *everything* — which is precisely
+what the outer ring exists not to allow.
+
+Per-section access needs the request to go through code that can filter, which
+means a **remote call into a member's coordinator zome**, not a DHT get. And
+remote calls from a zero-arc node are **not covered by those tests** — nothing
+in the suite touches `call_remote` or capability grants at all.
+
+So the open question is narrower and sharper than before:
+
+> Can a zero-arc node make a capability-gated remote call to a circle member,
+> and can that member answer it?
+
+Everything else about the leacher route is now established. **This one question
+is the whole risk**, and it is answerable in an afternoon with a test rather
+than an argument.
+
+**A second consequence worth writing down now.** If a pass-holder is admitted to
+the network at all, they can `get` the whole entry regardless of what the
+interface offers them — the membrane is the boundary, not the zome function. So
+per-section access is **not enforceable against a determined reader** by this
+route. It is enforceable against an ordinary one using the app as built, which
+is a real but much weaker claim, and the difference must never be blurred in
+anything this project publishes.
+
+If per-section access has to hold against a determined reader, the sections have
+to be **separately encrypted**, and this becomes a key-management problem rather
+than an access-control one — which is item 1 on this page, arriving from a
+direction nobody expected.
 
 ### ⚠️ And it collides with the freeze
 
