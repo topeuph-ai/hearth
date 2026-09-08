@@ -203,6 +203,106 @@ happening.
 
 ---
 
+---
+
+## 4a. The wider net
+
+The first pass of this page followed the shape of somebody else's assessment and
+only checked its homework, which meant it inherited that assessment's blind
+spots. This section is the search that should have been done alongside it.
+
+### Fix the thing that gates everything: not being an organisation
+
+**Cwmpas / Social Business Wales** advise people setting up social enterprises
+and CICs in Wales. They have been doing it since 1982, the support is **fully
+funded — free** — and it is one-to-one. **0300 111 5050.**
+
+This is worth doing early and almost regardless of what else happens, because
+"not a registered organisation" is what closes the door on the National Lottery,
+on SBRI, on most Innovate UK routes, and on a good deal else. It is also the
+honest structure for a project whose entire argument is that nobody should own
+the data: a CIC or a co-operative *says* that in a way a sole trader cannot.
+
+It costs nothing to ask, and it is a Welsh service for Welsh people.
+
+[Social Business Wales — start-ups](https://cwmpas.coop/what-we-do/services/social-business-wales-new-start/) ·
+[Social Business Wales](https://businesswales.gov.wales/socialbusinesswales/)
+
+### The National Lottery Community Fund, Wales
+
+**National Lottery Awards for All Wales: £300 to £20,000.** Medium and large
+grants rose to £150,000 and £700,000 on 9 September 2026.
+
+**You cannot apply as an individual.** The eligible list is constituted
+organisations — voluntary and community groups, registered charities, CIOs,
+not-for-profit companies, CICs. So this sits directly behind the Cwmpas
+conversation above, and becomes available the moment there is a constituted
+thing to apply as.
+
+Worth noting what this fund is *for*: bringing people together and strengthening
+communities. An application would be about carers and families, not about
+distributed systems. That is a different document from the NLnet one and should
+not be a rewrite of it.
+
+[Awards for All Wales](https://www.tnlcommunityfund.org.uk/funding/funding-programmes/national-lottery-awards-for-all-wales) ·
+[Wales funding](https://www.tnlcommunityfund.org.uk/funding/wales)
+
+### The Holochain Foundation itself
+
+**No formal grant programme exists** — their Foundation page describes no
+funding scheme or application process for independent developers, and it would
+be wrong to plan around one.
+
+But they are **investing over $2 million across two years in the developer
+ecosystem**, and their published ecosystem work is mostly messaging, data
+provenance, games and mutual credit. **There is no care or health application in
+what they point at.** A working, standard-conformant health hApp with a
+published DPIA is a thing an ecosystem that size does not currently have.
+
+So the route here is **attention, not money** — Discord, the developer portal,
+the contact form — and the reason to take it seriously is that attention from
+them is worth more than a small grant when the next reviewer asks whether anyone
+in the Holochain world takes this seriously. It also connects directly to
+[`prior-art.md`](prior-art.md): there is peer-reviewed academic interest in
+Holochain for health with no application attached to it, and an application here
+with no academic attachment.
+
+[Holochain Foundation](https://www.holochain.org/foundation/)
+
+### Charities in the actual subject area
+
+Not searched properly yet, and this is the most obvious remaining gap. The
+organisations whose people would recognise this problem instantly:
+
+- **Alzheimer's Society** — they own *This is me*, the direct ancestor of the
+  standard this app implements. See [`what-to-borrow.md`](what-to-borrow.md).
+- **Carers UK / Carers Trust / Carers Wales** — the unpaid carer is the person
+  this app is actually for, and none of the funders above have that as their
+  subject.
+- **Dementia UK**, **Mencap**, **Learning Disability Wales**.
+
+**None of these have been checked for open funding calls.** They are listed so
+the gap is visible rather than forgotten. The reason to treat them seriously is
+not the size of the cheque — it is that a letter of support from an organisation
+like this changes how every other application reads.
+
+### What was deliberately not pursued, and why
+
+- **Innovate UK Smart Grants, SBRI contracts, accelerator programmes** — all
+  need a registered business. Revisit after Cwmpas, not before.
+- **Sovereign Tech Agency and similar infrastructure funds** — these maintain
+  widely-depended-upon existing infrastructure. This is a new application with
+  no users; it is not what they are for.
+- **Prototype Fund (Germany)** — funds individuals, which is rare and
+  attractive, but has residency requirements. Not checked, because it almost
+  certainly excludes a Welsh applicant. **Worth thirty seconds of checking
+  before dismissing.**
+- **Assistive-technology and accessibility grant round-ups found in search** —
+  several pages carried very specific figures with no traceable source. They
+  looked like search-optimised filler and nothing from them is repeated here.
+  If a number cannot be traced to the funder's own page it does not go on this
+  page.
+
 ## 5. What I would actually do, in order
 
 1. **Read the Restack call text and decide honestly whether Hearth is in scope.**
@@ -211,11 +311,13 @@ happening.
 2. **Publish a release, so "try it yourself" becomes an invitation somebody can
    accept.** This is the cheapest thing on the list and it makes every other
    conversation different. See [`what-is-proven.md`](what-is-proven.md).
-3. **Ring Business Wales about UNITE.** One phone call, live money, Welsh.
-4. **Email the Bevan Commission** and ask when the next cohort opens and whether
+3. **Ring Cwmpas on 0300 111 5050** about becoming a constituted thing.
+   Free, Welsh, and it is what unlocks the Lottery, SBRI and most of the rest.
+4. **Ring Business Wales about UNITE.** One phone call, live money, Welsh.
+5. **Email the Bevan Commission** and ask when the next cohort opens and whether
    a technical partner outside NHS Wales can be on an application.
-5. **Register on the NHS Innovation Service.** Free, slow, no downside.
-6. **Answer "what remains unsolved after SPR?" properly** — from the programme
+6. **Register on the NHS Innovation Service.** Free, slow, no downside.
+7. **Answer "what remains unsolved after SPR?" properly** — from the programme
    documents, not from assumption. Until that is answered, every conversation
    above is weaker than it needs to be.
 
