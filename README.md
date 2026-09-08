@@ -14,6 +14,64 @@ protection questions out of scope.
 
 **Do not add clinical fields without understanding what they drag in with them.**
 
+## Trying it
+
+> **No release is published yet.** The installer is built from source — see
+> [The desktop app](#the-desktop-app). When there is one, the link goes here,
+> and everything below applies to it.
+
+One file, about 115MB. **Holochain and its keystore are inside it**, so there is
+nothing else to install: no Rust, no Node, no separate binaries, no server to
+run. Install it on two machines and they find each other over the internet.
+
+**Two things will happen on Windows, and neither means anything is wrong.**
+
+### 1. "Windows protected your PC"
+
+The installer is **not code-signed**, so SmartScreen stops it:
+
+> Windows protected your PC
+> Microsoft Defender SmartScreen prevented an unrecognised app from starting.
+
+Click **More info**, then **Run anyway**.
+
+This is what Windows shows for any application whose publisher has not bought a
+signing certificate. It is not a judgement about the file. If that is not
+acceptable in your setting — and in some NHS settings it will not be — say so,
+because signing is a cost rather than a problem.
+
+### 2. If it never finds anybody, suspect your antivirus
+
+Symptom: it installs, opens, everything works on your own machine, and it never
+sees the other person. **No error appears anywhere.**
+
+Cause, in almost every case: **antivirus that scans HTTPS.** Norton, Kaspersky,
+Avast, ESET and most corporate proxies re-sign every secure connection with
+their own certificate. Windows trusts it, so your browser never notices — but
+Holochain does not use the Windows certificate store, sees a certificate it
+cannot trace, and refuses to connect.
+
+**The fix is one exclusion.** Add this host to your antivirus's HTTPS scanning
+exclusions:
+
+```
+dev-test-bootstrap2.holochain.org
+```
+
+Then **restart the app** — it does not retry a connection that already failed,
+so the exclusion appears to do nothing until you do.
+
+Verified on Windows with Norton 360: before the exclusion the app could not
+reach anything; after it, and a restart, every certificate error was gone.
+Excluding one host leaves the rest of your scanning exactly as it was.
+
+### What it is not
+
+This is a demonstration, not a product. It uses **Holochain's public dev-test
+servers** to help people find each other, which carry no availability
+guarantee. Nothing written in it is encrypted at rest yet, so **do not put real
+information about a real person into it.**
+
 ## Why this shape
 
 The blocker on every previous attempt at a shared record around one person is that
@@ -274,6 +332,10 @@ Produces `dist/uk.topeuph.hearth-0.1.0-setup.exe`, about 115MB, with
 machines, unplug the router, and they still find each other on the local
 network.** That is the demonstration, and it is a different thing from two
 windows on one laptop.
+
+Before sending it to anybody, read [Trying it](#trying-it) — SmartScreen will
+stop them, and antivirus that scans HTTPS will isolate the app with no error
+shown anywhere.
 
 ### Antivirus that scans HTTPS will silently isolate the app
 
