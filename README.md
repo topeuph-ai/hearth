@@ -21,9 +21,10 @@ anything below sounds more finished than it is.
 
 ## Trying it
 
-> **No release is published yet.** The installer is built from source — see
-> [The desktop app](#the-desktop-app). When there is one, the link goes here,
-> and everything below applies to it.
+### ⬇️ [Download the Windows installer](https://github.com/topeuph-ai/hearth/releases/latest)
+
+Windows only for now. Linux and macOS build from source with the same command —
+see [The desktop app](#the-desktop-app).
 
 One file, about 115MB. **Holochain and its keystore are inside it**, so there is
 nothing else to install: no Rust, no Node, no separate binaries, no server to
