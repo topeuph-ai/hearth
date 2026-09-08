@@ -21,7 +21,8 @@ we restart the demo. **The moment one real person keeps one real record here,
 that stops being acceptable**, and a routine bug fix in the wrong file destroys
 their work silently.
 
-**Decided 2026-09-08: the integrity zome is frozen.**
+**Decided 2026-09-08: the integrity zome is frozen** — with one question still
+open, see [the collision with the outer ring](#and-it-collides-with-the-freeze).
 
 From now on, `dnas/aboutme/zomes/integrity/aboutme/src/lib.rs` — and anything
 else that feeds the DNA hash — changes only for a reason worth stranding every
@@ -191,6 +192,71 @@ device the README already recommends for joining does this job too.
 
 The third point is the real work, and it is the difference between a good idea
 and a design.
+
+### Checked against the 0.7.0 source, 2026-09-08
+
+Read in the vendored crates, not recalled from documentation.
+
+**Zero-arc nodes are real, supported, and have a name.** From
+`holochain_conductor_api-0.7.0/src/config/conductor.rs`:
+
+> "The target arc factor to apply when receiving hints from kitsune2. In normal
+> operation, leave this as the default 1. **For leacher nodes that do not
+> contribute to gossip, set to zero.**"
+
+And the factor genuinely produces nothing: `apply_arc_factor` in
+`holochain_p2p-0.7.0/src/local_agent.rs` multiplies the arc span by the factor,
+and returns `DhtArc::Empty` when the result is zero — with a fixture test
+asserting exactly that. Every agent otherwise joins with `DhtArc::FULL`
+(`spawn/actor.rs`), which is where the "everybody holds everything" property
+comes from.
+
+So **a node that participates without storing is a first-class thing in 0.7.0**,
+not a trick.
+
+**But it is conductor-wide, not per-circle.** `target_arc_factor` sits in the
+network config for the whole conductor and is applied to every space it joins.
+There is no way to be a full member of your mother's circle and a leacher in a
+stranger's from the same installation.
+
+That is not fatal — it just says what the shape has to be. **The professional's
+app is a different build, or at least a different mode**, that is a leacher
+everywhere. Which is arguably what it should be anyway: a nurse should not
+accumulate copies of the records of everybody she visits, and this makes that
+structural rather than a promise.
+
+**Whether a leacher can still make and receive remote calls is reasoned, not
+tested.** The arc governs what an agent stores and gossips; calls are
+agent-to-agent messaging. Nothing found suggests the arc gates them, and the
+word "leacher" implies fetching from peers works. **Not proven. Prove it before
+building on it.**
+
+### ⚠️ And it collides with the freeze
+
+**Getting into the network at all requires passing `check_membrane`, which is in
+the frozen file.**
+
+A pass-holder is not a founder and has no invitation. Admitting them means a new
+`Membrane` variant, or a new membrane-proof shape, or both — and every one of
+those changes the DNA hash and strands every circle in existence.
+
+So the two decisions taken today are in tension, and it has to be resolved
+deliberately rather than discovered later:
+
+- **Option A — one more change, then freeze.** Nobody has a real record in this
+  yet. Make the outer ring's integrity changes now, in one deliberate piece of
+  work, and freeze from that release onwards. The freeze exists to protect real
+  records, and there are none.
+- **Option B — freeze from today, and the outer ring lives in a separate DNA.**
+  A second cell the professional joins, with the circle publishing sections into
+  it. Keeps the promise made today, and is a good deal more machinery.
+- **Option C — the outer ring never joins the network**, and the pass is
+  honoured some other way entirely. No mechanism for this has been found.
+
+**Recommended: A.** The freeze is worth everything the day somebody real depends
+on it and costs almost nothing today, so spend the last change on the thing that
+was always going to need it. But it is a decision, not a detail, and taking it
+by accident would be the worst of the three.
 
 ## 6. Discovery
 
