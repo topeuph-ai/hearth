@@ -14,6 +14,11 @@ protection questions out of scope.
 
 **Do not add clinical fields without understanding what they drag in with them.**
 
+**Before anything else, read [what is proven and what is not](docs/what-is-proven.md).**
+It says who is building this and with what, which parts are tested, which are
+built but unwatched, and which are not built at all. It is the page to trust if
+anything below sounds more finished than it is.
+
 ## Trying it
 
 > **No release is published yet.** The installer is built from source — see
@@ -22,7 +27,15 @@ protection questions out of scope.
 
 One file, about 115MB. **Holochain and its keystore are inside it**, so there is
 nothing else to install: no Rust, no Node, no separate binaries, no server to
-run. Install it on two machines and they find each other over the internet.
+run. It is built to find its peers over the internet, so two installations
+should find each other with nothing in between.
+
+> **Should, not does.** Only one machine here has ever run it — the second
+> laptop is a Chromebook and a rented host costs money this project does not
+> have. Everything the design needs is in the build and multiple nodes find
+> each other on one machine, but **nobody has watched two computers do it.**
+> If you have two, this is the most useful half hour anyone could give the
+> project. [What is proven, and what is not](docs/what-is-proven.md).
 
 **Two things will happen on Windows, and neither means anything is wrong.**
 
