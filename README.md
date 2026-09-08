@@ -14,6 +14,23 @@ protection questions out of scope.
 
 **Do not add clinical fields without understanding what they drag in with them.**
 
+> ### 🧊 The integrity zome is frozen
+>
+> `dnas/aboutme/zomes/integrity/aboutme/src/lib.rs` **must not be edited at
+> all** — decided 2026-09-08. A circle *is* the hash of that code, so any
+> change makes every existing circle unreachable: the records stay on people + s
+> disks and no build of this app will ever show them again, with no error
+> anywhere.
+>
+> **Not even comments.** Adding a comment block was measured to change the
+> compiled wasm (`dd942cac…` → `941f0b41…`), because panic and debug strings
+> carry line numbers. Reverting it restored the hash exactly, so builds are
+> reproducible and the comment really was the difference.
+>
+> The interface and the coordinator zome are where the work goes; neither
+> feeds the DNA hash. If that file genuinely must change, it is a migration
+> with everybody re-invited — see [docs/to-a-product.md](docs/to-a-product.md).
+
 **Before anything else, read [what is proven and what is not](docs/what-is-proven.md).**
 It says who is building this and with what, which parts are tested, which are
 built but unwatched, and which are not built at all. It is the page to trust if

@@ -21,11 +21,46 @@ we restart the demo. **The moment one real person keeps one real record here,
 that stops being acceptable**, and a routine bug fix in the wrong file destroys
 their work silently.
 
-There are two honest answers and the project has to pick one:
+**Decided 2026-09-08: the integrity zome is frozen.**
+
+From now on, `dnas/aboutme/zomes/integrity/aboutme/src/lib.rs` — and anything
+else that feeds the DNA hash — changes only for a reason worth stranding every
+existing circle for. The interface and the coordinator zome stay free to change
+as much as they like, which is where nearly all the work happens anyway.
+
+The cost is real and should be said plainly: **the data shape has to be right
+now.** Adding a variant to an enum, adding a field to a struct, renaming a type
+— every one of those changes the hash. A field nobody thought of in 2027 is not
+a commit, it is a migration, planned as such. That is the price of never
+destroying somebody's record with a bug fix, and it is worth paying.
+
+### The freeze is stricter than expected: not even comments
+
+**Measured, not assumed, 2026-09-08.** The obvious place to write "this file is
+frozen" is the top of the frozen file. So a seventeen-line comment was added to
+`integrity/aboutme/src/lib.rs` and the wasm rebuilt, expecting the hash to be
+unchanged.
+
+It changed — `dd942cac…` to `941f0b41…`. Reverting the comment and rebuilding
+gave `dd942cac…` back exactly, so builds *are* reproducible; **the comment
+itself was the difference.** Almost certainly panic and debug location strings,
+which carry line numbers, and adding lines at the top moves every one of them.
+
+Two consequences, and the first is the one that matters:
+
+- **The freeze means the file, not just the types.** No comments, no
+  reformatting, no reordering, no touching it at all. A tidy-up commit on that
+  file is as destructive as a schema change.
+- **The note saying so cannot live in the file it describes.** It lives here,
+  and in the README, and nowhere else.
+
+That is an unusually literal kind of freeze and it needs to be understood by
+anybody who works on this, including a future version of whoever wrote it.
+
+The two answers this was chosen between:
 
 - **Freeze the integrity zome.** Everything else — interface, coordinator zome,
-  behaviour — can change freely without touching the DNA hash. This is a real
-  and disciplined option, and it means the data shape has to be right *now*.
+  behaviour — can change freely without touching the DNA hash. **Chosen.**
 - **Build a migration path.** Export from the old circle, import into the new,
   re-invite everybody. This is the same answer the project already gives to
   revocation and to appointing a second yes, so it is at least consistent — but
@@ -103,19 +138,59 @@ What that needs:
   — which is exactly right for this, and exactly why they were wrong as a
   revocation mechanism. Get that distinction into a comment before writing a
   line, or it will be re-litigated.
+- **Answering from the circle rather than from the person.** See below: this
+  removes the offline caveat and is a better design, but it is not free.
 - **Section granularity.** `AboutMe` is one entry with nine fields, so the
   filtering happens at the call boundary: the caller is handed one field and
   never sees the entry. That is simpler than splitting the entry and should stay
   that way.
 - **Withdrawal**, and a screen showing which passes are outstanding — a person
   cannot withdraw what they cannot see they gave.
-- **An honest failure when the device is off.** Not a spinner. Something that
-  says the person's device is not answering and what to do about it, because
-  this failure will happen in a hallway to somebody in a hurry.
+- **An honest failure when nobody answers.** Not a spinner. Something that says
+  so and says what to do, because this will happen in a hallway to somebody in
+  a hurry.
 
 **Explicitly not in this piece of work:** discovery, a professional's interface,
 offline caching of granted sections. Naming them as excluded is what stops the
 work sprawling.
+
+### Who answers the request — and why the first answer was wrong
+
+The first version of this note said the outer ring only works while **the
+person's own device** is reachable, and called that its unavoidable cost. That
+was too quick.
+
+**The pass is an entry on the person's chain, so it is published to the DHT, so
+every circle member can see it.** And every circle member already holds a
+complete copy of the record. So there is no reason the person has to be the one
+who answers: any member who is online can check the pass and serve the one
+section it names, from their own copy.
+
+That is strictly better. The record already survives a flat battery for circle
+members; this extends the same property to the outer ring, and the always-on
+device the README already recommends for joining does this job too.
+
+**What it costs, honestly:**
+
+- **The enforcement moves from Holochain to us.** A capability grant is checked
+  by the conductor. A pass checked by each member is checked by our code on
+  their machine, so a member running a modified client could serve anything.
+  **This adds no new exposure** — that member already holds the plain text and
+  could publish all of it — but it is a weaker mechanism and should not be
+  described as if the conductor were enforcing it.
+- **Withdrawal becomes eventually-consistent.** The person deletes the pass;
+  that deletion has to reach the members before they stop honouring it. "She
+  withdrew it and it stopped working everywhere at once" would be a lie.
+- **The reader has to reach the circle at all.** This is the unsolved part. A
+  remote call goes between peers in one network, and somebody outside the
+  membrane is not in that network. Either the pass admits them as a member who
+  stores nothing — the README already notes `target_arc_factor: 0` gives
+  exactly that, a node that participates without storing — or the outer ring
+  needs a different mechanism altogether. **This has not been checked against
+  the Holochain source and must be before any of it is built.**
+
+The third point is the real work, and it is the difference between a good idea
+and a design.
 
 ## 6. Discovery
 
