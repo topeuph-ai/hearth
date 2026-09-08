@@ -169,19 +169,26 @@ project says nobody will hold.
 ./bin/kitsune2-bootstrap-srv --listen 0.0.0.0:8888   # verified: it binds and serves
 ```
 
-**`hc-spin` advertises `--bootstrap-url` and `--relay-url`**, which is the
-obvious route to pointing several machines at one rendezvous.
+**Then point the demo at it**, on every machine:
 
-> ⚠️ **Unfinished, 2026-09-07.** Wiring those flags through `npm run demo` was
-> tried and **did not work** — hc-spin exits immediately, with no error, as soon
-> as either flag is passed, whereas the identical command without them starts
-> normally. The bootstrap server itself was verified listening on
-> `0.0.0.0:8888`; what failed is hc-spin accepting the flag. Not yet
-> established: whether `hc-spin@0.700.0` really supports these options (the
-> `--help` output was read via `npx`, which may have fetched a newer version
-> than the one installed), or whether it is a Windows argument-passing problem.
-> **Check the installed version's own help before assuming the flags exist.**
-> Until this is settled, do not claim the demo runs across machines.
+```bash
+npm run demo -- 2 --bootstrap http://192.168.1.20:8888
+```
+
+Every machine needs the same URL and a hApp built from the same source — a
+different build is a different DNA hash, which is a different network.
+
+**Verified 2026-09-08**, on one machine but through the external server rather
+than loopback, which is the same code path a second machine takes:
+
+- the conductors came up with
+  `bootstrap_url: Url2 { url: "http://192.168.1.89:8888/" }` and the same for
+  `relay_url`, instead of the `127.0.0.1` they default to
+- that server logged 65 client connections and 8 relay WebSocket upgrades from
+  them
+
+What is still untested is the hop itself: a genuinely second computer, and
+whatever a home router or a firewall does to it.
 
 **The desktop build is the other route.** Kangaroo ships pointing at
 Holochain's dev-test bootstrap and relay servers, which are public — see the
@@ -261,6 +268,30 @@ Three things that cost time:
   Fine for a demo. Before anyone real uses this you need your own — and
   **changing those URLs after deployment partitions the network**, so it is a
   decision to make before, not after.
+
+### The one that costs an afternoon
+
+**Pass URLs to `hc-spin` as `--flag=value`, never `--flag value`.**
+
+hc-spin is an Electron app, and Electron hands its argv to Chromium, which
+treats any bare argument beginning with a URL scheme as a page to open. As two
+tokens, `http://host:8888` is such an argument, and Electron **exits
+immediately with code -1 and prints nothing at all** — no error, no stack, no
+clue which argument did it.
+
+Bisecting the *value* is what found it, and the result is oddly specific:
+
+| value | result |
+| --- | --- |
+| `host:8888` | fine |
+| `//host:8888` | fine |
+| `http:8888` | **dies** |
+
+It is the scheme, and it is fatal against any option, not only the URL ones —
+`--network-seed http://…` kills it just as dead. Written as one token the
+argument begins with `--`, so Chromium reads it as a switch it does not
+recognise and ignores it, while commander still parses the value. `demo.mjs`
+does this and says why.
 
 ## Gotchas already paid for
 

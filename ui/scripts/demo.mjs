@@ -15,10 +15,23 @@
  * So the ceiling is the browser, not Holochain — which is worth knowing,
  * because it is the opposite of what people expect of a peer-to-peer app.
  *
- * One machine, though. Every agent here shares one bootstrap and one relay
- * server running on 127.0.0.1, so two laptops each running this would never
- * find each other. Crossing machines is the desktop build's job — see the
- * README.
+ * Across machines, if you point them at the same rendezvous:
+ *
+ *     npm run demo -- 2 --bootstrap http://192.168.1.20:8888
+ *
+ * By default hc-spin starts a bootstrap and relay server on 127.0.0.1, which
+ * is why two laptops each running the bare command never meet: they are each
+ * asking a different server who exists. Give them the same one and they find
+ * each other like anything else.
+ *
+ * A bootstrap server is a place to leave your address, not a place your data
+ * goes through. It never sees a record. Run one with the binary already in
+ * ./bin, on a machine both can reach:
+ *
+ *     kitsune2-bootstrap-srv --listen 0.0.0.0:8888
+ *
+ * The same server answers as the relay, which is why --relay defaults to
+ * whatever --bootstrap is.
  *
  * Two things this exists to prevent, both of which cost real time:
  *
@@ -54,7 +67,24 @@ const die = (message) => {
 
 // Checked before anything else happens. A typo here should cost a message,
 // not a packed hApp and a port check.
-const asked = process.argv[2] ?? "2";
+const argv = process.argv.slice(2);
+
+/** `--bootstrap <url>`; anything left over is the number of people. */
+function flag(name) {
+  const at = argv.indexOf(`--${name}`);
+  if (at === -1) return null;
+  const value = argv[at + 1];
+  if (!value || value.startsWith("--")) die(`--${name} needs a url after it.`);
+  argv.splice(at, 2);
+  return value;
+}
+
+const bootstrap = flag("bootstrap");
+// One kitsune2-bootstrap-srv answers as both, so this only matters if you have
+// deliberately split them.
+const relay = flag("relay") ?? bootstrap;
+
+const asked = argv[0] ?? "2";
 const agents = Number(asked);
 
 if (!Number.isInteger(agents) || agents < 1) {
@@ -191,13 +221,42 @@ while (!(await portIsOpen())) {
 // However many people you asked for
 // ---------------------------------------------------------------------------
 
+if (bootstrap) {
+  console.log(`\nFinding each other through ${bootstrap}`);
+  console.log(
+    "Every machine must be given the same one, and must be running a hApp " +
+      "built from the same source.",
+  );
+}
+
 console.log(
   `\nOpening ${agents} window${agents === 1 ? "" : "s"}. Close them to stop.\n`,
 );
 
 const spin = spawn(
   "hc-spin",
-  ["-n", String(agents), "--ui-port", String(UI_PORT), happ],
+  /*
+   * --flag=value, never --flag value, and this is not a style choice.
+   *
+   * hc-spin is an Electron app, and Electron hands its argv to Chromium, which
+   * treats any bare argument beginning with a URL scheme as a page to open.
+   * Passed as two tokens, "http://host:8888" is such an argument: Electron
+   * exits immediately with code -1 and prints absolutely nothing, which is a
+   * miserable thing to debug. Narrowed by bisecting the value — "host:8888"
+   * and "//host:8888" are both fine, "http:8888" is fatal, and it is fatal
+   * against any option, not just these two.
+   *
+   * Written as one token it begins with "--", so Chromium reads it as a switch
+   * it does not know and ignores it, and commander still parses the value.
+   */
+  [
+    "-n",
+    String(agents),
+    `--ui-port=${UI_PORT}`,
+    ...(bootstrap ? [`--bootstrap-url=${bootstrap}`] : []),
+    ...(relay ? [`--relay-url=${relay}`] : []),
+    happ,
+  ],
   {
     cwd: ui,
     stdio: "inherit",
