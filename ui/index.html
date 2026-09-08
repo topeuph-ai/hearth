@@ -848,8 +848,23 @@
           <h3>Invitations for you to agree to</h3>
           <p>
             This circle asks two people to agree before anybody joins, and you
-            are the second. Paste what you have been sent.
+            are the second. Nobody gets in unless you say so as well.
           </p>
+
+          <!--
+            What happens, before it happens.
+
+            The screen used to show a paste box, then a wall of base64, then a
+            copy button, and left somebody holding a finished invitation with
+            no idea whose it was or where to send it. Three steps, said in
+            advance, cost four lines.
+          -->
+          <ol class="steps">
+            <li>Somebody in the circle sends you half an invitation.</li>
+            <li>You check who it would let in, and agree.</li>
+            <li>You send the finished invitation back to them.</li>
+          </ol>
+
           <form id="second-form">
             <div class="field">
               <label for="half-invitation">Paste what they sent you</label>
@@ -864,14 +879,23 @@
                 aria-describedby="half-invitation-hint"
               ></textarea>
             </div>
-            <p id="second-who" class="notice" hidden></p>
+            <div id="second-who" class="notice" hidden></div>
             <button type="submit" id="second-submit">I agree to this</button>
           </form>
-          <output id="seconded-output" hidden></output>
-          <div class="actions">
-            <button type="button" id="copy-seconded" class="secondary" hidden>
-              Copy the finished invitation
-            </button>
+
+          <div id="seconded-done" hidden>
+            <p class="notice">
+              <strong>Agreed.</strong> Send this back to
+              <span id="seconded-back-to">whoever asked you</span>, who will
+              pass it on to the person joining. It is no use to anybody else:
+              it only lets in the one person it names.
+            </p>
+            <output id="seconded-output"></output>
+            <div class="actions">
+              <button type="button" id="copy-seconded" class="secondary">
+                Copy the finished invitation
+              </button>
+            </div>
           </div>
         </section>
 

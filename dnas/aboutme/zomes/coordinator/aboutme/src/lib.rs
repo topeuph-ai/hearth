@@ -34,6 +34,22 @@ pub struct InvitationBundle {
     /// Base64, not raw bytes. This bundle is meant to be copied into a text
     /// message, so every field in it has to survive being text.
     pub founder: String,
+    /// Who made this invitation, in their own words.
+    ///
+    /// Their own introduction to this circle, not a name the app assigned.
+    /// Empty where they have not introduced themselves.
+    ///
+    /// It is here because of the person who has to agree to the invitation.
+    /// Being asked to sign somebody in is a decision, and it was impossible to
+    /// make: the screen could say which circle and which key, but not who was
+    /// asking. "Somebody, possibly, wants to let this string of characters in"
+    /// is not something anybody can sensibly agree to.
+    ///
+    /// Unverified, like every other name in this app, and the interface must
+    /// say so rather than present it as established.
+    #[serde(default)]
+    pub inviter: String,
+
     /// Who this invitation is for.
     ///
     /// Carried for the person who has to agree to it. They are being asked to
@@ -81,8 +97,17 @@ pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
         _ => None,
     };
 
+    // My own introduction, off my own chain: what I told this circle I am
+    // called. Read locally because it is mine, and empty if I never said.
+    let inviter = on_my_own_chain(UnitEntryTypes::Member)?
+        .last()
+        .and_then(|record| record.entry().to_app_option::<Member>().ok().flatten())
+        .map(|m| m.name)
+        .unwrap_or_default();
+
     Ok(InvitationBundle {
         founder: me.to_string(),
+        inviter,
         invitee: invitee.to_string(),
         seconder,
         network_seed: dna_info()?.modifiers.network_seed,

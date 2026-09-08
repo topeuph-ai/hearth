@@ -1867,9 +1867,8 @@ $("invitation-in").addEventListener("input", () => {
 function forgetTheSeconding() {
   $("half-invitation").value = "";
   $("second-who").hidden = true;
-  $("seconded-output").hidden = true;
+  $("seconded-done").hidden = true;
   $("seconded-output").textContent = "";
-  $("copy-seconded").hidden = true;
 }
 
 /*
@@ -1884,15 +1883,42 @@ $("half-invitation").addEventListener("input", () => {
   try {
     const bundle = tokenToInvitation($("half-invitation").value);
     const about = bundle?.about?.trim();
+    const asking = bundle?.inviter?.trim();
     const who = bundle?.invitee?.trim();
+
+    /*
+     * A decision somebody can actually make.
+     *
+     * This said "This would let uhCAki9XAT… into Margaret Smythe's circle",
+     * which is not something anybody can agree to: it named the circle and a
+     * string of characters, and never said who was asking. The name of the
+     * person being let in does not travel — nothing has told this app what
+     * they are called — so the honest shape is to say who is asking, say the
+     * identifier is the only thing we have for the other, and tell somebody
+     * to check it against what they were told.
+     */
+    note.replaceChildren();
     note.hidden = false;
-    // Their identifier, not a name: no name travels with an invitation, and
-    // inventing one here would be the software vouching for somebody it knows
-    // nothing about. Whoever asked should have said who this is out loud, and
-    // the identifier is the thing that can be checked against what they said.
-    note.textContent = about
-      ? `This would let ${who} into ${about}'s circle.`
-      : `This would let ${who} into a circle.`;
+
+    const sentence = document.createElement("p");
+    sentence.textContent = asking
+      ? `${asking} is asking you to let somebody into ${about || "their"}${about ? "'s" : ""} circle.`
+      : `Somebody is asking you to let another person into ${about ? `${about}'s` : "a"} circle.`;
+    note.append(sentence);
+
+    const whoLine = document.createElement("p");
+    whoLine.className = "hint";
+    whoLine.textContent = `The person who would get in: ${who}`;
+    note.append(whoLine);
+
+    const check = document.createElement("p");
+    check.className = "hint";
+    // Nothing here can tell you it is the right person. Say that, rather than
+    // letting a confident-looking screen do the deciding.
+    check.textContent =
+      "Nobody has checked that this is who they say it is. Compare it with " +
+      "the identifier you were told to expect before you agree.";
+    note.append(check);
   } catch {
     // Half a paste is unfinished, not wrong.
     note.hidden = true;
@@ -1922,10 +1948,10 @@ $("second-form").addEventListener("submit", async (event) => {
       invitation: { ...bundle.invitation, seconded },
     });
 
-    $("seconded-output").hidden = false;
     $("seconded-output").textContent = finished;
-    $("copy-seconded").hidden = false;
-    announce("Agreed. Send this back to whoever asked you.");
+    $("seconded-back-to").textContent = bundle?.inviter?.trim() || "whoever asked you";
+    $("seconded-done").hidden = false;
+    announce("Agreed. Send it back to whoever asked you.");
   } catch (error) {
     problem(error);
   }
