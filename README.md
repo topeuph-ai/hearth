@@ -303,10 +303,23 @@ issuer it has never heard of, and refuses. Any antivirus with HTTPS scanning
 does this: Norton, Kaspersky, Avast, ESET, and most corporate proxies. An NHS
 laptop is very likely to.
 
+**Excluding the host fixes it, and this is verified.** After adding
+`dev-test-bootstrap2.holochain.org` to Norton's exclusions, the same check
+returns the real certificate while everything else is still intercepted:
+
+```
+dev-test-bootstrap2.holochain.org  ->  CN=YE2, O=Let's Encrypt   (real)
+holochain.org                      ->  Norton Web/Mail Shield Root
+github.com                         ->  Norton Web/Mail Shield Root
+```
+
+Restart the app afterwards — it does not retry a failed TLS setup — and the
+certificate errors disappear entirely.
+
 Fixes, best first:
 
 1. **Exclude the bootstrap and relay host** from the antivirus's HTTPS
-   scanning, rather than turning scanning off altogether.
+   scanning, rather than turning scanning off altogether. Verified above.
 2. Turn off HTTPS/SSL scanning while demonstrating.
 3. Exclude the app's bundled `holochain-*.exe` from inspection.
 
