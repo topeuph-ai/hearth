@@ -108,7 +108,7 @@ What this does *not* settle is the part that was never software: how a proxy com
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
 | A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |
 | Content is wrong or out of date and someone relies on it | Medium | Medium | Acknowledgements record which version was read |
-| **An invitation reveals the person's name to anyone who sees it** | Medium | Low–Medium | Deliberate, and worth restating before production — see below |
+| **An invitation reveals the person's name to anyone who sees it** | Low | Low | Only to somebody seeing it out of context — the recipient knows already. Revisit before production |
 
 ### An invitation carries the person's name in the clear
 
@@ -129,11 +129,26 @@ getting in. **"Safe to send" means it cannot let anyone in; it does not mean it
 reveals nothing.** That distinction should be in any wording shown to users,
 and it currently is not.
 
-**Scale of the exposure.** One name, and only for invitations that are actually
-intercepted — a misdirected text, a shared screen, a phone left unlocked. It
-discloses nothing about the person's health, their circumstances, or anything
-written in the record. It does disclose that somebody is the subject of a care
-record, which for some people is itself sensitive.
+**Scale of the exposure, revised down 2026-09-08.** The project lead's
+objection, and it is right: *the recipient has to know who sent it anyway.* An
+invitation arrives by a channel the sender chose — a text, an email, handed
+over in person — and that channel already says who is inviting you and, in
+practice, who the circle is about. Somebody sending their brother an invitation
+to their mother's circle will have said so in the same message.
+
+So the name in the invitation tells the intended recipient nothing they do not
+already know. The exposure is only to somebody who sees the blob **without**
+that context: a misdirected message, a shoulder-surfer, a shared screen. One
+name, no health information, nothing from the record. It does disclose that
+somebody is the subject of a care record, which for some people is itself
+sensitive.
+
+**A related gap, noticed while thinking about this.** The invitation names the
+*subject* but never the *sender*. It carries the founder's public key, which is
+not a name and not readable by anyone. So an invitation found out of context
+says whose circle it is but not who invited you — which is the wrong way round
+if it ever travels by a route where the sender is not obvious. Worth fixing at
+the same time as the rest.
 
 **Options, none of them taken yet.**
 
@@ -148,6 +163,42 @@ record, which for some people is itself sensitive.
   probably wants solving at the same time. **[DECISION: how invitations are
   issued needs revisiting before production. Noted 2026-09-08; not urgent for a
   demonstration, where no real person's name goes in.]**
+
+### How a hosted service does this, and why we cannot
+
+**RIX Multi Me invites by email**, from their own documentation:
+
+> My Wiki can be selectively shared with **My Circle** and by email access link
+> for non-registered users and administrated by my Buddies.
+
+with Buddies able to "invite users to view Wiki sections by email", and
+"Circle invite templates" letting an account holder format the invitation
+email that goes out.
+
+*(Their step-by-step process could not be obtained — the help-desk article is
+about what a Wiki is rather than how invitations work. What is quoted above is
+from their own pages; treat the mechanics as unconfirmed.)*
+
+**They can do that because they have an operator.** A server holds the
+accounts, so an invitation can be nothing but a link: the email carries no
+credential, the server recognises the recipient when they click, and identity
+is a username the operator resolves. Everything hard is done by the party in
+the middle.
+
+**Hearth has no party in the middle**, which is the entire premise. There is no
+server to send an email, and no directory that turns "dave@example.com" into a
+person. So the invitation has to carry the grant itself — a signature over the
+recipient's public key — and that is why it is a long block of base64 rather
+than a tidy link.
+
+**This is the operator trade made concrete**, and it is worth keeping as an
+illustration: a hosted service gets a nicer invitation, and its users get a
+company that can read everything, change the rules, or stop trading. That
+comparison is more useful than any abstract argument about decentralisation.
+
+It does not make the current invitation acceptable. It explains why it is
+shaped as it is, and where the effort has to go: making a self-contained
+invitation short and private, rather than wishing for a server.
 
 ### The availability risk
 
