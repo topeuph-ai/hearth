@@ -44,8 +44,15 @@ anything below sounds more finished than it is.
 > show that the idea is possible, not to be relied on. Expect rough edges, and
 > please do not put anybody real information into it.
 
-Windows only for now. Linux and macOS build from source with the same command —
-see [The desktop app](#the-desktop-app).
+Windows only for now.
+
+> ⚠️ **Do not build from source to get a Linux or macOS copy and expect it to
+> reach Windows users.** The same source produces different wasm on Linux and
+> Windows, which means a different DNA hash, which means a different network —
+> measured 2026-09-08, see
+> [`FROZEN.sha256`](dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256). Fixing
+> that is the next job. Until it is fixed, a build from source can only find
+> other builds made the same way, on the same platform.
 
 One file, about 115MB. **Holochain and its keystore are inside it**, so there is
 nothing else to install: no Rust, no Node, no separate binaries, no server to

@@ -71,6 +71,50 @@ The two answers this was chosen between:
 **Nothing else on this page matters if an update can quietly strand somebody's
 record.** This is first because it is first.
 
+## 0b. Windows and Linux builds are different networks
+
+**Found 2026-09-08, by the CI check written to enforce the freeze.** The check
+built the integrity zome on Linux and printed its hash so it could be pinned.
+It did not match the Windows one.
+
+    Windows  dd942cac…    where the released installer is built
+    Linux    7ca250f3…    GitHub Actions, and anybody building from source
+
+Identical source. Identical pinned compiler — `rust-toolchain.toml` fixes
+rustc 1.98.0 precisely so this cannot happen. Different wasm anyway.
+
+**Different wasm is a different DNA hash is a different network.** A circle made
+in the installer published today and a circle made from a Linux build are not
+the same circle. Their members cannot find each other, and nothing anywhere
+says so.
+
+**This makes an instruction in the README wrong.** It tells Linux and macOS
+users to build from source — which hands them an app that cannot talk to any
+Windows user. The two lines in `FROZEN.sha256` are the proof.
+
+**Likely cause, not yet confirmed:** source paths embedded in panic and debug
+strings, `C:\Users\user\…` against `/home/runner/…`. Rust has
+`--remap-path-prefix` for exactly this, and a `[build] rustflags` entry in
+`.cargo/config.toml` would apply it to every build on every machine.
+
+**Why it was not fixed on the spot.** The fix changes the hash again, and
+therefore the DNA of the release published hours earlier. That is the right
+thing to do — the free window is open, nobody has a real record — but it
+retires a published artefact and should be a deliberate decision rather than a
+late-night one.
+
+**What it means for the freeze.** The freeze is not settled. A hash pinned per
+platform is not one frozen thing, it is two, and the honest position is that
+this must be fixed *before* the freeze means anything. Sequence: make the build
+reproducible across platforms, confirm one hash everywhere, publish that as the
+release, and freeze from there.
+
+**It also quietly explains a gap in the testing.** The adversarial suite runs on
+Linux in CI. The installer is Windows. They have been testing the same rules on
+a different DNA all along — harmless, since the source is identical, but it
+means "45 tests pass" and "the shipped app is correct" were never quite the
+same sentence.
+
 ## 1. The record is not encrypted at rest
 
 Entries are validated, signed, and reachable only by people the membrane

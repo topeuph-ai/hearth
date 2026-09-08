@@ -11,10 +11,31 @@
 #
 # Frozen 2026-09-08, at release v0.1.0.
 #
-# One line per platform, because the compiler does not necessarily produce
-# identical bytes on each. If these two ever differ, that is worth knowing on
-# its own: it would mean a circle made from a Windows build and one made from a
-# Linux build are different networks, from the same source.
+# ---------------------------------------------------------------------------
+# ⚠️  THE TWO PLATFORMS DO NOT AGREE, AND THIS IS A BUG (found 2026-09-08)
+# ---------------------------------------------------------------------------
+#
+# Identical source. Identical pinned compiler (rustc 1.98.0, per
+# rust-toolchain.toml). Different wasm:
+#
+#   Windows  dd942cac…      the machine the released installer is built on
+#   Linux    7ca250f3…      GitHub Actions, and anybody building from source
+#
+# Different wasm means a different DNA hash means **a different network**. So a
+# circle made in the published Windows installer and a circle made from a
+# Linux build are not the same circle, and their members can never find each
+# other — silently, as always.
+#
+# The README currently tells Linux and macOS users to build from source. Taken
+# together with the above, that instruction hands them an app that cannot talk
+# to any Windows user. That is not a theory; it is what these two lines say.
+#
+# The likely cause is source paths embedded in panic and debug strings —
+# C:\Users\user\… against /home/runner/… — which `--remap-path-prefix` exists
+# to normalise. Not attempted yet, because fixing it changes the hash again and
+# therefore the DNA of the release published today.
+#
+# See docs/to-a-product.md. Do not treat the freeze as settled until this is.
 
-linux    UNKNOWN-until-the-first-CI-run
+linux    7ca250f33f303395b44fb40bff2dc4cd74b5310841887e6e8b170d9398b5bab8
 windows  dd942cacc54fa741677dc5128d0469ce22cb1a022206345f0f69e31d9a541de6
