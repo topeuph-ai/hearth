@@ -74,6 +74,26 @@
               Somebody has invited you, and sent you an invitation.
             </span>
           </button>
+          <!--
+            Third, and last, because most people want the first one.
+
+            This used to live folded away inside a circle that already
+            existed, which made it a repair job: naming somebody afterwards
+            means re-forming the circle and everybody joining again. Asked
+            here, at the start, it costs nothing — the circle is made once,
+            with both names already in it.
+
+            The old route stays where it was, for anybody who changes their
+            mind later, because that case genuinely does need a new circle.
+          -->
+          <button type="button" id="choose-create-two">
+            <span class="choice-title">Create a circle two people agree on</span>
+            <span class="choice-detail">
+              The same, but nobody joins unless you and one other person both
+              say yes. Best decided now — adding it later means starting the
+              circle again.
+            </span>
+          </button>
         </div>
       </section>
 
@@ -202,6 +222,37 @@
               aria-describedby="circle-name-hint"
             />
           </div>
+          <!--
+            Only on the two-people path, and last, because it is a question
+            about somebody who is not in the room.
+
+            It asks for an identifier rather than a name because there is no
+            directory anywhere that could turn one into the other. Getting it
+            wrong is safe: a circle whose second person cannot be read refuses
+            everybody, including the holder, so it fails here and now rather
+            than three days later when somebody tries to join.
+          -->
+          <div class="field" id="seconder-field" hidden>
+            <label for="create-seconder">Who has to agree to who joins</label>
+            <p id="create-seconder-hint" class="hint">
+              Their identifier — a long line of letters and numbers beginning
+              <code>uhCAk</code>, which they copy from “Your identifier” in
+              their own Hearth and send to you. Not their name.
+            </p>
+            <input
+              id="create-seconder"
+              name="create-seconder"
+              type="text"
+              autocomplete="off"
+              aria-describedby="create-seconder-hint"
+            />
+            <p class="notice">
+              Once this circle exists you cannot remove them on your own. That
+              is the point of it: it is there for the day somebody talks you
+              into letting them in.
+            </p>
+          </div>
+
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
       </section>

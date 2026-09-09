@@ -611,6 +611,32 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     const carerName = myOwn ? fullName : $("carer-name").value.trim();
     const carerRelationship = myOwn ? "" : $("carer-relationship").value.trim();
 
+    /*
+     * Checked here rather than left to the conductor.
+     *
+     * A second person whose identifier cannot be read closes the circle to
+     * everybody, the holder included, so the failure is safe — but it arrives
+     * as a genesis error, which says nothing anybody could act on. One look at
+     * the shape of it turns that into a sentence about the thing they pasted.
+     */
+    const wantsASecondYes = !$("seconder-field").hidden;
+    if (wantsASecondYes) {
+      const pasted = $("create-seconder").value.trim();
+      if (!pasted.startsWith("uhCAk")) {
+        throw new Error(
+          "That does not look like an identifier. It is a long line of " +
+            "letters and numbers beginning uhCAk, copied from “Your " +
+            "identifier” in their own Hearth — not their name.",
+        );
+      }
+      if (pasted === asText(me)) {
+        throw new Error(
+          "That is your own identifier. The point of a second person is that " +
+            "they are somebody else.",
+        );
+      }
+    }
+
     const cell = await whileWorking(
       $("create-circle-submit"),
       "Making the circle…",
@@ -619,10 +645,14 @@ $("create-circle-form").addEventListener("submit", async (event) => {
           founder: asText(me),
           name: label,
           network_seed: crypto.randomUUID(),
-          // A circle starts by asking one person. Somebody who wants a second
-          // yes appoints one from inside the circle afterwards, which re-forms
-          // it — see appointASecondYes.
-          seconder: null,
+          /*
+           * Named here when the front page asked for one, which is the whole
+           * reason that third choice exists: baked in at creation, the circle
+           * is made once. Appointing somebody afterwards still works and
+           * still re-forms the circle, because admission is enforced by what
+           * is in the circle's identity and that cannot be edited later.
+           */
+          seconder: wantsASecondYes ? $("create-seconder").value.trim() : null,
         }),
     );
     circle = { cellId: cell.cell_id };
@@ -2015,10 +2045,25 @@ $("go-back").addEventListener("click", () => {
 // Choosing what to do
 // ---------------------------------------------------------------------------
 
-$("choose-create").addEventListener("click", () => {
+/*
+ * The create screen, with or without a second person.
+ *
+ * One screen and one submit handler for both, because they differ by a single
+ * field. The alternative — a second form — would be two places to fix every
+ * time the questions change, and they have changed a lot.
+ */
+function goToCreate(withASecondYes) {
+  $("seconder-field").hidden = !withASecondYes;
+  $("create-seconder").required = withASecondYes;
+  // Starting fresh each time, so a mind changed on the front page does not
+  // leave an identifier behind on a path that no longer asks for one.
+  $("create-seconder").value = "";
   show("create");
   $("person-name").focus();
-});
+}
+
+$("choose-create").addEventListener("click", () => goToCreate(false));
+$("choose-create-two").addEventListener("click", () => goToCreate(true));
 
 /*
  * A second join starts empty, and does not know her name yet.
