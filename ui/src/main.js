@@ -510,7 +510,21 @@ async function loadCircle() {
   $("no-record-empty").hidden = written || !amHolder;
   $("no-record-waiting").hidden = written || amHolder;
 
-  $("record-actions").hidden = false;
+  /*
+   * A refresh must not put the button back underneath the open form.
+   *
+   * Opening the form hides these actions; the twenty-second re-read showed
+   * them again, unconditionally, so "Write it" reappeared below Save and
+   * Cancel and stayed there — pressing it did nothing anybody could see,
+   * because the form it opens was already open. It looked like a button with
+   * no purpose, which is exactly what it had become.
+   *
+   * The acknowledge button was already guarded against this. The record form
+   * was not, and the two need the same rule: while somebody is part-way
+   * through writing, the screen underneath them holds still.
+   */
+  const writing = !$("record-form").hidden;
+  $("record-actions").hidden = writing;
   $("edit-record").hidden = !amHolder;
   $("edit-record").textContent = written ? "Change this" : "Write it";
   $("acknowledge").hidden = amHolder || !written;
