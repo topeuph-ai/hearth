@@ -61,7 +61,14 @@ blouse. Alert, a little frail, entirely herself.
 practical clothes, the slight tiredness of someone managing two lives.
 
 **The district nurse** — a woman in her thirties, navy tunic, hair tied back,
-carrying a small bag. Warm, unhurried, professional.
+carrying a small bag. Warm, unhurried, professional. **She is in the outer
+ring**: she visits, she reads what she is shown, and she is not part of the
+circle.
+
+**Bethan, the carer** — a woman in her forties, short dark hair, a plain polo
+shirt and cardigan, comfortable shoes. She comes every morning and has done for
+two years. **She is in the circle**, and that difference is the reason she
+appears at all.
 
 ---
 
@@ -165,14 +172,19 @@ answer is still an open question — drawn as an intention, not a feature.*
 
 # Part four — it stays hers
 
-## Panel 10 — Someone notices something
+## Panel 10 — Someone in the circle notices something
 
-> Pam and the district nurse standing in Margaret's hallway by the front door,
-> coats on, in brief conversation. The nurse is saying something, Pam nodding.
-> Through an open door behind them, Margaret is visible in her chair with a
-> radio on the table beside her.
+> Bethan the carer in Margaret's kitchen, drying her hands on a tea towel,
+> pausing to type something short into her phone with her thumb. Through the
+> doorway behind her, Margaret is visible in her chair with a radio playing
+> beside her. Bethan's expression is ordinary and unhurried — a small thing
+> remembered, not a report being filed.
 
-*Other people can offer what they have noticed.*
+*Somebody who is there every morning notices what nobody thought to write down.
+**Only people in the circle can do this** — Bethan can, the visiting nurse
+cannot. An earlier version of this panel had the nurse offering the suggestion,
+which the app does not allow and which would have shown a stranger contributing
+to somebody's record.*
 
 ## Panel 11 — But she decides
 
@@ -212,6 +224,17 @@ advert.
 **Under the heading "what this looks like when it is finished", with a link to
 [what is proven and what is not](what-is-proven.md).** That is the sentence that
 makes an idealised series honest rather than misleading, and it costs nothing.
+
+## The one thing to get right across the whole series
+
+**Who is in the circle, and who is only passing through.** Pam and Bethan are in
+it: they hold the whole record, they can offer suggestions, they are there in an
+emergency. The district nurse and the paramedic are not: they are shown a part,
+they hold nothing afterwards, and they cannot add anything.
+
+If a panel blurs that, it is drawing a different product. The check for any new
+panel is one question — *is this person in the circle, and does the picture make
+that obvious?*
 
 **If only three can be made well, make 5, 6 and 8.** Five is the gesture that
 replaces an account. Six is the emptiness under the one shared section. Eight is
