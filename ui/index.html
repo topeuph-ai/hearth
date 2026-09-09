@@ -247,9 +247,11 @@
               aria-describedby="create-seconder-hint"
             />
             <p class="notice">
-              Once this circle exists you cannot remove them on your own. That
-              is the point of it: it is there for the day somebody talks you
-              into letting them in.
+              You will not be able to drop them from this circle on your own —
+              you would have to start a fresh circle and invite everybody
+              again, which they would all see happen. That is the point of it:
+              it is there for the day somebody talks you into letting them in,
+              and it works by being impossible to do quietly.
             </p>
           </div>
 
@@ -967,12 +969,46 @@
             you want to ask, wait for them to join, then come back here.
           </p>
 
+          <!--
+            When the circle already asks somebody.
+
+            This panel used to disappear entirely once a second yes existed,
+            on the reasoning that it must not be switchable off. But the
+            holder can always make a fresh circle — nothing prevents it, and
+            the appointing path here does exactly that. Hiding the panel did
+            not remove the power; it removed the only visible route to it.
+
+            Which mattered most in the case nobody had thought about: if the
+            second person dies, or loses the phone their keys were on, the
+            circle can never admit anybody again. The record still works and
+            the people in it stay in it, but the door is sealed. For an
+            eighty-year-old whose second yes may be a similar age, that is not
+            an edge case.
+          -->
+          <div id="appoint-already" hidden>
+            <p>
+              This circle asks <strong id="appoint-current">somebody</strong>
+              to agree before anybody new joins.
+            </p>
+            <p class="notice">
+              You cannot take that away from <em>this</em> circle — not by
+              choice, and not by mistake. What you can do is start a fresh one
+              and invite everybody again, which is deliberately something they
+              all see happen rather than something you can do quietly.
+            </p>
+            <p>
+              Worth doing if they have died, lost the device their Hearth was
+              on, or are no longer somebody you would ask.
+            </p>
+          </div>
+
           <div id="appoint-explains">
             <p>
               Nobody would be able to join unless two people say yes: you, and
               whoever you choose. It is meant for the situation where somebody
-              talks you into letting them in — so once it is set, you cannot
-              switch it off on your own.
+              talks you into letting them in — so you will not be able to drop
+              them on your own. Starting again is always possible, and everyone
+              would have to join the new circle, so it cannot be done quietly.
             </p>
             <p class="notice">
               This makes a fresh circle with them named in it and copies the

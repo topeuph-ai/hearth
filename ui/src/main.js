@@ -1294,13 +1294,51 @@ async function offerToAppointASecondYes() {
   $("second-here").hidden = !asksMe;
   if (!asksMe) forgetTheSeconding();
 
-  panel.hidden = !isHolder() || Boolean(alreadyAsks);
+  /*
+   * Shown to the holder whether or not the circle already asks somebody.
+   *
+   * It used to vanish once a second yes existed, so that it could not be
+   * switched off. That hid the route without removing the power — the holder
+   * can always make a fresh circle, and this panel is what makes one. What it
+   * actually removed was the only way out of the case nobody had considered:
+   * the second person dies, or loses the device their keys were on, and the
+   * circle can never admit anybody again.
+   */
+  panel.hidden = !isHolder();
   if (panel.hidden) return;
+
+  const already = Boolean(alreadyAsks);
+  $("appoint-already").hidden = !already;
+  $("appoint-explains").hidden = already;
+
+  if (already) {
+    const who = members.get(asText(alreadyAsks))?.name?.trim();
+    // They may not have introduced themselves, and may no longer be here to.
+    $("appoint-current").textContent = who || "somebody";
+  }
+
+  panel.querySelector("summary").textContent = already
+    ? "Change who agrees to who joins"
+    : "Ask someone to agree to who joins";
 
   const others = [...members].filter(([key]) => key !== asText(me));
 
   const choose = $("appoint-who");
   choose.replaceChildren();
+
+  /*
+   * "Nobody", but only when there is somebody to drop.
+   *
+   * Offered on a circle that has no second yes it would be an option to do
+   * nothing, dressed as a decision.
+   */
+  if (already) {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Nobody — go back to just me";
+    choose.append(none);
+  }
+
   for (const [key, entry] of others) {
     const option = document.createElement("option");
     option.value = key;
@@ -1308,11 +1346,15 @@ async function offerToAppointASecondYes() {
     choose.append(option);
   }
 
-  // The explanation goes with the form: both are about a thing you can do.
-  // When you cannot, only the reason shows.
-  $("appoint-form").hidden = others.length === 0;
-  $("appoint-explains").hidden = others.length === 0;
-  $("appoint-nobody").hidden = others.length > 0;
+  /*
+   * The form needs somewhere to go. With a second yes already set that is
+   * always true, because "nobody" is itself a destination; without one it
+   * needs a person, and there may be none here yet.
+   */
+  const canDoSomething = already || others.length > 0;
+  $("appoint-form").hidden = !canDoSomething;
+  $("appoint-explains").hidden = already || others.length === 0;
+  $("appoint-nobody").hidden = canDoSomething;
 }
 
 function renderPeople() {
@@ -1793,8 +1835,12 @@ $("done-inviting").addEventListener("click", () => {
 $("appoint-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const seconder = $("appoint-who").value;
-    const seconderName = members.get(seconder)?.name?.trim() || "them";
+    // "" is the deliberate choice of nobody, which create_circle takes as
+    // null — a circle that asks one person, like any other.
+    const seconder = $("appoint-who").value || null;
+    const seconderName = seconder
+      ? members.get(seconder)?.name?.trim() || "them"
+      : null;
     const label = $("circle-heading").textContent;
     const entry = entryOf(record?.current?.record);
 
@@ -1836,8 +1882,11 @@ $("appoint-form").addEventListener("submit", async (event) => {
     await loadCircle();
 
     announce(
-      `A new circle, where ${seconderName} has to agree to who joins. ` +
-        `Everyone needs inviting again, including ${seconderName}.`,
+      seconderName
+        ? `A new circle, where ${seconderName} has to agree to who joins. ` +
+            `Everyone needs inviting again, including ${seconderName}.`
+        : "A new circle, where you decide on your own who joins. Everyone " +
+            "needs inviting again.",
     );
   } catch (error) {
     problem(error);
