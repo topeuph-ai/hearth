@@ -37,5 +37,5 @@
 # Anybody making a desktop app for another platform assembles it from that
 # file rather than compiling the zomes. See the README.
 
-linux    UNKNOWN-until-the-first-CI-run
+linux    bc8697a3c80e68b741b9ad6e52cee6ff71e4c9e158b86e69eabec8d82b282d34
 windows  392dc1703ce4e2a381082784cb9c0169065dd9dff680f90c42679ae0e88b29df
