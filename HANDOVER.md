@@ -61,13 +61,19 @@ arrived at it.
 **Released.** `v0.1.1` is published with the installer and `hearth.webhapp`.
 `v0.1.0` is marked superseded — it built a different circle from its own source.
 
-**The release has still never been installed by anybody.** It was downloaded and
-verified byte-identical to the local build, but **Norton 360 refuses to launch
-the installer** — "Access is denied", file not quarantined, nothing shown to the
-user. The *already-installed* copy runs correctly: window opens, Holochain and
-lair start alongside it. So the packaging works; the installer cannot get past
-consumer antivirus on an unsigned binary. **That is the single most important
-open item, and it is somebody else's machine that will settle it.**
+**The release installs and runs — on the machine it was built on.** Downloaded
+from the release page, verified byte-identical to the local build, installed
+(exit code 0) and launched: the window opens, Holochain and lair-keystore start
+beside it, and the DNA inside the installed app is the released one.
+
+One thing to know: for about a minute after downloading, the installer would
+not start — "Access is denied", nothing quarantined. That was antivirus holding
+a 115MB file open while it scanned. It cleared on its own. The README says
+"wait and try again", which is what actually happened; an earlier version of
+that note blamed Norton outright and was wrong.
+
+**Nobody outside this machine has run it.** That is still the single most
+important open item, and only somebody else's computer can settle it.
 
 **Two machines have still never found each other.** There is one Windows machine
 here; the second laptop is a Chromebook. This is a money problem, not a
