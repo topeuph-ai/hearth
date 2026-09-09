@@ -161,6 +161,9 @@ function show(...ids) {
     "choose",
     "create",
     "join",
+    // Agreeing to who joins is its own screen, because it belongs to nobody's
+    // circle. See the note on it in index.html.
+    "second",
     "circles",
     "circle",
     "problem",
@@ -1472,6 +1475,55 @@ function sayWhoIsNew() {
  * only listing people who are actually here. Appointing somebody who has not
  * joined would mean a circle nobody can get into, including them.
  */
+/*
+ * The invitation for the second person, made without being asked for.
+ *
+ * Naming somebody as the second yes puts them in the circle's identity. It
+ * does not put them in the circle — and until they are in, nobody else can
+ * join either, because no invitation can be completed without their
+ * agreement. So a circle made this way looks finished and can admit nobody,
+ * with nothing on screen saying why.
+ *
+ * Their identifier was given when the circle was made, so there is nothing
+ * left to ask. It is made here and shown until they arrive.
+ *
+ * Kept per circle rather than remade on every re-read: `invite` reads the
+ * record to put her name in the invitation, and this runs every twenty
+ * seconds.
+ */
+const seconderInvitations = new Map(); // cell -> the invitation, as text
+
+async function offerTheSeconderTheirInvitation(seconder) {
+  const section = $("seconder-invitation");
+  const key = asText(circle?.cellId?.[0]);
+
+  // Only the holder can invite, only where there is a second person, and only
+  // until they have actually arrived — at which point the job is done and the
+  // panel should stop taking up the top of the screen.
+  const stillOutside =
+    isHolder() && seconder && !members.has(asText(seconder));
+
+  section.hidden = !stillOutside;
+  if (!stillOutside) return;
+
+  const known = members.get(asText(seconder))?.name?.trim();
+  $("seconder-who").textContent = known || "The person you named";
+
+  if (!seconderInvitations.has(key)) {
+    // Placed before the call so a slow network shows the sentence rather than
+    // an empty box with a copy button under it.
+    $("seconder-invitation-output").textContent = "Making their invitation…";
+    const bundle = await call(
+      "invite",
+      asText(seconder),
+      circle.cellId,
+    );
+    seconderInvitations.set(key, invitationToToken(bundle));
+  }
+
+  $("seconder-invitation-output").textContent = seconderInvitations.get(key);
+}
+
 async function offerToAppointASecondYes() {
   const panel = $("appoint-details");
   const alreadyAsks = await call("who_seconds_here", null, circle.cellId);
@@ -1480,7 +1532,8 @@ async function offerToAppointASecondYes() {
   // is me, this is where I agree to who joins.
   const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
   $("second-here").hidden = !asksMe;
-  if (!asksMe) forgetTheSeconding();
+
+  await offerTheSeconderTheirInvitation(alreadyAsks);
 
   /*
    * Shown to the holder whether or not the circle already asks somebody.
@@ -1969,6 +2022,12 @@ function forgetTheCircle() {
   circleMode = READING;
   $("record-form").hidden = true;
   $("acknowledge-form").hidden = true;
+
+  // An invitation names the person the circle is about, so it should not be
+  // left sitting on a screen belonging to somebody else.
+  $("seconder-invitation").hidden = true;
+  $("seconder-invitation-output").textContent = "";
+
   forgetTheInvitation();
 }
 
@@ -2192,6 +2251,12 @@ wireCopyButton(
   "Copied",
 );
 
+wireCopyButton(
+  "copy-seconder-invitation",
+  () => $("seconder-invitation-output").textContent,
+  "Their invitation copied",
+);
+
 /*
  * Two questions on the create form name her, and she is being typed in right
  * above them. "How are you connected to them?" and "What do you call them?"
@@ -2291,16 +2356,24 @@ $("second-form").addEventListener("submit", async (event) => {
     const bundle = tokenToInvitation($("half-invitation").value);
 
     /*
-     * Signed on the lobby cell, not on the circle's.
+     * Signed on the lobby cell, not on any circle's.
      *
      * Signing does not depend on the circle at all — it is this key over that
-     * person's key — and doing it here means whoever gives the second yes
-     * never has to be in the circle. A solicitor, an advocate, a sister two
-     * hundred miles away can hold this power and never read a word of
-     * somebody's record.
+     * person's key — so doing it here means whoever gives the second yes never
+     * has to be in the circle. A solicitor, an advocate, a sister two hundred
+     * miles away can hold this power and never read a word of somebody's
+     * record.
+     *
+     * It said all that before and then passed the circle's cell anyway, which
+     * quietly made every one of those people join the circle first. Note the
+     * missing third argument: that is the whole of the fix.
+     *
+     * The key is the same either way — clones of an app share their agent key
+     * — so the signature this produces is identical to the one the circle's
+     * own cell would have produced.
      */
     const seconded = await whileWorking($("second-submit"), "Agreeing…", () =>
-      call("second_an_invitation", bundle.invitee, circle.cellId),
+      call("second_an_invitation", bundle.invitee),
     );
 
     const finished = invitationToToken({
@@ -2380,6 +2453,23 @@ $("choose-join").addEventListener("click", () => {
   show("join");
   $("invitation-in").focus();
 });
+
+/*
+ * Agreeing to who joins, from the front page and from inside a circle.
+ *
+ * Both go to the same screen. Nothing here needs a circle to be open — the
+ * signature is this key over that person's key — so somebody who guards a
+ * circle they are not in gets there from the front page, and somebody who is
+ * both a member and the second yes gets there from where they were standing.
+ */
+function goAndSecond() {
+  forgetTheSeconding();
+  show("second");
+  $("half-invitation").focus();
+}
+
+$("choose-second").addEventListener("click", goAndSecond);
+$("go-and-second").addEventListener("click", goAndSecond);
 
 // Every form has a way out. Getting somewhere by accident should cost one
 // press to undo, not a restart.

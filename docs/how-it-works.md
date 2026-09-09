@@ -83,6 +83,32 @@ notice.
 It is a tripwire, not a lock. The stronger claim is the tempting one and it is
 false.
 
+**The order it has to happen in**, which is not obvious and used to be
+invisible:
+
+1. You need their identifier **before** the circle is made, because it goes
+   into the circle's identity. So ask them for it first.
+2. Make the circle, naming them.
+3. **Invite them, before anybody else.** Naming somebody does not put them in
+   the circle, and until they are in, *nobody* can join — every other
+   invitation needs their agreement, and they cannot give it if they are not
+   reachable. The app now makes their invitation for you and shows it until
+   they arrive, because this is the step everyone missed.
+4. They join. They are the one person who needs no second agreement, because
+   asking them to countersign their own arrival is a knot that cannot be
+   untied.
+5. From then on, everybody else needs both signatures.
+
+**Agreeing to who joins does not require being in the circle.** The signature
+is one key over another key; it touches nothing else. So it has its own screen,
+reached from the front page, and whoever holds this power can guard a circle
+they never enter and never read.
+
+That was not true for a while: the screen lived inside the circle, which
+quietly forced the second person to join and read somebody's record before they
+could agree to anybody. The comment in the code said otherwise, which is how it
+survived.
+
 ---
 
 ## Two boundaries, not one

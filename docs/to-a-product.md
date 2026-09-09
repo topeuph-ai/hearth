@@ -104,6 +104,59 @@ is the first thing to fix whenever the integrity zome next moves. The fix is
 small — a handful of extra arms in the `match`. It is only the freeze that
 makes it expensive.
 
+**Second: name the rule in the DNA, not the person.**
+
+Today the second person's key is in the circle's properties, so changing who
+they are means a new circle and everybody joining again. That is fine when it
+is decided at the start and painful whenever it is not — and it is often not,
+because you need their identifier before the circle exists.
+
+The answer is not to weaken the safeguard. It is to notice that the properties
+only have to carry **the rule** — a `requires_second_yes` flag — and not
+**the person**. The flag stays immutable, so the requirement still cannot be
+dropped quietly, which is the whole of what it protects. Who the second person
+is becomes an entry the holder writes whenever she has their key.
+
+**This is not speculation; it is how Moss does it.** Their group DNA properties
+carry a single `progenitor`, and every other permission is a `StewardPermission`
+entry in the DHT:
+
+```rust
+pub struct StewardPermission {
+    pub permission_hash: Option<ActionHash>,
+    pub for_agent: AgentPubKey,
+    pub expiry: Option<Timestamp>,
+}
+```
+
+The trick that makes it deterministic is that **an action cites the permission
+it relies on, by hash**. Validation does `must_get_valid_record(permission_hash)`
+— a fixed hash, so every validator reaches the same answer — and the chain back
+to the progenitor is enforced implicitly, because a *valid* record was already
+checked against whoever issued it. Permissions cannot be updated or deleted,
+only expire. See
+[`dnas/group/zomes/integrity/group/src/steward_permission.rs`](https://github.com/lightningrodlabs/moss/blob/main/dnas/group/zomes/integrity/group/src/steward_permission.rs).
+
+The one thing that could have sunk this was checked: the membrane is enforced
+in two places, and `genesis_self_check` has no network access — it "verifies as
+much as it can without network access", while `validate` "can access DHT data".
+So the local check would confirm the founder's signature and that a second
+signature is present at all; the network check would resolve the appointment and
+verify who gave it. Per Holochain's own documentation, that split is exactly
+*why* the two callbacks exist.
+
+**What it would buy:** appointing a second person later, or changing them, stops
+meaning a new circle and stops meaning everybody re-joins. What it costs is a
+migration, which is why it is on this page and not in the code.
+
+**For contrast, two routes deliberately not taken.** Unyt's answer to mutable
+membership is [`joining-service`](https://github.com/unytco/joining-service), "a
+per-hApp REST API that brokers onboarding… controlling who can join" — which is
+an operator, and this project exists because nobody will be one. AD4M has no
+`genesis_self_check` anywhere in its repository; its membranes live above
+Holochain in the Language layer, which is a different architecture rather than a
+different answer to this question.
+
 ## 0b. Windows and Linux builds are different networks
 
 **Found 2026-09-08, by the CI check written to enforce the freeze.** The check

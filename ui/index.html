@@ -130,11 +130,34 @@
             mind later, because that case genuinely does need a new circle.
           -->
           <button type="button" id="choose-create-two">
-            <span class="choice-title">Create a circle two people agree on</span>
+            <span class="choice-title">
+              Create a circle where two people decide who joins
+            </span>
             <span class="choice-detail">
-              The same, but nobody joins unless you and one other person both
+              The same, but nobody gets in unless you and one other person both
               say yes. Best decided now — adding it later means starting the
               circle again.
+            </span>
+          </button>
+          <!--
+            Fourth, and here rather than inside a circle.
+
+            This used to live on the circle screen, which meant the person who
+            has to agree could only agree once they had joined the circle and
+            could read somebody's record. That is exactly backwards: agreeing
+            to who joins is a job you do *for* a circle, not *in* one.
+
+            Signing is this key over that person's key. It has nothing to do
+            with the circle, so it does not need the circle — which is what
+            lets a solicitor, an advocate, or a sister two hundred miles away
+            hold this and never read a word about anybody.
+          -->
+          <button type="button" id="choose-second">
+            <span class="choice-title">Agree to somebody joining</span>
+            <span class="choice-detail">
+              Somebody has asked you to be the second yes on an invitation. You
+              do not have to be in the circle, and you will not see what is in
+              it.
             </span>
           </button>
         </div>
@@ -409,6 +432,80 @@
           </div>
           <button type="submit" id="join-circle-submit">Join their circle</button>
         </form>
+      </section>
+
+      <!--
+        Agreeing to who joins, as a screen of its own.
+
+        This lived inside the circle, which quietly required the second person
+        to join that circle — and so to read somebody's record — before they
+        could agree to anybody. That is the opposite of what this is for.
+
+        Signing is this key over that person's key. It does not touch the
+        circle, so it is done on the ordinary cell every install already has,
+        and whoever holds this power can stay outside every circle they guard.
+      -->
+      <section id="second" hidden>
+        <div class="actions">
+          <button type="button" class="secondary back-to-choose">Back</button>
+        </div>
+        <h2>Agree to somebody joining</h2>
+        <p>
+          Somebody has asked you to be the second yes on an invitation. Nobody
+          gets into their circle unless you agree as well.
+        </p>
+        <p class="notice">
+          You are agreeing to <strong>one named person</strong>, and to nothing
+          else. It does not put you in the circle and it does not let you, or
+          them, see anything you could not see before.
+        </p>
+
+        <!--
+          What happens, before it happens.
+
+          The screen used to show a paste box, then a wall of base64, then a
+          copy button, and left somebody holding a finished invitation with
+          no idea whose it was or where to send it. Three steps, said in
+          advance, cost four lines.
+        -->
+        <ol class="steps">
+          <li>Somebody in the circle sends you half an invitation.</li>
+          <li>You check who it would let in, and agree.</li>
+          <li>You send the finished invitation back to them.</li>
+        </ol>
+
+        <form id="second-form">
+          <div class="field">
+            <label for="half-invitation">Paste what they sent you</label>
+            <p id="half-invitation-hint" class="hint">
+              One long line. It is half an invitation until you agree to it.
+            </p>
+            <textarea
+              id="half-invitation"
+              name="half-invitation"
+              rows="3"
+              required
+              aria-describedby="half-invitation-hint"
+            ></textarea>
+          </div>
+          <div id="second-who" class="notice" hidden></div>
+          <button type="submit" id="second-submit">I agree to this</button>
+        </form>
+
+        <div id="seconded-done" hidden>
+          <p class="notice">
+            <strong>Agreed.</strong> Send this back to
+            <span id="seconded-back-to">whoever asked you</span>, who will
+            pass it on to the person joining. It is no use to anybody else:
+            it only lets in the one person it names.
+          </p>
+          <output id="seconded-output"></output>
+          <div class="actions">
+            <button type="button" id="copy-seconded" class="secondary">
+              Copy the finished invitation
+            </button>
+          </div>
+        </div>
       </section>
 
       <!--
@@ -850,6 +947,42 @@
           </form>
         </section>
 
+        <!--
+          The second person's own invitation, made for you.
+
+          This is the step nobody was told about. Naming somebody as the second
+          yes puts them into the circle's identity, but it does not put *them*
+          in the circle — and until they are in, nobody else can join either,
+          because no invitation can be finished without them.
+
+          So the circle sat there, apparently ready, quietly unable to admit
+          anybody, and the only clue was that nothing worked.
+
+          Their identifier was already given when the circle was made, so
+          everything needed to invite them is already here. It is made for you
+          and shown until they arrive, rather than asked for.
+
+          Deliberately not behind "write something first", which is the rule
+          for inviting readers. A name and four empty headings is a confusing
+          thing to be invited into — but this person is not being invited to
+          read. They are how the door works.
+        -->
+        <section id="seconder-invitation" hidden>
+          <h3>Send this to your second person first</h3>
+          <p>
+            <span id="seconder-who">The person you named</span> has to be in
+            the circle before anybody else can join, because every invitation
+            needs their agreement too. This is their invitation — they are the
+            one person who does not need a second yes of their own.
+          </p>
+          <output id="seconder-invitation-output"></output>
+          <div class="actions">
+            <button type="button" id="copy-seconder-invitation" class="secondary">
+              Copy their invitation
+            </button>
+          </div>
+        </section>
+
         <section id="invite-section" hidden>
           <h3>Invite someone</h3>
           <p>
@@ -940,58 +1073,24 @@
           in on the holder's invitation alone — nobody has to countersign their
           own way in — and from then on nobody else arrives without them.
         -->
+        <!--
+          A pointer, not the form.
+
+          The form itself is a screen of its own, reached from the front page,
+          because agreeing to who joins does not need this circle and should
+          not require being in it. This is only here so somebody who is both a
+          member and the second yes can find it from where they already are.
+        -->
         <section id="second-here" hidden>
-          <h3>Invitations for you to agree to</h3>
+          <h3>You are the second yes here</h3>
           <p>
-            This circle asks two people to agree before anybody joins, and you
-            are the second. Nobody gets in unless you say so as well.
+            Nobody joins this circle unless you agree as well. When somebody
+            sends you half an invitation, this is where you finish it.
           </p>
-
-          <!--
-            What happens, before it happens.
-
-            The screen used to show a paste box, then a wall of base64, then a
-            copy button, and left somebody holding a finished invitation with
-            no idea whose it was or where to send it. Three steps, said in
-            advance, cost four lines.
-          -->
-          <ol class="steps">
-            <li>Somebody in the circle sends you half an invitation.</li>
-            <li>You check who it would let in, and agree.</li>
-            <li>You send the finished invitation back to them.</li>
-          </ol>
-
-          <form id="second-form">
-            <div class="field">
-              <label for="half-invitation">Paste what they sent you</label>
-              <p id="half-invitation-hint" class="hint">
-                One long line. It is half an invitation until you agree to it.
-              </p>
-              <textarea
-                id="half-invitation"
-                name="half-invitation"
-                rows="3"
-                required
-                aria-describedby="half-invitation-hint"
-              ></textarea>
-            </div>
-            <div id="second-who" class="notice" hidden></div>
-            <button type="submit" id="second-submit">I agree to this</button>
-          </form>
-
-          <div id="seconded-done" hidden>
-            <p class="notice">
-              <strong>Agreed.</strong> Send this back to
-              <span id="seconded-back-to">whoever asked you</span>, who will
-              pass it on to the person joining. It is no use to anybody else:
-              it only lets in the one person it names.
-            </p>
-            <output id="seconded-output"></output>
-            <div class="actions">
-              <button type="button" id="copy-seconded" class="secondary">
-                Copy the finished invitation
-              </button>
-            </div>
+          <div class="actions">
+            <button type="button" id="go-and-second">
+              Agree to an invitation
+            </button>
           </div>
         </section>
 
