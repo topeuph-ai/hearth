@@ -1655,6 +1655,41 @@ async function openCircle(item) {
   await loadCircle();
 }
 
+/*
+ * Put down everything we know about the circle we were in.
+ *
+ * Leaving used to set `circle` and `holder` to null and stop there, which
+ * left the record, the members, the suggestions and every rendered element on
+ * the screen exactly where they were. The screen was hidden rather than
+ * emptied, so what she had just taken off her device was still sitting in it,
+ * waiting to be shown again the moment anything else was opened.
+ *
+ * For a page about somebody's private record, "hidden" is not "gone". If she
+ * has asked for a circle to be off this device, it should not be in the
+ * running program either.
+ */
+function forgetTheCircle() {
+  circle = null;
+  holder = null;
+  record = null;
+  members = new Map();
+  suggestions = [];
+  peopleLastSeen = new Set();
+  showingSomething = false;
+  knownName = "";
+
+  // And the screen, which is the part she can actually see.
+  $("record-name").textContent = "";
+  $("record-fields").replaceChildren();
+  $("people-list").replaceChildren();
+  $("suggestions-list").replaceChildren();
+  $("circle-heading").textContent = "";
+  $("record").hidden = true;
+  $("record-form").hidden = true;
+  $("acknowledge-form").hidden = true;
+  forgetTheInvitation();
+}
+
 $("leave-circle").addEventListener("click", async () => {
   try {
     const leaving = $("circle-heading").textContent;
@@ -1665,8 +1700,7 @@ $("leave-circle").addEventListener("click", async () => {
       call("leave_circle", circle.cellId[0]),
     );
 
-    circle = null;
-    holder = null;
+    forgetTheCircle();
     $("leave-details").open = false;
 
     // Straight back to the list, which is where she was heading. If that was
