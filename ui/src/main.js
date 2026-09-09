@@ -2020,7 +2020,36 @@ $("choose-create").addEventListener("click", () => {
   $("person-name").focus();
 });
 
+/*
+ * A second join starts empty, and does not know her name yet.
+ *
+ * Coming here from the front page used to show whatever was left from the
+ * last time: a spent invitation still in the box, a name, a relationship, and
+ * — worst of it — the question "How are you connected to Margaret Smythe?"
+ * asked before anything had been pasted. The app appeared to know who the
+ * circle was about, when in truth it was quoting the previous one back.
+ *
+ * That is the same mistake as leaving a circle without putting it down, and
+ * it is worse here: it invites somebody to answer a question about the wrong
+ * person, and their answer is written into the record as how they describe
+ * themselves.
+ *
+ * Note this is deliberately not done in `go-back`, which returns to a screen
+ * somebody was already filling in. A mistyped character should cost a
+ * correction, not a restart. Arriving fresh is a different thing from coming
+ * back.
+ */
+function aFreshJoin() {
+  $("invitation-in").value = "";
+  $("joiner-name").value = "";
+  $("joiner-relationship").value = "";
+  // Back to "them", until an invitation actually says otherwise.
+  knownName = "";
+  nameHer("");
+}
+
 $("choose-join").addEventListener("click", () => {
+  aFreshJoin();
   show("join");
   $("invitation-in").focus();
 });
