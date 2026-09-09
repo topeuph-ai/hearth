@@ -4,86 +4,105 @@ Paste this into a new session opened in `C:\Users\user\Desktop\aboutme`.
 
 ---
 
-We're continuing work on Hearth. Read your memory first — `project_hearth.md`
-has what it is, why, and the four things not to re-derive.
+We're continuing work on **Hearth**. Read your memory first — `project_hearth.md`
+has what it is and why.
 
-## Where we are
+**Then read these, in this order. They are the state of the project and they
+replace anything you would otherwise have to infer:**
 
-The app works end to end and is running. 25 integration tests plus 3 unit tests
-pass in CI. There's an installable Windows desktop build. The repo is
-`topeuph-ai/hearth`, public, Apache-2.0.
+1. `docs/what-is-proven.md` — what is tested, what is built but unwatched, what
+   is not built. If anything else contradicts it, it wins.
+2. `docs/to-a-product.md` — the roadmap, ordered by what blocks what.
+3. `README.md` — the freeze notice near the top matters more than it looks.
 
-I'm walking through the interface as a real user and finding things. That has
-been by far the most productive part of this project — seven issues so far that
-no test could catch, all on the boundary between the software and a person:
+`docs/funding.md`, `docs/prior-art.md`, `docs/outer-ring.md`,
+`docs/storyboard.md` and `docs/standard-and-gap.md` are there when they become
+relevant. Don't read them up front.
 
-- a name typed into a field expecting a public key
-- an invitation that couldn't survive being copied
-- a copy button with no visible feedback
-- an error screen with no way out
-- "what you call them" — them being ambiguous
-- a first screen showing a form instead of asking a question
-- the same question asked twice
+## Four rules that are not negotiable
 
-Keep doing that with me. When I report something, fix it, **load the page and
-verify it in the browser**, then commit.
+**1. The integrity zome is frozen.**
+`dnas/aboutme/zomes/integrity/aboutme/src/lib.rs` must not be edited — **not
+even a comment**, which was measured to change the compiled hash. A circle *is*
+that hash, so any change makes every existing circle unreachable, silently. CI
+fails if it moves. Everything worth doing happens in the interface and the
+coordinator zome, neither of which touches the DNA.
 
-## To start the two windows
+**2. Build zomes with `node scripts/build-zomes.mjs`, never `cargo build`.**
+A bare cargo build bakes the machine's home directory into the wasm and changes
+the DNA. The wrapper strips it.
 
-```bash
-cd ui && npm run demo
-```
+**3. Windows and Linux produce different DNAs and always will** — the remapped
+paths keep each system's path separator. So the released `.webhapp` is the
+canonical build and every platform is assembled from it. Not a bug to fix.
 
-One command. Packs a fresh hApp, starts vite, opens two Electron windows, and
-clears its own leftovers. If it hangs, check the log rather than guessing.
+**4. Never probe the conductors while he is walking the demo.** Read the code
+instead. If you can't tell from the code, ask him one precise question. Four
+guessed fixes have cost more than any single question ever has.
 
-## Things that cost real time — don't rediscover them
+## How we work
 
-- **`npm run build` succeeding proves nothing.** Bundling doesn't execute the
-  module. A `ReferenceError` at import time builds cleanly and leaves the app
-  stuck on "Starting up." forever. **Load the page and read the console after
-  every change.**
-- **Never slice this file by start/end markers.** A patch that cut from
-  `loadCircle` to `loadCircles` deleted five hundred lines including `start()`,
-  because `loadCircles` had been appended much later. Use targeted replacements
-  and assert landmarks are still present afterwards.
-- **Watch CI.** It was red for five commits while I worked on the interface,
-  because a zome signature change broke the test helpers.
-- **Kangaroo installs the hApp on first run only.** After changing zomes, move
-  `~/AppData/Roaming/uk.topeuph.hearth/0.1.x/default` aside or the desktop app
-  silently runs the old ones.
-- Holochain's docs lag its releases badly. Read the source at the tag.
+He walks the interface as a real user and reports what he sees; you fix it,
+verify, and commit. That has been the most productive part of this project —
+most of the real bugs were found that way and no test would have caught any of
+them. When he reports something, **read the actual code before theorising**, and
+say plainly when you need a fact from him rather than guessing.
 
-## Design rules that are load-bearing
+Restart the demo with `cd ui && npm run demo -- 3`. Kill Electron, holochain,
+lair-keystore **and whatever holds port 5273** first, or it refuses to start.
 
-- **Offline is not a failure state.** No sync spinners, no staleness warnings,
-  nothing implying somebody has fallen behind.
-- **A list of people, never an inbox.** A district nurse could be in thirty
-  circles. No unread counts, no badges.
-- **Never claim what the code can't know.** "Role claimed: district nurse", not
-  a verified credential. A name *changed*, not *corrected* — software can't tell
-  a typo from a marriage.
-- **The record speaks in her voice; forms ask whoever is typing.** "What matters
-  to me" on the page, "What matters to Margaret" on the form.
-- **Never a dead end.** Every screen has a way back.
-- Mistakes are fine when everyone can see them. Don't over-engineer prevention.
+He is not a software engineer — his field is music — and the code is written
+with AI assistance while the design decisions are his. Lead with the point,
+strip the jargon, and never hand him one of your own opinions as though he had
+arrived at it.
 
-## What's next
+## Where things stand, 9 September 2026
 
-1. Finish walking the flow: create → write → review → invite → join →
-   introduce → suggest → accept → acknowledge.
-2. **The NLnet application. Deadline 3 November 2026.** I write it; you draft
-   and I humanise. Their Open Internet Stack funds individuals building
-   open-source decentralised infrastructure — no company or revenue needed.
-3. Free NHS routes, now worth using with a working demo: the NHS Innovation
-   Service, Life Sciences Hub Wales (`hello@lshubwales.com`), and
-   `england.dtac@nhs.net` for how a no-operator system should be assessed.
+**Released.** `v0.1.1` is published with the installer and `hearth.webhapp`.
+`v0.1.0` is marked superseded — it built a different circle from its own source.
 
-## Still open
+**The release has still never been installed by anybody.** It was downloaded and
+verified byte-identical to the local build, but **Norton 360 refuses to launch
+the installer** — "Access is denied", file not quarantined, nothing shown to the
+user. The *already-installed* copy runs correctly: window opens, Holochain and
+lair start alongside it. So the packaging works; the installer cannot get past
+consumer antivirus on an unsigned binary. **That is the single most important
+open item, and it is somebody else's machine that will settle it.**
 
-- **Encrypting entry contents.** Biggest governance gap; every circle member's
-  device holds readable copies. Must land before real use.
-- Thirty to fifty cloned cells per conductor on a mid-range phone — unknown,
-  and a good question for Holochain's developers.
-- QR codes for identifiers. 53 characters of base64 is not something anyone
-  reads down a phone.
+**Two machines have still never found each other.** There is one Windows machine
+here; the second laptop is a Chromebook. This is a money problem, not a
+technical one, and it is written up honestly in the README and the release notes
+as the thing a stranger could settle in half an hour.
+
+**Recently done:** a third front-page option so a circle needing two agreements
+is made *once* rather than re-formed; a way out when the second person dies or
+loses their device; several state-leak fixes (leaving a circle, opening the join
+screen, the refresh reaching under an open form).
+
+**Recently learned, and worth not re-deriving:** the second yes is a *tripwire,
+not a lock*. The holder can always re-form the circle without one — what she
+cannot do is drop it quietly, because everybody must re-join. Saying otherwise
+is false, and the stronger claim is the tempting one.
+
+## What to do next, in this order
+
+1. **Get the installer onto a machine that is not this one.** Everything else is
+   secondary to somebody outside this room running it.
+2. **Two machines finding each other.** Cheap for anybody with two computers.
+3. **Restack, deadline 3 November 2026, noon CET.** €5k–€50k, individuals may
+   apply, open source required. Read the call text before writing anything —
+   the scope is more infrastructure-shaped than this project is, and that
+   argument has to be made deliberately. See `docs/funding.md`.
+
+## What not to do
+
+**Stop working on the second yes.** A whole day went into it — where it is
+appointed, whether it makes a second circle, a third front-page button, then
+nearly a fourth, then what happens when the second person dies. Every problem
+was real; none of it was worth that share of the effort. It is an *optional*
+safeguard that is not in the About Me standard and that most circles will never
+use. It works, it is explicable, leave it.
+
+The pattern to avoid is the one that produced that: finding the next real
+problem inside a feature and treating "real" as the same as "worth doing now".
+He noticed before I did.

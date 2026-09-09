@@ -87,7 +87,20 @@ signing certificate. It is not a judgement about the file. If that is not
 acceptable in your setting — and in some NHS settings it will not be — say so,
 because signing is a cost rather than a problem.
 
-### 2. If it never finds anybody, suspect your antivirus
+### 2. Your antivirus may refuse to run the installer at all
+
+Symptom: **nothing happens**, or Windows says *“Access is denied”*. The file is
+not deleted or quarantined — it simply will not start.
+
+Measured here on 2026-09-09: **Norton 360 blocks it.** Consumer antivirus
+treats an unsigned installer nobody has downloaded before as suspicious, and
+this one is both. Allow it through your antivirus, or use the
+[`hearth.webhapp`](#the-desktop-app) instead, which is not an executable.
+
+Signing would fix it and costs money rather than effort — worth saying if that
+is the blocker in your setting.
+
+### 3. If it never finds anybody, suspect your antivirus
 
 Symptom: it installs, opens, everything works on your own machine, and it never
 sees the other person. **No error appears anywhere.**
