@@ -28,9 +28,13 @@ const run = (cmd, args, opts = {}) => {
 
 // 1. The zomes, then the bundles. Never pack a stale wasm — the .happ is a
 //    snapshot, and rebuilding the wasm does not update it.
-run("cargo", ["build", "--target", "wasm32-unknown-unknown", "--release"], {
-  cwd: root,
-});
+//
+//    Through scripts/build-zomes.mjs rather than cargo directly. A bare cargo
+//    build bakes this machine's home directory into the wasm, which changes
+//    the DNA hash, which means the circle somebody else builds is not the
+//    circle you built. The wrapper strips those paths. Read the comment at the
+//    top of it before changing this line.
+run("node", [join(root, "scripts", "build-zomes.mjs")], { cwd: root });
 run(hc, ["dna", "pack", join(root, "dnas", "aboutme", "workdir")]);
 run(hc, ["app", "pack", workdir]);
 

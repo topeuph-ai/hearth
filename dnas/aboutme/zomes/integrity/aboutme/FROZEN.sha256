@@ -5,37 +5,37 @@
 # made becomes unreachable. Their records stay on their own disks and no build
 # of this app will ever show them again, with no error anywhere.
 #
-# So the wasm hash is pinned here and CI fails if it moves. See the README, and
+# So the hash is pinned here and CI fails if it moves. See the README, and
 # docs/to-a-product.md for what to do if it genuinely has to change (short
 # answer: that is a migration with everybody re-invited, not a commit).
 #
-# Frozen 2026-09-08, at release v0.1.0.
+# Rebased 2026-09-09, when the build stopped embedding the building machine's
+# home directory. Frozen from the release that follows.
 #
 # ---------------------------------------------------------------------------
-# ⚠️  THE TWO PLATFORMS DO NOT AGREE, AND THIS IS A BUG (found 2026-09-08)
+# Build it with scripts/build-zomes.mjs, never with cargo directly.
 # ---------------------------------------------------------------------------
 #
-# Identical source. Identical pinned compiler (rustc 1.98.0, per
-# rust-toolchain.toml). Different wasm:
+# Rust bakes the source path of every dependency into the binary for its panic
+# messages. A bare `cargo build` therefore produces a different hash on every
+# computer — and the installer released on 2026-09-08 carried the string
+# `C:\Users\user\...` inside it. The wrapper passes --remap-path-prefix so that
+# any machine of the same platform now produces the same bytes.
 #
-#   Windows  dd942cac…      the machine the released installer is built on
-#   Linux    7ca250f3…      GitHub Actions, and anybody building from source
+# ---------------------------------------------------------------------------
+# Windows and Linux still differ, and no flag on stable Rust fixes it.
+# ---------------------------------------------------------------------------
 #
-# Different wasm means a different DNA hash means **a different network**. So a
-# circle made in the published Windows installer and a circle made from a
-# Linux build are not the same circle, and their members can never find each
-# other — silently, as always.
+# The remapped paths keep the operating system's own separator:
 #
-# The README currently tells Linux and macOS users to build from source. Taken
-# together with the above, that instruction hands them an app that cannot talk
-# to any Windows user. That is not a theory; it is what these two lines say.
+#   Windows  /cargo\registry\src\...
+#   Linux    /cargo/registry/src/...
 #
-# The likely cause is source paths embedded in panic and debug strings —
-# C:\Users\user\… against /home/runner/… — which `--remap-path-prefix` exists
-# to normalise. Not attempted yet, because fixing it changes the hash again and
-# therefore the DNA of the release published today.
-#
-# See docs/to-a-product.md. Do not treat the freeze as settled until this is.
+# Different bytes, different DNA, different network. So the two lines below are
+# not a reproducibility failure to be fixed — they are a fact about the
+# toolchain, and the reason **the released .webhapp is the canonical build**.
+# Anybody making a desktop app for another platform assembles it from that
+# file rather than compiling the zomes. See the README.
 
-linux    7ca250f33f303395b44fb40bff2dc4cd74b5310841887e6e8b170d9398b5bab8
-windows  dd942cacc54fa741677dc5128d0469ce22cb1a022206345f0f69e31d9a541de6
+linux    UNKNOWN-until-the-first-CI-run
+windows  392dc1703ce4e2a381082784cb9c0169065dd9dff680f90c42679ae0e88b29df

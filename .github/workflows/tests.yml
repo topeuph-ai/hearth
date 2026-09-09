@@ -42,8 +42,11 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      # Through the wrapper, not cargo. It strips the building machine's
+      # paths out of the wasm, without which every machine produces a
+      # different DNA hash and the pin below could never hold.
       - name: Build zomes
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: node scripts/build-zomes.mjs
 
       # Pure logic that cannot be exercised through a conductor — chiefly
       # `order_versions`, where a timestamp collision cannot be provoked on

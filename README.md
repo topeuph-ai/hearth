@@ -46,13 +46,18 @@ anything below sounds more finished than it is.
 
 Windows only for now.
 
-> ⚠️ **Do not build from source to get a Linux or macOS copy and expect it to
-> reach Windows users.** The same source produces different wasm on Linux and
-> Windows, which means a different DNA hash, which means a different network —
-> measured 2026-09-08, see
-> [`FROZEN.sha256`](dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256). Fixing
-> that is the next job. Until it is fixed, a build from source can only find
-> other builds made the same way, on the same platform.
+**For Linux or macOS, do not compile the zomes.** Download
+`hearth.webhapp` from the same release and build the desktop shell around it —
+see [The desktop app](#the-desktop-app).
+
+> **Why it matters.** The same source produces different wasm on Windows and
+> Linux, because Rust bakes dependency paths into the binary and the two
+> systems write those paths with different slashes. Different wasm is a
+> different DNA hash is **a different network** — so zomes compiled locally
+> could not reach anybody using the installer, silently. No flag on stable Rust
+> fixes this, so the released `.webhapp` is the canonical build and every
+> platform is assembled from it. Measured 2026-09-08, see
+> [`FROZEN.sha256`](dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256).
 
 One file, about 115MB. **Holochain and its keystore are inside it**, so there is
 nothing else to install: no Rust, no Node, no separate binaries, no server to
@@ -359,11 +364,16 @@ hApp and the interface in one file. That is what
 [`holochain/kangaroo-electron`](https://github.com/holochain/kangaroo-electron)
 turns into an installable desktop app.
 
+**Use the released `hearth.webhapp`, not one you built**, unless you are
+deliberately making a separate network — see the warning under
+[Trying it](#trying-it). Compiling the zomes yourself on a different platform
+produces a different DNA, and the app will find nobody.
+
 ```bash
 git clone --depth 1 https://github.com/holochain/kangaroo-electron.git hearth-desktop
 cd hearth-desktop
 # In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth'.
-cp ../aboutme/workdir/hearth.webhapp pouch/
+gh release download --repo topeuph-ai/hearth --pattern 'hearth.webhapp' --dir pouch/
 npx yarn@1 install
 npx yarn@1 setup       # fetches and checksums the Holochain binaries
 npx yarn@1 build:win   # or build:linux, build:mac-arm64, build:mac-x64
