@@ -33,7 +33,7 @@
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -62,8 +62,54 @@ const flags = [
   `--remap-path-prefix=${root}=/hearth`,
 ];
 
-if (!existsSync(join(root, ".cargo", "config.toml"))) {
-  console.error("No .cargo/config.toml — the required flags may have moved.");
+/*
+ * Check the flags above still match the ones in .cargo/config.toml.
+ *
+ * This used to check only that the file existed, which is the wrong question.
+ * Setting RUSTFLAGS replaces whatever is in the config rather than adding to
+ * it, so the two lists have to be kept identical by hand — and if somebody
+ * edits one and not the other, the build quietly produces different bytes.
+ *
+ * Different bytes are a different fingerprint, which is a different network,
+ * which is the one failure this whole script exists to prevent. It gives no
+ * error and looks exactly like a firewall problem. So it is worth ten lines to
+ * catch it here, where it is still a build failure with a sentence attached.
+ */
+const configPath = join(root, ".cargo", "config.toml");
+
+if (!existsSync(configPath)) {
+  console.error(
+    "No .cargo/config.toml.\n" +
+      "It must be committed — a .gitignore containing `.cargo/` will exclude\n" +
+      "it silently, and the build then fails pointing at getrandom instead.",
+  );
+  process.exit(1);
+}
+
+// Every double-quoted string in the file's rustflags list, in order. Good
+// enough to compare against `required`, and it needs no TOML parser.
+const configured = (
+  readFileSync(configPath, "utf8").match(/rustflags\s*=\s*\[([^\]]*)\]/)?.[1] ??
+  ""
+)
+  .match(/"((?:[^"\\]|\\.)*)"/g)
+  ?.map((quoted) => JSON.parse(quoted)) ?? [];
+
+const same =
+  configured.length === required.length &&
+  configured.every((flag, at) => flag === required[at]);
+
+if (!same) {
+  console.error(
+    "The build flags in .cargo/config.toml no longer match the ones in this\n" +
+      "script, and they must be identical.\n\n" +
+      `  this script          ${JSON.stringify(required)}\n` +
+      `  .cargo/config.toml   ${JSON.stringify(configured)}\n\n` +
+      "Setting RUSTFLAGS replaces the config rather than adding to it, so a\n" +
+      "difference between these two changes the compiled bytes — which changes\n" +
+      "the DNA hash, which puts this build on a different network from\n" +
+      "everybody else's, silently. Make them match, then build again.",
+  );
   process.exit(1);
 }
 

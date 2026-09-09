@@ -337,6 +337,27 @@ function setLabelFor(cellId, label) {
 }
 
 /**
+ * Forget what this device remembered about a circle.
+ *
+ * The two things above are small, but one of them is the person's name, kept
+ * in the clear so that two circles about the same person can be told apart in
+ * a list. When somebody asks for a circle to be off her device, her name
+ * should go off it too.
+ *
+ * `forgetTheCircle` already empties the screen, on the reasoning that hidden
+ * is not gone. This is the same reasoning applied one step further out — to
+ * the thing that survives closing the app.
+ */
+function forgetWhatThisDeviceKnew(cellId) {
+  try {
+    localStorage.removeItem(labelKey(cellId));
+    localStorage.removeItem(ownRecordKey(cellId));
+  } catch {
+    // Nothing to do about a browser that will not let us clear its own store.
+  }
+}
+
+/**
  * Is there anything here a person would call written?
  *
  * Making a circle seeds a record with her name in it and four empty fields,
@@ -346,6 +367,63 @@ function setLabelFor(cellId, label) {
  */
 const hasBeenWritten = (entry) =>
   Boolean(entry) && FIELDS.some(([key]) => entry[key]?.trim());
+
+/*
+ * What the circle screen is currently doing: reading, writing, or saying you
+ * have read it.
+ *
+ * These three are exclusive, and they used to be worked out backwards — by
+ * asking the page whether a form happened to be open, in six different places,
+ * and then setting six elements from the answer. Every bug that produced was
+ * the same bug: the twenty-second re-read arriving while somebody was typing
+ * and putting a button back underneath them. "Write it" appearing below Save
+ * and Cancel. "Read this over" above "Nothing has been written yet".
+ *
+ * They were fixed one at a time, and each fix guarded one element. Storing the
+ * mode instead of reading it back off the screen removes the question rather
+ * than answering it again.
+ *
+ * `showCircleMode` below is the only thing allowed to set these six elements.
+ */
+const READING = "reading";
+const WRITING = "writing";
+const SAYING_I_READ_IT = "acknowledging";
+
+let circleMode = READING;
+
+/**
+ * Put the circle screen into a mode. The only place these six are set.
+ *
+ * Called both when the mode changes and at the end of every re-read, so a
+ * refresh arriving mid-form redraws the mode somebody is actually in rather
+ * than resetting them to the beginning.
+ */
+function showCircleMode(mode = circleMode) {
+  circleMode = mode;
+
+  const amHolder = isHolder();
+  const written = showingSomething;
+
+  // Writing.
+  $("record-form").hidden = mode !== WRITING;
+
+  // The things underneath it, which must not reappear while it is open.
+  $("record-actions").hidden = mode === WRITING;
+  $("edit-record").hidden = !amHolder;
+  $("edit-record").textContent = written ? "Change this" : "Write it";
+
+  // Saying you have read it. Offered to everybody but the holder, and only
+  // once there is something to have read.
+  const mayAcknowledge = !amHolder && written;
+  $("acknowledge-form").hidden = mode !== SAYING_I_READ_IT;
+  $("acknowledge").hidden = !mayAcknowledge || mode === SAYING_I_READ_IT;
+
+  // Somebody who cannot acknowledge cannot be part way through acknowledging.
+  if (!mayAcknowledge && mode === SAYING_I_READ_IT) {
+    circleMode = READING;
+    $("acknowledge-form").hidden = true;
+  }
+}
 
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
@@ -450,7 +528,64 @@ function renderReaders(records) {
 // Loading
 // ---------------------------------------------------------------------------
 
-async function loadCircle() {
+/*
+ * One reading of the circle at a time.
+ *
+ * Three separate things ask the screen to look again: the twenty-second timer,
+ * every signal that arrives, and every action that writes something. They
+ * overlap constantly — three people joining while the timer fires used to
+ * start four complete re-readings of the same circle at once, each of them
+ * fetching everything again.
+ *
+ * That is wasteful on the machine of somebody who holds the circle and
+ * genuinely slow for somebody who does not, because for them every one of
+ * those is a trip out to another device.
+ *
+ * So a request that arrives while a reading is already under way does not
+ * start another one. It waits, and then gets a reading of its own that begins
+ * afterwards — which matters, because most callers have just written something
+ * and need to see it. Handing them the reading already in flight would show
+ * them the circle as it was before they wrote.
+ *
+ * Everything below still calls `loadCircle()` and does not need to know.
+ */
+let readingNow = null;
+let readingNext = null;
+
+function loadCircle() {
+  if (!readingNow) {
+    readingNow = readTheCircle();
+    return readingNow;
+  }
+
+  // Somebody else is already waiting for a fresh pass. Wait for the same one
+  // rather than queueing a third.
+  if (!readingNext) {
+    readingNext = readingNow
+      // Whatever went wrong with the pass in flight was reported to whoever
+      // asked for it. It must not stop this one from happening.
+      .catch(() => {})
+      .then(() => {
+        readingNext = null;
+        readingNow = readTheCircle();
+        return readingNow;
+      });
+  }
+
+  return readingNext;
+}
+
+async function readTheCircle() {
+  try {
+    // Left the circle while a reading was queued. Nothing to draw.
+    if (!circle) return;
+    await drawTheCircle();
+  } finally {
+    readingNow = null;
+  }
+}
+
+async function drawTheCircle() {
   /*
    * There are three states here, not two, and writing it as two branches
    * produced a screen with no message on it at all.
@@ -523,20 +658,10 @@ async function loadCircle() {
    * was not, and the two need the same rule: while somebody is part-way
    * through writing, the screen underneath them holds still.
    */
-  const writing = !$("record-form").hidden;
-  $("record-actions").hidden = writing;
-  $("edit-record").hidden = !amHolder;
-  $("edit-record").textContent = written ? "Change this" : "Write it";
-  $("acknowledge").hidden = amHolder || !written;
+  // Whatever she was already doing, drawn again from what it is rather than
+  // worked out backwards from what happens to be on screen. See showCircleMode.
+  showCircleMode();
 
-  /*
-   * The circle re-reads itself every twenty seconds, and a refresh must not
-   * appear underneath somebody who is halfway through typing who they are.
-   * If the form is open it stays open, and the button that opens it stays
-   * away.
-   */
-  if ($("acknowledge").hidden) $("acknowledge-form").hidden = true;
-  else if (!$("acknowledge-form").hidden) $("acknowledge").hidden = true;
   // Only offer this while there is actually something to wait for.
   $("check-again").hidden = amHolder || written;
   // Nothing to invite anybody to until something has been written. A name and
@@ -701,8 +826,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     // and inviting people to nothing is worse.
     nameHer(fullName);
     fillForm();
-    $("record-form").hidden = false;
-    $("record-actions").hidden = true;
+    showCircleMode(WRITING);
     $("what-matters").focus();
   } catch (error) {
     problem(error);
@@ -711,14 +835,12 @@ $("create-circle-form").addEventListener("submit", async (event) => {
 
 $("edit-record").addEventListener("click", () => {
   fillForm();
-  $("record-form").hidden = false;
-  $("record-actions").hidden = true;
+  showCircleMode(WRITING);
   $("what-matters").focus();
 });
 
 $("cancel-edit").addEventListener("click", () => {
-  $("record-form").hidden = true;
-  $("record-actions").hidden = false;
+  showCircleMode(READING);
   $("edit-record").focus();
 });
 
@@ -752,7 +874,7 @@ $("record-form").addEventListener("submit", async (event) => {
       await call("create_about_me", aboutMe, circle.cellId);
     }
 
-    $("record-form").hidden = true;
+    showCircleMode(READING);
     await loadCircle();
 
     // The holder has just written it, so show it back to them to check before
@@ -789,15 +911,13 @@ $("acknowledge").addEventListener("click", () => {
     $("ack-role").value = mine?.relationship?.trim() ?? "";
   }
 
-  $("acknowledge-form").hidden = false;
-  $("acknowledge").hidden = true;
+  showCircleMode(SAYING_I_READ_IT);
   $("ack-role").focus();
   $("ack-role").select();
 });
 
 $("cancel-acknowledge").addEventListener("click", () => {
-  $("acknowledge-form").hidden = true;
-  $("acknowledge").hidden = false;
+  showCircleMode(READING);
   $("acknowledge").focus();
 });
 
@@ -817,7 +937,7 @@ $("acknowledge-form").addEventListener("submit", async (event) => {
       ),
     );
 
-    $("acknowledge-form").hidden = true;
+    showCircleMode(READING);
     announce(
       role
         ? `Marked as read, as ${role}.`
@@ -925,11 +1045,19 @@ function watchForArrivals() {
   setInterval(async () => {
     if (!circle || document.hidden) return;
     try {
-      await loadMembers();
-      // And what has been offered for the record. This looked only at people,
-      // so a suggestion could be sitting on the machine, fetched and readable,
-      // with nothing on screen ever asking for it again.
-      await loadSuggestions();
+      /*
+       * The whole circle, not only the people in it.
+       *
+       * This used to look at the members and the suggestions and nothing
+       * else, so a reader watching somebody's record never saw it change.
+       * Editing the record sends no signal — the only thing that would have
+       * told them was this, and it was not looking.
+       *
+       * It goes through `loadCircle`, so it costs nothing when something else
+       * is already reading, and it will not land underneath somebody who is
+       * halfway through typing.
+       */
+      await loadCircle();
     } catch {
       // Not being able to reach anybody is not an error worth a screen. It is
       // Tuesday, and somebody's laptop is shut.
@@ -957,6 +1085,22 @@ async function start() {
      * place — worth saying out loud, because it is silent every time.
      */
     const payload = signal?.value?.payload ?? signal?.payload ?? signal;
+
+    /*
+     * Only about the circle actually on screen.
+     *
+     * Every circle on this device is running at once. A district nurse could
+     * be in thirty of them, so a signal arrives from whichever one had
+     * something happen — not from the one she is looking at. Without this,
+     * somebody reading Margaret's record was told "Someone read this" about a
+     * different person entirely, and the page reloaded underneath her.
+     *
+     * The zome sends these to one person on purpose, for the same reason. This
+     * is the other half of it.
+     */
+    const from = asText(signal?.value?.cell_id?.[0]);
+    if (!circle || from !== asText(circle.cellId?.[0])) return;
+
     /*
      * Her invitation was taken up. This is the one arrival worth interrupting
      * somebody for, and it goes only to the person who sent the invitation —
@@ -1146,20 +1290,40 @@ function suggestionCard(item) {
     const actions = document.createElement("div");
     actions.className = "actions";
 
+    /*
+     * Held while the writing happens, like every other button that writes.
+     *
+     * Without this, two quick presses wrote the decision twice and appended
+     * the same sentence to the record twice — because nothing on the card
+     * changes until the reload at the end. It is the same fault as the three
+     * circles called "Mam": the press was never the mistake, a button that
+     * stays silent while it works is.
+     */
     const accept = document.createElement("button");
     accept.type = "button";
     accept.textContent = "Add this";
-    accept.addEventListener("click", () =>
-      decide(item, entry, true).catch(problem),
-    );
 
     const setAside = document.createElement("button");
     setAside.type = "button";
     setAside.className = "secondary";
     setAside.textContent = "Not this one";
-    setAside.addEventListener("click", () =>
-      decide(item, entry, false).catch(problem),
-    );
+
+    // Both of them, not just the one pressed. They are two answers to one
+    // question, and pressing the second while the first is still being written
+    // would decide the same suggestion twice.
+    const once = (button, working, accepted) =>
+      button.addEventListener("click", () => {
+        const other = button === accept ? setAside : accept;
+        other.disabled = true;
+        whileWorking(button, working, () => decide(item, entry, accepted))
+          .catch(problem)
+          .finally(() => {
+            other.disabled = false;
+          });
+      });
+
+    once(accept, "Adding…", true);
+    once(setAside, "Setting aside…", false);
 
     actions.append(accept, setAside);
     li.append(actions);
@@ -1173,13 +1337,35 @@ function suggestionCard(item) {
   return li;
 }
 
-/** Accept or set aside. Accepting also puts the words into the record. */
+/**
+ * Accept or set aside. Accepting also puts the words into the record.
+ *
+ * The record is written FIRST, and the decision only afterwards.
+ *
+ * The other way round is what this used to do, and it could tell somebody a
+ * plain untruth: if adding the words failed, the decision was already saved as
+ * accepted, so the card read "Added to the record." about something that was
+ * not in it. Worse, if the record had not loaded, the words were skipped in
+ * complete silence and the card still said they had gone in.
+ *
+ * This order can only fail the safe way. Losing the decision means she is asked
+ * to decide again, which is a small annoyance. Losing somebody's words while
+ * telling her they were kept is not.
+ */
 async function decide(item, entry, accepted) {
   const hash = item.suggestion.signed_action.hashed.hash;
 
-  await call("decide_on_suggestion", { suggestion: hash, accepted }, circle.cellId);
+  if (accepted) {
+    // Not a state anybody should be able to reach — the buttons only exist on
+    // a circle that is showing a record — but saying so is better than
+    // silently dropping what somebody took the trouble to notice.
+    if (!record) {
+      throw new Error(
+        "The record has not finished loading, so there is nowhere to put this " +
+          "yet. Try again in a moment.",
+      );
+    }
 
-  if (accepted && record) {
     const [key] = FIELD_LABELS[entry.field] ?? [];
     const current = entryOf(record.current.record);
     const existing = current[key]?.trim();
@@ -1197,6 +1383,8 @@ async function decide(item, entry, accepted) {
       circle.cellId,
     );
   }
+
+  await call("decide_on_suggestion", { suggestion: hash, accepted }, circle.cellId);
 
   announce(accepted ? "Added to the record." : "Set aside.");
   await loadCircle();
@@ -1431,7 +1619,10 @@ async function loadMembers() {
    */
   sayWhoIsNew();
   renderPeople();
-  offerToAppointASecondYes();
+  // Awaited. It makes a call of its own and writes to the screen, so left
+  // unawaited a failure became an unhandled rejection with nothing shown, and
+  // it could finish drawing after the screen had already moved somewhere else.
+  await offerToAppointASecondYes();
 
   const mine = members.get(asText(me));
   $("introduce-section").hidden = Boolean(mine);
@@ -1527,6 +1718,10 @@ $("join-form").addEventListener("submit", async (event) => {
 
     circle = { cellId: cell.cell_id };
     holder = bundle.founder; // already text, out of the invitation
+    // What she typed on the way in is what this device should call it, and it
+    // has to be written down or it lasts only until the app is closed. The
+    // name the cell was made with belongs to whoever made it, not to her.
+    setLabelFor(cell.cell_id, label);
     $("circle-heading").textContent = label;
     circles.push({ cellId: circle.cellId, name: label, madeWith: label });
 
@@ -1771,6 +1966,7 @@ function forgetTheCircle() {
   $("suggestions-list").replaceChildren();
   $("circle-heading").textContent = "";
   $("record").hidden = true;
+  circleMode = READING;
   $("record-form").hidden = true;
   $("acknowledge-form").hidden = true;
   forgetTheInvitation();
@@ -1779,6 +1975,8 @@ function forgetTheCircle() {
 $("leave-circle").addEventListener("click", async () => {
   try {
     const leaving = $("circle-heading").textContent;
+    // Held before anything is switched off, because forgetTheCircle drops it.
+    const leavingCell = circle.cellId;
 
     await whileWorking($("leave-circle"), "Taking it off…", () =>
       // Sent to the lobby cell, not to the circle: a cell cannot be the one to
@@ -1786,6 +1984,9 @@ $("leave-circle").addEventListener("click", async () => {
       call("leave_circle", circle.cellId[0]),
     );
 
+    // Her name and what this device called this circle, gone from the store as
+    // well as from the screen.
+    forgetWhatThisDeviceKnew(leavingCell);
     forgetTheCircle();
     $("leave-details").open = false;
 
@@ -1844,12 +2045,23 @@ $("appoint-form").addEventListener("submit", async (event) => {
     const label = $("circle-heading").textContent;
     const entry = entryOf(record?.current?.record);
 
-    if (!entry) {
+    /*
+     * Asked of what is written, not of whether a record exists.
+     *
+     * Making a circle seeds a record with her name in it, so `entry` is
+     * truthy from the first second — which meant this check could never fire
+     * and an empty record was carried across in silence. `hasBeenWritten`
+     * exists for exactly this distinction and is what was meant.
+     */
+    if (!hasBeenWritten(entry)) {
       throw new Error(
         "There is nothing written in this circle yet to carry across. Write " +
           "the record first.",
       );
     }
+
+    // Carried over with the record, because she is in the new circle too.
+    const myIntroduction = members.get(asText(me));
 
     const cell = await whileWorking($("appoint-submit"), "Making the new circle…", () =>
       call("create_circle", {
@@ -1870,6 +2082,27 @@ $("appoint-form").addEventListener("submit", async (event) => {
     // Her own words, moved over whole. display_name included, so the new
     // circle is never nameless.
     await call("create_about_me", entry, circle.cellId);
+
+    /*
+     * And who she said she was, moved over with them.
+     *
+     * Without this the new circle knew her record but not her, so "Who are
+     * you?" appeared on a circle she had made thirty seconds earlier — and
+     * she had already answered it, twice, in the circle this one replaces.
+     *
+     * The same thing is done when a circle is first created, and for the same
+     * reason. This is the other place a circle comes into being.
+     */
+    if (myIntroduction?.name?.trim()) {
+      await call(
+        "introduce_myself",
+        {
+          name: myIntroduction.name,
+          relationship: myIntroduction.relationship ?? "",
+        },
+        circle.cellId,
+      );
+    }
 
     circles.push({ cellId: circle.cellId, name: label, madeWith: label });
     peopleLastSeen = new Set();

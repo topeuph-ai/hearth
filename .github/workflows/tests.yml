@@ -30,6 +30,7 @@ jobs:
         with:
           toolchain: "1.98.0"
           targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -53,6 +54,37 @@ jobs:
       # demand. Runs natively and in seconds.
       - name: Unit tests
         run: cargo test -p aboutme_integrity
+
+      # Same flags as the wrapper. Setting RUSTFLAGS replaces the config's own
+      # flags rather than adding to them, so they have to be repeated — see the
+      # comment at the top of scripts/build-zomes.mjs. The remapping is left
+      # out deliberately: it only affects the compiled bytes, and nothing here
+      # is kept.
+      - name: Clippy
+        env:
+          RUSTFLAGS: -C link-arg=--import-undefined --cfg getrandom_backend="custom"
+        run: cargo clippy --target wasm32-unknown-unknown --workspace -- -D warnings
+
+      # The coordinator zome only, and deliberately not the whole workspace.
+      #
+      # The integrity zome is frozen: reformatting it would change the compiled
+      # bytes and strand every circle in existence. It happens to be formatted
+      # correctly, but checking it here would mean that if it ever were not, CI
+      # would demand a change the freeze forbids — a rule that cannot be
+      # obeyed. So it is left out, and the freeze check below is what guards
+      # that file.
+      - name: Formatting
+        run: cargo fmt -p aboutme --check
+
+      # 2,200 lines of JavaScript with no build step to catch a typo in it.
+      # This is not a linter; it is the difference between a syntax error found
+      # here and one found by somebody opening the app.
+      - name: The interface parses
+        run: |
+          for f in ui/src/main.js ui/scripts/*.mjs scripts/*.mjs; do
+            echo "checking $f"
+            node --check "$f"
+          done
 
       # The frozen integrity zome must not move.
       #

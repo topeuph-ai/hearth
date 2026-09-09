@@ -3,6 +3,49 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      What this page is allowed to load, and where it may talk to.
+
+      Nothing here comes from anywhere else: no fonts from Google, no scripts
+      from a CDN, no analytics. That is already true, and this is what makes it
+      stay true — a policy is worth more than an intention, because an
+      intention does not survive somebody adding a library in a hurry.
+
+      It matters more than usual here. This page shows what somebody has
+      written about a vulnerable person, in the clear, and it is not encrypted
+      where it is stored. Anything this page can be persuaded to talk to is
+      somewhere that could go.
+
+      The one outward connection allowed is a websocket to Holochain running on
+      this same machine, on a port it chooses at startup — which is why the
+      port is a wildcard and the host is not.
+
+      `form-action 'none'` is the belt and braces. Every form here is handled
+      in JavaScript and never actually submitted; if that ever broke, the form
+      would try to post somewhere, and this makes it fail instead.
+
+      `'wasm-unsafe-eval'` is not optional and is not as alarming as it reads.
+      The Holochain client compiles a small piece of WebAssembly to do its
+      hashing, and a plain `script-src 'self'` blocks that — the app then dies
+      at startup with a WebAssembly compile error and nothing that explains
+      why. It permits WebAssembly and nothing else; `eval` and inline script
+      stay blocked. Found by trying it, which is the only way this would ever
+      have been found before somebody installed it.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self' 'wasm-unsafe-eval';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data:;
+        font-src 'self';
+        connect-src 'self' ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*;
+        object-src 'none';
+        base-uri 'self';
+        form-action 'none';
+      "
+    />
     <title>Hearth</title>
     <link rel="stylesheet" href="./src/style.css" />
   </head>

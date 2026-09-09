@@ -223,6 +223,44 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
  * for everybody, and my own chain for me, and merges the two.
  */
 
+/// Fetch many records in one go, dropping any that cannot be found.
+///
+/// **This is the difference between one wait and thirty.**
+///
+/// Asking for records one at a time in a loop is fine on the machine of
+/// somebody who holds the whole circle, because every answer is already on
+/// their own disk. It is not fine for the person this design is really for: a
+/// professional set up to read without storing anything holds none of it, so
+/// every single `get` in a loop is a separate trip out to somebody else's
+/// device, one after another, each waiting for the last.
+///
+/// A circle with ten suggestions and five revisions was roughly forty of those
+/// trips to draw one screen — and the screen redraws every twenty seconds.
+///
+/// Holochain's own interface takes a whole list at once and answers them
+/// together, which is what this uses. The single-hash `get` in the library is a
+/// convenience wrapper over exactly the same call.
+///
+/// Records that come back missing are dropped rather than reported. A record
+/// nobody can currently reach is the ordinary condition of a circle where
+/// somebody's laptop is shut, not an error worth a screen.
+fn get_many(hashes: Vec<ActionHash>) -> ExternResult<Vec<Record>> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let inputs: Vec<GetInput> = hashes
+        .into_iter()
+        .map(|hash| GetInput::new(hash.into(), GetOptions::default()))
+        .collect();
+
+    Ok(HDK
+        .with(|h| h.borrow().get(inputs))?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 /// Everything of one entry type on my own chain, oldest first.
 fn on_my_own_chain(entry_type: UnitEntryTypes) -> ExternResult<Vec<Record>> {
     query(
@@ -237,16 +275,39 @@ fn on_my_own_chain(entry_type: UnitEntryTypes) -> ExternResult<Vec<Record>> {
 /// Appended rather than prepended: where a list is read latest-wins, what I
 /// have just written should be the latest.
 fn and_my_own(records: &mut Vec<Record>, mine: Vec<Record>) {
-    let already: BTreeSet<ActionHash> = records
-        .iter()
-        .map(|r| r.action_address().clone())
-        .collect();
+    let already: BTreeSet<ActionHash> =
+        records.iter().map(|r| r.action_address().clone()).collect();
 
     for record in mine {
         if !already.contains(record.action_address()) {
             records.push(record);
         }
     }
+}
+
+/// Put records in an order every device agrees on: oldest first.
+///
+/// **The order links come back in is not promised to be the same anywhere.**
+/// That is already written down against `order_versions` in the integrity
+/// crate, and it applies just as much to any other list assembled from links.
+///
+/// It matters wherever a reader takes the last of something as the one that
+/// counts. Somebody who corrects how they describe themselves has two
+/// introductions in the circle, and without this, which one is shown is
+/// whichever happened to arrive last — so her son could appear as "nephew" on
+/// one person's screen and "son" on another's, with both of them right about
+/// what they were sent.
+///
+/// Sorted by when it was written, with the action's own hash as the tiebreak
+/// for the case where two share a timestamp. Arbitrary, but identical
+/// everywhere, which is the only property being asked for.
+fn oldest_first(records: &mut [Record]) {
+    records.sort_by(|a, b| {
+        a.action()
+            .timestamp()
+            .cmp(&b.action().timestamp())
+            .then_with(|| a.action_address().cmp(b.action_address()))
+    });
 }
 
 #[hdk_extern]
@@ -257,18 +318,20 @@ pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
         GetStrategy::Network,
     )?;
 
-    let mut out = Vec::new();
-    for link in links {
-        if let Some(hash) = link.target.into_action_hash() {
-            if let Some(record) = get(hash, GetOptions::default())? {
-                out.push(record);
-            }
-        }
-    }
+    let mut out = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
 
     // Including me, so I am not a stranger in a circle I just introduced
     // myself to.
     and_my_own(&mut out, on_my_own_chain(UnitEntryTypes::Member)?);
+
+    // A reader takes the last introduction from each person as the one that
+    // counts, so the order has to be the same on every device.
+    oldest_first(&mut out);
     Ok(out)
 }
 
@@ -426,14 +489,16 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .cloned()
         .ok_or_else(|| wasm_error!("An About Me always has at least its original version"))?;
 
+    // Every version fetched together rather than one after another. This used
+    // to be a loop, which meant one trip across the network per revision for
+    // anybody who does not hold the circle themselves. See `get_many`.
+    let fetched = get_many(versions.clone())?;
+
     // Every update names the version it replaced. Collect those names and the
     // loose ends are whatever is left over — the versions nothing was built
     // on top of.
     let mut replaced: BTreeSet<ActionHash> = BTreeSet::new();
-    for hash in &versions {
-        let Some(record) = get(hash.clone(), GetOptions::default())? else {
-            continue;
-        };
+    for record in &fetched {
         if let ActionData::Update(update) = &record.action().data {
             replaced.insert(update.original_action_address.clone());
         }
@@ -447,7 +512,8 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .max(1);
 
     Ok(CurrentAboutMe {
-        record: get(newest, GetOptions::default())?,
+        // Already in hand from the batch above, so no second trip for it.
+        record: fetched.into_iter().find(|r| r.action_address() == &newest),
         divergent_versions,
     })
 }
@@ -506,14 +572,12 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
         GetStrategy::Network,
     )?;
 
-    let mut records = Vec::new();
-    for link in links {
-        if let Some(hash) = link.target.into_action_hash() {
-            if let Some(record) = get(hash, GetOptions::default())? {
-                records.push(record);
-            }
-        }
-    }
+    let mut records = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
 
     // Including my own "I have read this", so pressing it visibly does
     // something. Only the ones about the version asked for.
@@ -527,6 +591,9 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
             .is_some_and(|a| a.about_me == wanted)
     });
     and_my_own(&mut records, mine);
+
+    // Who read it, in the order they read it, the same way on every device.
+    oldest_first(&mut records);
 
     Ok(records)
 }
@@ -563,7 +630,9 @@ fn circle_modifiers(
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
         lobby: false,
-        seconder: seconder.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        seconder: seconder
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     };
 
     // Clone modifiers arrive as YAML, which is why the founder is carried as a
@@ -662,7 +731,11 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
      */
     let me = agent_info()?.agent_initial_pubkey;
 
-    if !verify_signature(founder.clone(), input.invitation.signature.clone(), me.clone())? {
+    if !verify_signature(
+        founder.clone(),
+        input.invitation.signature.clone(),
+        me.clone(),
+    )? {
         return Err(wasm_error!(
             "This invitation was not made for you, or not by the person whose \
              circle it is. Ask them to make one from your identifier."
@@ -819,8 +892,37 @@ pub fn init() -> ExternResult<InitCallbackResult> {
 }
 
 /// Hand an incoming signal to whatever is showing the circle.
+///
+/// Every signal says who it is from. That field is filled in by whoever sent
+/// it, so on its own it is a claim and not a fact — and the claim is checked
+/// here, against who actually called.
+///
+/// Without this check, any member of a circle could make the holder's screen
+/// say "Someone read this. They said they are: district nurse" without ever
+/// reading anything, or announce that a person who is not here has joined. The
+/// screen would be telling her something untrue about somebody else, which is
+/// the one thing this app must never do.
+///
+/// A signal that does not match is dropped in silence rather than reported.
+/// There is nobody to report it to, nothing was written, and a warning about a
+/// message she never asked for is not information — it is worry.
 #[hdk_extern]
 pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
+    // Who actually made this call. For a signal arriving from another machine
+    // this is the sending agent, established by Holochain rather than asserted
+    // in the payload.
+    let caller = call_info()?.provenance;
+
+    let claimed = match &signal {
+        Signal::Acknowledged { by, .. }
+        | Signal::Introduced { by, .. }
+        | Signal::Suggested { by, .. } => by,
+    };
+
+    if claimed != &caller {
+        return Ok(());
+    }
+
     emit_signal(signal)
 }
 
@@ -887,43 +989,106 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
         GetStrategy::Network,
     )?;
 
-    let mut suggestions = Vec::new();
-    for link in links {
-        if let Some(hash) = link.target.into_action_hash() {
-            if let Some(record) = get(hash, GetOptions::default())? {
-                suggestions.push(record);
-            }
-        }
-    }
+    let mut suggestions = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
 
     // Including anything I have offered myself, so a carer can see that what
     // she noticed was actually written down.
-    and_my_own(&mut suggestions, on_my_own_chain(UnitEntryTypes::Suggestion)?);
+    and_my_own(
+        &mut suggestions,
+        on_my_own_chain(UnitEntryTypes::Suggestion)?,
+    );
+
+    // So the list reads in the order things were offered, and reads the same
+    // way on everybody's screen, rather than in whatever order they arrived.
+    oldest_first(&mut suggestions);
 
     // My own decisions too. Without this the holder accepts something, the
     // list still shows it as undecided, and the obvious thing to do is decide
     // it again.
     let my_decisions = on_my_own_chain(UnitEntryTypes::SuggestionOutcome)?;
 
+    /*
+     * Which decision belongs to which suggestion, worked out first, and then
+     * every one of them fetched in a single call.
+     *
+     * This was a fetch per suggestion inside the loop below, so a circle where
+     * a lot had been offered redrew slowly for exactly the person least able
+     * to afford it. See `get_many`.
+     */
+    let mut wanted: Vec<ActionHash> = Vec::new();
+    for suggestion in &suggestions {
+        let mut decisions = get_links(
+            LinkQuery::try_new(
+                suggestion.action_address().clone(),
+                LinkTypes::SuggestionToOutcome,
+            )?,
+            GetStrategy::Network,
+        )?;
+
+        /*
+         * The newest decision, chosen the same way on every device.
+         *
+         * This used to take whichever decision happened to arrive first. The
+         * interface hides the buttons once anything has been decided, so a
+         * second decision is not reachable by pressing things — but "not
+         * reachable today" is a poor reason to leave a list being read in an
+         * order nothing promises. Two devices could show a suggestion as
+         * accepted and set aside at the same time.
+         *
+         * Same rule as everywhere else here: by time, with the hash as the
+         * tiebreak.
+         */
+        decisions.sort_by(|a, b| {
+            a.timestamp
+                .cmp(&b.timestamp)
+                .then_with(|| a.target.cmp(&b.target))
+        });
+
+        if let Some(hash) = decisions
+            .last()
+            .and_then(|l| l.target.clone().into_action_hash())
+        {
+            wanted.push(hash);
+        }
+    }
+
+    // What each decision was about, so they can be matched back up below.
+    let decided: Vec<(ActionHash, Record)> = get_many(wanted)?
+        .into_iter()
+        .filter_map(|record| {
+            let about = record
+                .entry()
+                .to_app_option::<SuggestionOutcome>()
+                .ok()
+                .flatten()?
+                .suggestion;
+            Some((about, record))
+        })
+        .collect();
+
     let mut out = Vec::new();
     for suggestion in suggestions {
         let hash = suggestion.action_address().clone();
 
-        let decisions = get_links(
-            LinkQuery::try_new(hash.clone(), LinkTypes::SuggestionToOutcome)?,
-            GetStrategy::Network,
-        )?;
-        let mut outcome = match decisions
-            .first()
-            .and_then(|l| l.target.clone().into_action_hash())
-        {
-            Some(h) => get(h, GetOptions::default())?,
-            None => None,
-        };
+        let mut outcome = decided
+            .iter()
+            .find(|(about, _)| about == &hash)
+            .map(|(_, record)| record.clone());
 
         if outcome.is_none() {
             outcome = my_decisions
                 .iter()
+                // Backwards, so this is the newest of my own decisions and not
+                // the first one I ever made. My chain comes back oldest first,
+                // so searching forwards found a decision I had since changed
+                // my mind about — the same fault as reading link order, in the
+                // one place that does not depend on the network at all.
+                .rev()
                 .find(|record| {
                     record
                         .entry()

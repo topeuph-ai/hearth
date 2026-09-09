@@ -71,6 +71,39 @@ The two answers this was chosen between:
 **Nothing else on this page matters if an update can quietly strand somebody's
 record.** This is first because it is first.
 
+### What is waiting for the next version of the integrity zome
+
+Because the file cannot be touched, things found in it queue up here rather
+than getting fixed. There is one so far, found in an audit on 2026-09-09.
+
+**Two of the six jobs Holochain hands out are not checked.**
+
+When somebody writes something, Holochain does not ask one machine whether it
+is allowed. It asks several, each looking at a different aspect of the same
+act — is this a well-formed record, is this entry allowed, is this link
+allowed, is this deletion allowed. The zome answers four of those questions and
+says "fine" to the other two, because those two fall through the catch-all at
+the bottom of `validate`.
+
+The two that are not checked are the ones that hold **the record as a filed
+document** and **the list of what an agent has done**. The ones that *are*
+checked are the ones that hold the contents and the links, and every list this
+app reads is reached by following a link. So no attack was found: a forged
+entry is refused by the machine holding that kind of entry, and a forged link
+is refused by the machine holding that link, and nothing in the app ever
+reaches a record any other way.
+
+But "no attack was found by the person who wrote it" is exactly the sentence
+this project has learned to distrust, and there is a precedent sitting in the
+test file: link creation was once entirely unchecked, and that was found by
+review rather than by anybody's tests. This is the same shape of gap, one
+layer up.
+
+So it is written here, and in [`what-is-proven.md`](what-is-proven.md), and it
+is the first thing to fix whenever the integrity zome next moves. The fix is
+small — a handful of extra arms in the `match`. It is only the freeze that
+makes it expensive.
+
 ## 0b. Windows and Linux builds are different networks
 
 **Found 2026-09-08, by the CI check written to enforce the freeze.** The check
@@ -112,7 +145,7 @@ release, and freeze from there.
 **It also quietly explains a gap in the testing.** The adversarial suite runs on
 Linux in CI. The installer is Windows. They have been testing the same rules on
 a different DNA all along — harmless, since the source is identical, but it
-means "45 tests pass" and "the shipped app is correct" were never quite the
+means "the tests pass" and "the shipped app is correct" were never quite the
 same sentence.
 
 ## 1. The record is not encrypted at rest

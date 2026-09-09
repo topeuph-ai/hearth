@@ -2,919 +2,302 @@
 
 [![tests](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml/badge.svg)](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml)
 
-A person-centred record that spans organisations which will never share a system,
-with **no server and no operator**.
+A care record that belongs to the person it is about, and works across
+organisations that will never share a computer system.
 
-Scoped deliberately to the PRSB **About Me** standard — the things a person wants
-professionals to know: how to communicate with them, what matters to them, how to
-put them at ease. The standard explicitly says it is *not* a clinical record and
-excludes medications and diagnoses. That boundary is load-bearing: it keeps
-clinical safety certification (DCB0129), clinician liability and the heaviest data
-protection questions out of scope.
+**There is no server and no company in the middle.** Nobody hosts it. Nobody
+can switch it off.
 
-**Do not add clinical fields without understanding what they drag in with them.**
+---
 
-> ### 🧊 The integrity zome is frozen
+## The problem this is trying to solve
+
+Somebody with a learning disability, or dementia, or a long-term condition, is
+seen by a lot of different people. A district nurse. A support worker. A GP. A
+hospital ward. Their daughter.
+
+Each of those people writes things down in their own organisation's system, and
+those systems do not talk to each other. So the person explains themselves
+again, every time, to everybody — how to talk to them, what frightens them, what
+helps.
+
+There is already a national standard for exactly this: the PRSB **About Me**
+standard. The problem was never what to write down. It was **where to put it.**
+
+### Why nobody has solved it
+
+Every previous attempt built a shared place to put the record. And whoever
+builds that place becomes **the operator** — the organisation legally
+responsible for holding sensitive information about a vulnerable person,
+contributed by seven other organisations, and still around in twenty years'
+time.
+
+Almost nobody wants that job. Microsoft tried it with HealthVault and closed it
+in 2019, taking the data with it.
+
+**So this has no operator.** The record lives on the devices of the people in
+the circle, and nowhere else. A professional is not depositing information into
+somebody else's system — they are sharing from their own, which is a different
+thing legally as well as technically.
+
+That is the whole idea. Everything else here is a consequence of it.
+
+---
+
+## What it deliberately is not
+
+**It is not a clinical record**, and it must not become one by accident. No
+medications, no diagnoses, no care plan. The About Me standard says the same
+thing about itself.
+
+That boundary is doing real work. It keeps clinical safety certification
+(DCB0129), clinician liability and the heaviest data protection questions out of
+scope entirely.
+
+> **Do not add clinical fields without understanding what they drag in with
+> them.**
+
+---
+
+> ## 🧊 One file in this repository must never be edited
 >
-> `dnas/aboutme/zomes/integrity/aboutme/src/lib.rs` **must not be edited at
-> all** — decided 2026-09-08. A circle *is* the hash of that code, so any
-> change makes every existing circle unreachable: the records stay on people + s
-> disks and no build of this app will ever show them again, with no error
-> anywhere.
+> `dnas/aboutme/zomes/integrity/aboutme/src/lib.rs`
+>
+> **Why:** a circle is identified by a fingerprint taken of that file once it is
+> compiled. Change the file and you change the fingerprint, which means every
+> circle anybody has ever made becomes unreachable. Their records stay on their
+> own hard drives and no future version of this app will ever open them again —
+> with no error message, anywhere, to explain it.
 >
 > **Not even comments.** Adding a comment block was measured to change the
-> compiled wasm (`dd942cac…` → `941f0b41…`), because panic and debug strings
-> carry line numbers. Reverting it restored the hash exactly, so builds are
-> reproducible and the comment really was the difference.
+> fingerprint (`dd942cac…` became `941f0b41…`), because the compiler stores line
+> numbers for its error messages. Undoing the comment restored it exactly, which
+> also tells us the build is reliable and the comment really was the difference.
 >
-> The interface and the coordinator zome are where the work goes; neither
-> feeds the DNA hash. If that file genuinely must change, it is a migration
-> with everybody re-invited — see [docs/to-a-product.md](docs/to-a-product.md).
+> All the work happens in the interface and the coordinator zome. Neither of
+> those affects the fingerprint. CI fails the build if the file moves.
+>
+> If it genuinely has to change one day, that is a migration with everybody
+> re-invited — see [docs/to-a-product.md](docs/to-a-product.md).
 
-**Before anything else, read [what is proven and what is not](docs/what-is-proven.md).**
-It says who is building this and with what, which parts are tested, which are
-built but unwatched, and which are not built at all. It is the page to trust if
-anything below sounds more finished than it is.
+---
 
 ## Trying it
 
 ### ⬇️ [Download the Windows installer](https://github.com/topeuph-ai/hearth/releases/latest)
 
-> **This is an early demo and it may not yet do what it should.** It exists to
-> show that the idea is possible, not to be relied on. Expect rough edges, and
-> please do not put anybody real information into it.
+> **This is an early demo.** It exists to show the idea is possible, not to be
+> relied on. Please do not put real information about a real person into it.
 
-Windows only for now.
+One file, about 115MB. Everything it needs is inside — no Rust, no Node, no
+separate downloads, no server to run.
 
-**For Linux or macOS, do not compile the zomes.** Download
-`hearth.webhapp` from the same release and build the desktop shell around it —
-see [The desktop app](#the-desktop-app).
+**Windows only for now.** For Mac or Linux, see
+[docs/building-it.md](docs/building-it.md), and **do not compile it yourself** —
+that produces a different fingerprint and a private network of one. Build the
+app around the released `hearth.webhapp` instead.
 
-> **Why it matters.** The same source produces different wasm on Windows and
-> Linux, because Rust bakes dependency paths into the binary and the two
-> systems write those paths with different slashes. Different wasm is a
-> different DNA hash is **a different network** — so zomes compiled locally
-> could not reach anybody using the installer, silently. No flag on stable Rust
-> fixes this, so the released `.webhapp` is the canonical build and every
-> platform is assembled from it. Measured 2026-09-08, see
-> [`FROZEN.sha256`](dnas/aboutme/zomes/integrity/aboutme/FROZEN.sha256).
+### Three things will happen on Windows. None of them means anything is wrong.
 
-One file, about 115MB. **Holochain and its keystore are inside it**, so there is
-nothing else to install: no Rust, no Node, no separate binaries, no server to
-run. It is built to find its peers over the internet, so two installations
-should find each other with nothing in between.
+**1. Windows will try to stop it opening.**
 
-> **Should, not does.** Only one machine here has ever run it — the second
-> laptop is a Chromebook and a rented host costs money this project does not
-> have. Everything the design needs is in the build and multiple nodes find
-> each other on one machine, but **nobody has watched two computers do it.**
-> If you have two, this is the most useful half hour anyone could give the
-> project. [What is proven, and what is not](docs/what-is-proven.md).
+You will see *"Windows protected your PC"*. Click **More info**, then **Run
+anyway**.
 
-**Two things will happen on Windows, and neither means anything is wrong.**
+This happens to any application whose publisher has not bought a signing
+certificate, which costs money this project does not have. It is not a judgement
+about the file. In some NHS settings that will not be acceptable, and it is
+worth saying so — it is a cost, not a fault.
 
-### 1. "Windows protected your PC"
+**2. For the first minute after downloading, it may refuse to start.**
 
-The installer is **not code-signed**, so SmartScreen stops it:
+Nothing happens, or Windows says *"Access is denied"*. The file is not deleted
+and not quarantined.
 
-> Windows protected your PC
-> Microsoft Defender SmartScreen prevented an unrecognised app from starting.
+Your antivirus is holding the file open while it scans it, and 115MB takes a
+moment. **Wait a minute and try again.** That is exactly what happened here on
+9 September 2026, and it cleared on its own.
 
-Click **More info**, then **Run anyway**.
+**3. If it works but never finds the other person, it is almost certainly your
+antivirus.**
 
-This is what Windows shows for any application whose publisher has not bought a
-signing certificate. It is not a judgement about the file. If that is not
-acceptable in your setting — and in some NHS settings it will not be — say so,
-because signing is a cost rather than a problem.
+Everything on your own machine looks fine. No error appears anywhere. It simply
+never sees anybody else.
 
-### 2. It may refuse to start for the first minute after downloading
+Norton, Kaspersky, Avast, ESET and most workplace networks inspect secure
+connections by quietly re-signing them. Your browser accepts this. Holochain
+does not, and refuses to connect rather than trust something it cannot check.
 
-Symptom: **nothing happens**, or Windows says *“Access is denied”*. The file is
-not deleted or quarantined.
-
-Seen here on 2026-09-09 and it resolved itself: antivirus holds a large
-download open while it scans it, and 115MB takes a little while. **Wait a
-minute and run it again.** It installed and launched normally on the same
-machine, with the same antivirus, shortly afterwards.
-
-### 3. If it never finds anybody, suspect your antivirus
-
-Symptom: it installs, opens, everything works on your own machine, and it never
-sees the other person. **No error appears anywhere.**
-
-Cause, in almost every case: **antivirus that scans HTTPS.** Norton, Kaspersky,
-Avast, ESET and most corporate proxies re-sign every secure connection with
-their own certificate. Windows trusts it, so your browser never notices — but
-Holochain does not use the Windows certificate store, sees a certificate it
-cannot trace, and refuses to connect.
-
-**The fix is one exclusion.** Add this host to your antivirus's HTTPS scanning
-exclusions:
+**The fix is one line.** Add this address to your antivirus's list of sites to
+leave alone:
 
 ```
 dev-test-bootstrap2.holochain.org
 ```
 
-Then **restart the app** — it does not retry a connection that already failed,
-so the exclusion appears to do nothing until you do.
+Then **close the app and open it again** — it will not retry a connection that
+has already failed, so until you restart it the fix looks like it did nothing.
 
-Verified on Windows with Norton 360: before the exclusion the app could not
-reach anything; after it, and a restart, every certificate error was gone.
-Excluding one host leaves the rest of your scanning exactly as it was.
+Verified here with Norton 360. Everything else on your machine stays protected
+exactly as it was. The longer explanation is in
+[docs/building-it.md](docs/building-it.md).
 
-### What it is not
+---
 
-This is a demonstration, not a product. It uses **Holochain's public dev-test
-servers** to help people find each other, which carry no availability
-guarantee. Nothing written in it is encrypted at rest yet, so **do not put real
-information about a real person into it.**
+## The one thing this project most needs
 
-## Why this shape
+**Two computers have never run this.**
 
-The blocker on every previous attempt at a shared record around one person is that
-spanning organisational boundaries means *becoming the operator* — the legally
-responsible party holding clinical information about a vulnerable person,
-contributed by seven organisations, who must still exist in twenty years. Microsoft
-HealthVault wasn't; it shut in 2019 and took the data with it.
+Every part needed to work across the internet is in the build, and several
+copies running on one machine do find each other. But there is one Windows
+machine here, the other laptop is a Chromebook, and renting a host costs money.
 
-With no operator, a professional isn't depositing into somebody's system. They are
-sharing from their own, where their record stays authoritative and under their own
-employer's governance. That's a different act legally, not just technically.
+So "install it on two machines and they find each other" is a claim about what
+the code contains. **It is not something anybody has watched happen.**
 
-## What's here
+If you have two computers, that is half an hour that would tell this project
+more than anything else could. See
+[what is proven and what is not](docs/what-is-proven.md), which is the honest
+inventory and the page to trust if anything here sounds more finished than it
+is.
 
-- `dnas/aboutme/zomes/integrity/aboutme` — entry types and validation rules
-- `dnas/aboutme/zomes/coordinator/aboutme` — the callable functions
-- `workdir/happ.yaml` — `clone_limit: 1000`, because the architecture is one
-  cloned cell (one isolated network) per person's circle
+---
 
-The whole professional workflow is **one tap**: an acknowledgement that they read
-a specific version. Cheap for them; it's the thing families currently have no way
-of knowing.
+## How it works, briefly
 
-Validation rules enforced by every peer independently:
-- **only the person may write or revise their own About Me** — membership lets
-  you read a circle and acknowledge it, never author somebody else's account of
-  themselves
-- an About Me must have a display name
-- only the person may extend their own update chain, and only between their own
-  records
-- only the person may publish an About Me to the circle index
-- you may only attach your own acknowledgement, and never to your own record
-- an acknowledgement must reference a real About Me entry
-- acknowledgements cannot be edited
-- only the agent who created a link may remove it
-- only the author of a record may delete it
+**A circle** is a private network for one person. It is created around the
+public key of whoever holds it, and that key is baked into the circle's
+identity. A different holder produces a completely different network.
 
-### What an acknowledgement does and does not prove
+Circles cannot see each other. That is a fact about the mathematics, not a
+setting somebody could get wrong.
 
-It proves **this key asserted it had read this exact version**. `role` is free
-text and is not a credential — nobody checks that "district nurse" is true.
+**An invitation** is the holder's signature over your public key. You show it at
+the door, and every existing member checks it themselves. There is nobody to ask
+for permission, because there is nobody in charge.
 
-**This distinction must survive into the interface.** Show *"Read by \<identity\>,
-role claimed: District Nurse"*, never *"✓ Read by District Nurse"*. The second
-implies a verification that does not exist, and a family could reasonably rely
-on it.
+Because it is signed over *your* key, an invitation cannot be passed on to
+somebody else.
 
-## Versions (verified, not assumed)
+**Only the person may write their own About Me.** Being in a circle lets you
+read it and confirm you have read it. It never lets you write somebody else's
+account of themselves.
+
+**Anyone may suggest something**, and only the holder decides what goes in. A
+son remembers what his mother enjoyed; a support worker notices what settles
+her. A record only one person may write throws all of that away.
+
+**A professional's whole job is one tap** — confirming they read a particular
+version. It costs them almost nothing, and it is the thing families currently
+have no way of knowing at all.
+
+> **What that tap proves, and what it does not.** It proves a particular key
+> said it had read a particular version. The role beside it — "district nurse" —
+> is typed in by that person and **nothing checks it.** The interface says
+> "claimed" every single time, and it must keep doing so. A family could
+> reasonably rely on a tick that means more than it does.
+
+There is more detail, including what a red-team review found and what it missed,
+in [docs/how-it-works.md](docs/how-it-works.md).
+
+---
+
+## What it cannot do
+
+Said here rather than buried, because these are the honest limits.
+
+**Nothing is encrypted where it is stored.** Contents are only reachable by
+people let into a circle, but once somebody is in, they have the plain text on
+their machine. For About Me — no medications, no diagnoses — that is a smaller
+exposure than it sounds. It is still the largest gap.
+
+**"Remove" does not mean what people expect.** Leaving takes a circle off your
+own device. It does not reach anybody else's copy. Changing who may enter means
+making a new circle and everybody joining again.
+
+That is not evasion, it is arithmetic: once somebody has legitimately read
+something, nobody can un-read it. No system anywhere can do this. Circles are
+cheap to remake, which is why re-forming one is the honest answer.
+
+**A stranger cannot find the record.** A paramedic who has never heard of this
+has no way to discover it exists. Paper solved that with a sticker on a fridge
+and we have not solved it at all.
+
+**Joining can take about ninety seconds.** Understood, written up in
+[docs/latency.md](docs/latency.md), not yet fixed.
+
+**Nothing has had a full security review.** There has been one audit and its
+findings are recorded. Nobody outside this project has looked.
+
+---
+
+## Where the code lives
 
 | | |
 |---|---|
-| Holochain | **0.7.0** (released 30 July 2026) |
-| hdk | **0.7.0** |
-| hdi | **0.8.0** |
-| holochain_serialized_bytes | **=0.0.57** |
+| `dnas/aboutme/zomes/integrity/` | the rules — **frozen, see above** |
+| `dnas/aboutme/zomes/coordinator/` | the functions the app calls |
+| `ui/` | the interface |
+| `tests/tests/adversarial.rs` | 41 tests written as attacks, run on every push |
+| `docs/` | everything below |
 
-Read from `crates/hdk/Cargo.toml` and `crates/hdi/Cargo.toml` at tag
-`holochain-0.7.0`, not from documentation.
+**Built with Holochain 0.7.0** (hdk 0.7.0, hdi 0.8.0), read from the source at
+tag `holochain-0.7.0` rather than from documentation, which lags badly.
 
-## Build and run
+---
 
-No nix required. Binaries come straight from the Holochain 0.7.0 GitHub release
-(the `holochain/binaries` repo publishes them per platform, MPL-2.0):
+## The documents
 
-```bash
-for a in hc holochain lair-keystore kitsune2-bootstrap-srv; do
-  gh release download holochain-0.7.0 --repo holochain/holochain \
-     --pattern "${a}-x86_64-pc-windows-msvc.exe" -O "bin/${a}.exe"
-done
-```
+Read the first one before the others.
 
-`bin/` is gitignored. Verified versions: hc 0.7.0, holochain 0.7.0,
-lair-keystore 0.7.1, kitsune2-bootstrap-srv 0.5.0.
+| | |
+|---|---|
+| [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
+| [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
+| [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
+| [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
+| [DPIA.md](docs/DPIA.md) | Data protection assessment |
+| [latency.md](docs/latency.md) | Why joining takes ninety seconds |
+| [prior-art.md](docs/prior-art.md) | What has been tried before, and what became of it |
+| [what-to-borrow.md](docs/what-to-borrow.md) | What paper got right that we have not |
+| [outer-ring.md](docs/outer-ring.md) | Letting somebody read without joining |
+| [storyboard.md](docs/storyboard.md) | The demonstration, scene by scene |
+| [funding.md](docs/funding.md) | Where the money might come from |
 
-```bash
-# 1. compile the zomes
-cargo build --target wasm32-unknown-unknown --release
+---
 
-# 2. bundle
-./bin/hc.exe dna pack dnas/aboutme/workdir
-./bin/hc.exe app pack workdir
+## Running it yourself
 
-# 3. run two agents locally with NO network at all
-./bin/hc.exe sandbox --piped generate workdir/aboutme.happ --run=8888 -n 2 network mem
-```
-
-`network mem` uses the in-memory transport: two agents, one machine, no
-internet, no bootstrap server. This is the demo in its smallest form. Use
-`network quic` with `--bootstrap` for real machines.
-
-Note `hc sandbox generate network` also exposes `--target-arc-factor` directly,
-which is how you would create a participating non-storing node.
-
-## Running the demo
-
-One command:
+Two windows on one machine, each a separate person with a separate store,
+talking to each other with nothing in between:
 
 ```bash
 cd ui && npm run demo
 ```
 
-It packs a fresh hApp, starts the interface server, waits for it, and opens the
-windows. A demo command that needs a second terminal is not a demo command.
+Full instructions, and the things that will otherwise cost you an afternoon, are
+in [docs/building-it.md](docs/building-it.md).
 
-**As many people as you want:**
+---
 
-```bash
-npm run demo        # two
-npm run demo -- 3   # three
-npm run demo -- 6   # six
-```
+## The demonstration
 
-**Two windows on one machine is the whole argument**: two separate people, two
-separate stores, talking to each other with nothing in between. Make a circle
-in one, invite the other, watch the acknowledgement arrive. Three is what you
-want for anything involving a second yes, where one person invites, another
-agrees, and a third arrives.
+Two laptops and a phone. A person, their daughter, a nurse.
 
-### What actually limits the number
+The daughter writes something. It appears on the nurse's screen. **Unplug the
+router** — it carries on working. Take a device out of the room, change
+something, bring it back — it catches up.
 
-Not the conductor. Measured on a laptop running two agents:
-
-| | each |
-| --- | --- |
-| `holochain` | ~52 MB |
-| `lair-keystore` | ~6 MB |
-| `kitsune2-bootstrap-srv` | ~9 MB, shared by all of them |
-
-An agent costs under 60 MB. **The window costs several times that, because it
-is Chrome.** So the ceiling on this demo is the browser, not Holochain — the
-opposite of what people assume about peer-to-peer software, and worth saying
-out loud when somebody asks whether it would scale.
-
-Nothing in the script stops a larger number. Past six it prints a note and
-carries on.
-
-### One machine by default — and the cross-machine question
-
-Every agent in this demo shares **one bootstrap server and one relay running on
-`127.0.0.1`**. Two laptops each running `npm run demo` each start their own,
-so they never find each other — not because peer-to-peer fails across machines,
-but because they are asking two different servers who exists.
-
-**A bootstrap server is a place to leave your address, not a place your data
-goes through.** It never sees a record. If it goes down, peers that have
-already found each other carry on. This matters for the argument: needing a
-rendezvous is not the same as needing an operator, and it is not the thing this
-project says nobody will hold.
-
-**Running your own is one command**, using the binary already in `./bin`:
-
-```bash
-./bin/kitsune2-bootstrap-srv --listen 0.0.0.0:8888   # verified: it binds and serves
-```
-
-**Then point the demo at it**, on every machine:
-
-```bash
-npm run demo -- 2 --bootstrap http://192.168.1.20:8888
-```
-
-Every machine needs the same URL and a hApp built from the same source — a
-different build is a different DNA hash, which is a different network.
-
-**Verified 2026-09-08**, on one machine but through the external server rather
-than loopback, which is the same code path a second machine takes:
-
-- the conductors came up with
-  `bootstrap_url: Url2 { url: "http://192.168.1.89:8888/" }` and the same for
-  `relay_url`, instead of the `127.0.0.1` they default to
-- that server logged 65 client connections and 8 relay WebSocket upgrades from
-  them
-
-Reachability from another device was checked separately, and is the right first
-test if anything goes wrong: open **`http://<that-address>:8888/health`** in a
-phone's browser. It answers `{}` — two bytes of JSON — so a blank-looking page
-is a pass and "site can't be reached" is a firewall. It took ten seconds and
-proved a Windows machine running Norton needed no rule added.
-
-What is still untested is a genuinely second computer running a node, and
-whatever a home router does to the hop.
-
-### The thing most likely to defeat two machines, and it is not the network
-
-**A circle's DNA hash is computed over the compiled wasm.** Two people who
-build this with different compilers get different hashes, which are genuinely
-separate networks — and it fails in the worst way imaginable. Invitations are
-made and accepted, nothing errors, and nobody ever arrives. It looks exactly
-like a firewall problem and no amount of firewall work will fix it.
-
-Two things guard against that:
-
-1. **`rust-toolchain.toml` pins the compiler.** Do not remove it, and raise it
-   only deliberately — bumping it changes the DNA hash, so everybody must be on
-   the new build before anybody can reach anybody.
-2. **`npm run demo` prints the DNA hash on startup:**
-
-   ```
-   This network: uhC0ksZDuOqtYLhruRSamMI6uvlXHY7WNvHAONxJjhdLdXZCa0qvD
-   ```
-
-   Every machine meant to reach the others must print that exact line. **Check
-   this before investigating anything else** — it is one line and it rules out
-   the whole class.
-
-You can also ask for it directly:
-
-```bash
-./bin/hc dna hash dnas/aboutme/workdir/aboutme.dna
-```
-
-**Reviewers currently need Rust** to build the wasm, because `*.happ` and
-`*.dna` are gitignored and no prebuilt bundle ships. The pinned toolchain makes
-that build reliable; it does not make it unnecessary.
-
-**The desktop build is the other route.** Kangaroo ships pointing at
-Holochain's dev-test bootstrap and relay servers, which are public — see the
-warnings in *Packaging the desktop app* below, because those servers carry no
-availability guarantee and **changing the URLs after deployment partitions the
-network.**
-
-**Vite binds `[::1]` unless told otherwise.** The probe that waits for it
-connects to `127.0.0.1`, and on Windows the two never meet — which looks
-exactly like the server failing to start. `demo.mjs` passes
-`--host 127.0.0.1` so everything agrees.
-
-`hc-spin` shells out to `kitsune2-bootstrap-srv`, `holochain`, `lair-keystore`
-and `hc` **by bare name, and does not bundle them**. If they are not on PATH
-the only symptom is an empty error:
-
-```
-[hc-spin] | [hc run-local-services] ERROR:
-```
-
-Empty because the *spawn* failed rather than the process, so there is nothing
-to report. `npm run demo` goes through `ui/scripts/demo.mjs`, which puts `bin/`
-on PATH and checks the binaries and the hApp are present before starting.
-
-## The desktop app
-
-`npm run webhapp` in `ui/` produces `workdir/hearth.webhapp` — the zomes, the
-hApp and the interface in one file. That is what
-[`holochain/kangaroo-electron`](https://github.com/holochain/kangaroo-electron)
-turns into an installable desktop app.
-
-**Use the released `hearth.webhapp`, not one you built**, unless you are
-deliberately making a separate network — see the warning under
-[Trying it](#trying-it). Compiling the zomes yourself on a different platform
-produces a different DNA, and the app will find nobody.
-
-```bash
-git clone --depth 1 https://github.com/holochain/kangaroo-electron.git hearth-desktop
-cd hearth-desktop
-# In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth'.
-gh release download --repo topeuph-ai/hearth --pattern 'hearth.webhapp' --dir pouch/
-npx yarn@1 install
-npx yarn@1 setup       # fetches and checksums the Holochain binaries
-npx yarn@1 build:win   # or build:linux, build:mac-arm64, build:mac-x64
-```
-
-Produces `dist/uk.topeuph.hearth-0.1.0-setup.exe`, about 115MB, with
-`holochain 0.7.0` and `lair-keystore` bundled inside it. **Install it on two
-machines, unplug the router, and they still find each other on the local
-network.** That is the demonstration, and it is a different thing from two
-windows on one laptop.
-
-Before sending it to anybody, read [Trying it](#trying-it) — SmartScreen will
-stop them, and antivirus that scans HTTPS will isolate the app with no error
-shown anywhere.
-
-### Antivirus that scans HTTPS will silently isolate the app
-
-Symptom: the app installs, launches, the conductor starts, no error is shown,
-and it never finds a single peer. In the log:
-
-```
-probe failed: ... https://dev-test-bootstrap2.holochain.org/ping ...
-  invalid peer certificate: UnknownIssuer
-Failed to connect to relay server: tls connection failed: invalid peer
-  certificate: UnknownIssuer
-```
-
-**Cause: TLS interception.** Confirmed on this machine by asking what
-certificate is actually served:
-
-```
-cert subject: CN=dev-test-bootstrap2.holochain.org
-cert ISSUER : CN=Norton Web/Mail Shield Root,
-              OU=generated by Norton Antivirus for SSL/TLS scanning
-```
-
-Norton re-signs every HTTPS connection with its own root. Windows trusts that
-root, so browsers are perfectly happy — **but Holochain's networking does not
-use the Windows certificate store.** iroh bundles its own root list, sees an
-issuer it has never heard of, and refuses. Any antivirus with HTTPS scanning
-does this: Norton, Kaspersky, Avast, ESET, and most corporate proxies. An NHS
-laptop is very likely to.
-
-**Excluding the host fixes it, and this is verified.** After adding
-`dev-test-bootstrap2.holochain.org` to Norton's exclusions, the same check
-returns the real certificate while everything else is still intercepted:
-
-```
-dev-test-bootstrap2.holochain.org  ->  CN=YE2, O=Let's Encrypt   (real)
-holochain.org                      ->  Norton Web/Mail Shield Root
-github.com                         ->  Norton Web/Mail Shield Root
-```
-
-Restart the app afterwards — it does not retry a failed TLS setup — and the
-certificate errors disappear entirely.
-
-Fixes, best first:
-
-1. **Exclude the bootstrap and relay host** from the antivirus's HTTPS
-   scanning, rather than turning scanning off altogether. Verified above.
-2. Turn off HTTPS/SSL scanning while demonstrating.
-3. Exclude the app's bundled `holochain-*.exe` from inspection.
-
-Nothing in this repo can fix it: the certificate is rejected inside Holochain's
-own TLS stack, before any of our code runs. **It is worth saying to anyone you
-send the installer to**, because the app gives no clue — it simply sits there
-looking like peer-to-peer does not work.
-
-The local `npm run demo` never hits this, because its bootstrap server is plain
-HTTP on 127.0.0.1 and there is nothing to intercept. So "works on the dev
-machine, dead as an installed app" is an expected combination and not a
-contradiction.
-
-### After changing the zomes, clear the app's data
-
-**Kangaroo installs the hApp on first run only.** Rebuild the app with new
-zomes and it will happily keep running the old ones, because there is already
-an app installed in its conductor. The symptom is the worst kind: the app
-starts, the conductor reports ready, no errors appear anywhere, and the
-interface either does nothing or fails against functions that no longer have
-the shape it expects.
-
-Move the data aside — do not delete it, in case something in there mattered:
-
-```bash
-# Windows
-mv ~/AppData/Roaming/uk.topeuph.hearth/0.1.x/default \
-   ~/AppData/Roaming/uk.topeuph.hearth/0.1.x/default-old
-```
-
-Next launch installs fresh. Note the DNA hash only changes when the
-*integrity* zome changes; a coordinator-only change leaves the hash alone,
-which makes this even quieter.
-
-Three things that cost time:
-
-- **The README says `build:windows`. The script is `build:win`.** It fails
-  instantly with `error Command "build:windows" not found`.
-- **`corepack enable` needs administrator rights on Windows.** `npx yarn@1`
-  works without them.
-- **Kangaroo ships pointing at Holochain's dev-test bootstrap and relay
-  servers**, which have no availability guarantee and are for testing only.
-  Fine for a demo. Before anyone real uses this you need your own — and
-  **changing those URLs after deployment partitions the network**, so it is a
-  decision to make before, not after.
-
-### The one that costs an afternoon
-
-**Pass URLs to `hc-spin` as `--flag=value`, never `--flag value`.**
-
-hc-spin is an Electron app, and Electron hands its argv to Chromium, which
-treats any bare argument beginning with a URL scheme as a page to open. As two
-tokens, `http://host:8888` is such an argument, and Electron **exits
-immediately with code -1 and prints nothing at all** — no error, no stack, no
-clue which argument did it.
-
-Bisecting the *value* is what found it, and the result is oddly specific:
-
-| value | result |
-| --- | --- |
-| `host:8888` | fine |
-| `//host:8888` | fine |
-| `http:8888` | **dies** |
-
-It is the scheme, and it is fatal against any option, not only the URL ones —
-`--network-seed http://…` kills it just as dead. Written as one token the
-argument begins with `--`, so Chromium reads it as a switch it does not
-recognise and ignores it, while commander still parses the value. `demo.mjs`
-does this and says why.
-
-## Gotchas already paid for
-
-Six things cost time. They are fixed here; do not rediscover them.
-
-1. **`getrandom` refuses to build for wasm32.** hdk registers its own
-   `__getrandom_v03_custom` backend that asks the host conductor for randomness,
-   so the app must set `--cfg getrandom_backend="custom"`. Without it you get an
-   error that looks completely unrelated to Holochain. See `.cargo/config.toml`;
-   the flags are copied from how Holochain builds its own test zomes.
-2. **`holochain_serialized_bytes` must be a direct dependency** even though
-   nothing references it in the source. The `hdk_entry_helper` macro expands to
-   code that names the crate at the caller's root.
-3. **The hdi 0.8 flat-op API changed.** `FlatOp::StoreEntry` is gone. Creates are
-   `FlatOp::CreateEntry(OpEntry::CreateEntry { .. })` and updates are a separate
-   `FlatOp::Update(OpUpdate::Entry { .. })`. `get_links` now takes
-   `(LinkQuery, GetStrategy)` rather than a built `GetLinksInput`, and `author`
-   on a `TypedAction` is a method, not a field.
-4. **Manifests are `manifest_version: "0"`, not `"1"`.** Despite `"0"` looking
-   like a placeholder.
-5. **Manifests use `path:`, not `bundled:`.** Most tutorials online say
-   `bundled`. That was an older format and `hc` 0.7 rejects it outright.
-6. **DNA properties must be YAML-representable.** A properties struct holding
-   an `AgentPubKey` serialises to a byte array, and anything that converts a
-   `DnaFile` back into a bundle then fails with *"DnaDef properties were not
-   YAML-deserializable: invalid type: byte array"*. Hold hashes as base64
-   strings instead — `holo_hash` with the `encoding` feature converts both
-   ways, and `Display` and `TryFrom<&str>` round-trip. This only surfaces when
-   something round-trips a DNA, such as a test harness, so it can hide for a
-   long time.
-
-`.cargo/config.toml` **must be committed.** A stock `.gitignore` containing
-`.cargo/` will silently exclude it and the project then fails to build for
-anyone else, with an error that points at `getrandom` rather than at the missing
-file.
-
-**The wider lesson, which cost the most time today:** every one of these was
-found by reading the crate source in the local cargo registry, or the Holochain
-repo at tag `holochain-0.7.0`. None of them were in documentation or tutorials,
-and several tutorials state the opposite. Holochain's published material lags its
-releases. **Read the source at the tag.**
-
-## Packaging
-
-Use **`holochain/kangaroo-electron`** — first-party, pinned to Holochain 0.7.0,
-updated within a day of the 0.7.0 release. Desktop only (Windows, macOS, Linux).
-
-Do *not* depend on `p2p-shipyard`: pinned to 0.6, last commit to main 15 May 2026,
-and the whole darksoil studio has been quiet since mid-July. Holochain has also
-**paused Launcher development** and now recommends standalone apps instead.
-
-Worth reading but not building on: **Moss / The Weave** (lightningrodlabs). Their
-group-management DNA gives each group *and each tool within a group* its own
-private peer-to-peer network — architecturally, this is the care circle. But it's
-alpha, pinned to Holochain 0.6, and **has no licence file**, so all rights are
-reserved by default.
-
-The pattern: first-party tooling tracks core within a day; third-party runtimes run
-about one minor version behind and move slowly. Take no downstream dependency you
-don't control.
-
-### Android — a first-party route exists
-
-`holochain/android-service-runtime` pins `holochain = "0.7.0"` and
-`holochain_serialized_bytes = "0.0.57"` — the same versions as this project. It
-runs a **system-wide Holochain conductor as an Android Foreground Service**,
-which in their words
-
-> can run persistently, even when the app is closed, ensuring that you can be a
-> reliable contributor to the peer-to-peer networks of your apps
-
-That is the answer to "phones suspend background apps", and it makes a family
-member's Android phone a reliable always-on peer — which is the mitigation for
-the joining problem above, without needing a laptop left switched on. One
-conductor is shared across hApps rather than each bundling its own.
-
-Young: 4 stars, no licence file. But first-party and on our version.
-
-### Other org repos worth knowing
-
-- `holochain/binaries` — per-platform binaries, MPL-2.0. No nix needed.
-- `holochain/hc-spin` v0.700.0 — run hApps in dev mode.
-- `holochain/scaffolding` v0.700.0 — `hc scaffold` supports 0.7. It would have
-  generated this structure. Hand-rolling cost time.
-- `holochain/ai-tools` — a first-party Claude Code skill for Holochain, written
-  because LLMs reproduce obsolete alpha APIs. **It targets HDK 0.6.1-rc.5 /
-  HDI 0.7.1-rc.5, so it is a version behind this project** and would give wrong
-  pins here.
-- Tests use **`sweettest`**, not tryorama.
-- `holochain/hc-http-gw` — HTTP gateway from web2 into Holochain. Irrelevant now;
-  relevant if an NHS system ever needs to read a circle.
-- `holochain/peerkit` — the Foundation's own experiment in a different direction:
-  *"no Rust dependency, and a lighter footprint where deep validation is layered
-  on top rather than built in from the start"*, described as *"one of what will be
-  several experiments the foundation supports over time."* Not a reason to move —
-  validation built into the substrate is exactly what the no-operator argument
-  rests on — but worth knowing the Foundation is hedging its own architecture.
-- The release also ships `holochain-unstable-*` binaries: the build with
-  countersigning, warrants and sharding enabled behind the compile-time flag.
-  Not needed here.
-
-## Build order
-
-1. ~~**Membrane proof**~~ — **done.**
-2. ~~**Cloned cells**~~ — **done.** Circles are clones; see below.
-3. ~~**Capability grants for revocation**~~ — **wrong item.** See *Revocation*.
-   They turned out to belong to signals instead: `init` grants access to
-   `recv_remote_signal` so members can deliver into this cell.
-4. ~~**Remote signals**~~ — **done.** When a professional acknowledges, their
-   device tells the holder's device directly. No polling, no server, no
-   notification service in the middle — which is how a family finds out that
-   somebody actually read it.
-
-   Sent fire-and-forget and deliberately unable to fail the write. The
-   acknowledgement on the chain is the evidence; the signal is only the nudge.
-   A family should never lose the record that somebody read the notes because
-   a phone happened to be off.
-
-Not needed: countersigning (nothing here requires atomic multi-party agreement)
-and warrants (automatic).
-
-**Next, and both come from questions the code could not answer for itself:**
-
-1. **A list of circles.** The interface shows one. A district nurse would be
-   in thirty, and cannot currently reach any but the first. It must read as a
-   phone book of people she visits, never as an inbox: no unread counts, no
-   badges, nothing implying she owes anybody a reply. She is a reader of thirty
-   short documents, not a participant in thirty conversations. Getting that
-   wrong is how this becomes another thing nobody opens.
-2. **A QR code for the identifier.** It is 53 characters of base64 and nobody
-   reads that down a phone. The real scene is two people in a kitchen holding
-   phones at each other.
-
-**And one question for Holochain rather than for us:** thirty to fifty cloned
-cells in one conductor, each its own network with its own gossip. Nobody knows
-whether that is fine on a mid-range Android phone or whether it melts. That
-decides feasibility, not polish.
-
-## Revocation
-
-There are three different things people mean by this, and conflating them
-produces software that lies:
-
-| | |
-|---|---|
-| **Membership revocation** | Stop someone writing to the circle in future |
-| **Access revocation** | Stop someone reading what they already hold |
-| **Erasure** | Remove data from their device |
-
-**Validation cannot enforce membership revocation.** `must_get_agent_activity`
-needs a known `chain_top`, so to ask "has the founder removed this person?" a
-validator would need the founder's *current* chain head — mutable, unknown at
-validation time, and different for each validator. Deterministic validation
-cannot see it. Letting the writer cite the head themselves does not help: a
-removed member simply cites an older one.
-
-**Capability grants do not fix this.** They gate remote calls into your own
-cell. They say nothing about what somebody already holds, or about what the DHT
-will serve them. Listing them as the revocation mechanism was a mistake in an
-earlier version of this file.
-
-**The sound answer falls out of the architecture: revocation is re-forming the
-circle.** A circle is a clone, and clones are nearly free. To remove someone,
-make a new circle with a new network seed and invite everyone except them. They
-are excluded by mathematics rather than by a rule someone has to enforce, and
-the cost is one clone.
-
-What that does *not* do — and nothing can — is retrieve what they already have.
-Once a person has legitimately received plaintext, it is theirs. **Access
-revocation and erasure are not achievable against someone who has already read
-the data**, on this architecture or any other, and the DPIA says so rather than
-implying otherwise.
-
-Best-effort removal within an existing circle (the founder records a departure,
-other members' apps stop showing that person and stop sharing new material with
-them) is worth building for the ordinary case of a professional leaving. It is
-a courtesy, not a control, and must never be described as one.
-
-## The membrane: who gets into a circle
-
-The founder's public key is written into the DNA **properties**, which are part
-of the DNA hash. So a different founder produces a different DNA hash, which
-produces a genuinely separate network. **Circles cannot see each other, and that
-is a fact about the maths rather than about anyone's access control list.** This
-is why one clone per person works.
-
-An **invitation** is the founder's signature over the invitee's public key. The
-invitee presents it as their membrane proof when joining. Every peer verifies it
-independently against the founder key baked into the DNA. Nobody is asked for
-permission, because there is nobody to ask.
-
-Signing over the invitee's *own* key means an invitation cannot be passed on to
-somebody else.
-
-Checked in two places:
-- `genesis_self_check` runs locally before joining, so a bad invitation fails
-  immediately with a readable reason instead of being silently rejected later.
-- `FlatOp::CreateRecord(OpRecord::AgentValidationPkg { .. })` in `validate` is
-  the real enforcement, done by the network.
-
-`invite()` in the coordinator issues one. There is deliberately no permission
-check on it: anyone may call it, and a non-founder's signature simply will not
-verify. **There is nowhere to enforce a permission, because there is no server —
-enforcement lives in every peer's copy of the rules.** That is the whole
-architecture in one function.
-
-### Two boundaries, not one
-
-An external red-team review found the central mistake in the first version:
-**"closed circle" had been implemented far more strongly than "person-owned
-record".** Those are different boundaries.
-
-Who may **enter** was enforced by the membrane. Who may **write** was not
-enforced at all — any admitted member could author an About Me and publish it
-to the circle index, so a circle could hold several competing accounts of the
-same person, each legitimately maintained by whoever invented it.
-
-Worse, and missed by that review: the validation function ended in a catch-all
-that returned Valid for everything it did not name, which included **all link
-creation and all deletes**. That allowed a sharper attack than a competing
-record. A member could create an `AboutMeUpdates` link from the person's own
-original record to an entry of their own; any reader following the update chain
-would then be shown the impostor's content **as the person's current record** —
-without ever touching the person's entry, and so without tripping the
-update-author rule. The same hole let any member delete the person's record
-outright.
-
-Both are now closed. Links carry meaning in this design, so they have rules of
-their own, and the catch-all is documented as covering only Holochain's internal
-bookkeeping.
-
-**The lesson worth keeping: a validation function that ends in a permissive
-catch-all is a security hole with a comment on it.** Enumerate what you allow.
-
-### What the tests actually proved
-
-`tests/tests/adversarial.rs` — nine tests, run in CI on every push. **Verified,
-not asserted:**
-
-- an uninvited agent cannot join
-- an invitation signed over one person's key does not admit anybody else
-- a member can call `invite()`, and their signature admits nobody
-- the person can write their own About Me
-- **a member cannot write the person's About Me** — the red-team finding
-- a member cannot extend the person's update chain
-- a member cannot delete the person's record
-- a member can acknowledge a record
-- nobody can acknowledge their own record
-
-**And the run that mattered was the one before green.** Four passed and five
-failed, and among the failures was *the person can write their own About Me*.
-Alice could not write either — so *a member cannot write* had been passing
-because **nobody** could write. A green test proving nothing.
-
-The cause was the link rule added to close the red-team hole: it demanded that
-every `CircleToAboutMe` link point at an About Me, and `Path::ensure` builds the
-anchor tree with links of that same type pointing at Path entries. The security
-fix had broken every write in the application.
-
-Reading the code would not have found that. Running it did.
-
-### Also proven
-
-- a circle is a cloned cell, and circles with different holders are different
-  networks even with an identical seed
-- nobody can create a circle in another person's name
-- anyone may enter the lobby, nobody may write in it, and a real circle cloned
-  from it does accept the holder's own record
-- **the holder is told, by the reader's own device, when their record is read**
-
-- a circle with no founder configured admits nobody
-- a circle with a malformed founder admits nobody
-- an About Me must have a display name
-- **two peers with identically-timestamped updates converge on the same
-  version** — `order_versions` is a pure function in the integrity crate,
-  unit tested directly, because a timestamp collision cannot be provoked
-  through a conductor on demand. The coordinator calls that same function, so
-  the tested code is the running code.
-
-### Still untested
-
-Twelve green integration tests and three unit tests are not a proven system.
-These rules have no coverage:
-
-- acknowledgements cannot be edited
-- only the agent who created a link may remove it
-
-### The lobby, and configuration that fails closed
-
-Reading the DNA properties yields one of three states, never an `Option`:
-
-- **`Founder`** — a real circle, closed around one person.
-- **`Lobby`** — anyone may join, **nobody may write**. The app's provisioned
-  cell is a lobby, and its only job is to exist so the app is installable and
-  can clone real circles out of itself. Everyone who installs the app shares
-  it, so it must hold nothing: entry is unrestricted precisely because there
-  is nothing there to reach. It must be asked for in writing (`lobby: true`).
-- **`Misconfigured`** — no properties, unreadable properties, or a founder that
-  is not a valid agent key. **Admits nobody and lets nobody write.**
-
-An earlier version treated a missing founder as an open circle, so a typo, a
-missing config or a botched clone would have produced a wide-open circle around
-a vulnerable person, silently. Those same mistakes now produce a circle nobody
-can enter: visibly broken rather than invisibly exposed.
-
-**Absence of configuration must never mean absence of a membrane.** Both failure
-cases are covered by tests.
-
-This must be made to fail closed before the software goes in front of anybody.
-It is marked in `founder()` in the integrity zome.
-
-## Open questions
-
-### Availability — resolved, and better than expected
-
-An earlier draft treated this as the question that decides whether the project is
-viable. That was wrong, and the correction is worth keeping.
-
-Every agent in Holochain 0.7.0 joins with a **full storage arc**: in
-`holochain_p2p`, an agent joining a space is constructed with `DhtArc::FULL`, and
-the conductor config documents `target_arc_factor`'s default of 1 as normal
-operation. **Every member of a circle holds a complete copy of that circle.** Six
-members means six complete copies.
-
-So there is no redundancy problem — no scenario where data is thinly spread or
-partly lost. What remains is *liveness*: if nobody is online, nobody answers.
-True of any peer-to-peer system, and a much narrower claim.
-
-**Sharding is irrelevant here and is not needed.** It is planned for 0.9.x (an
-epic at 0%, behind a compile-time flag since 0.4.x) and exists for large networks
-where holding everything becomes burdensome. At the scale of a family circle arcs
-stay full regardless. **This works on 0.7.0 as shipped, with no dependency on an
-unreleased feature** — which is a far stronger position for a funding application
-than "viable in a future release."
-
-Residual risk is narrower still, because reading is local. A member already holds
-a complete copy: they read from their own device, needing no network and no other
-member online. Writing is local too. So an existing member is never blocked by
-anyone else being offline.
-
-The only case needing a live peer is *joining* — a newly invited member, or an
-existing member on a replacement phone, has no copy yet and someone must hand them
-one. The realistic worst case is a professional invited into the circle at 3am who
-cannot receive anything because no existing member is reachable.
-
-Mitigation is one always-on device per circle — a home laptop or a tablet on
-charge — whose job is specifically to make joining possible at any hour. Note that such a device
-holds a full readable copy like any other member, so contents should be encrypted
-to circle members at application level regardless.
-
-Design note for later: `target_arc_factor: 0` gives a node that participates
-without storing. Wrong for a home device, right for a phone — full arc on a
-machine at home, zero arc on the phone in a pocket.
-
-## Design principle: offline is not a failure state
-
-Everyone being offline mostly means everyone is busy living, not that anything is
-broken — and if nobody is online, nobody is trying to read it either. The concern
-largely cancels itself out.
-
-This has a consequence that is easy to lose by accident, because every UI
-convention we have inherited comes from cloud software, where offline genuinely
-does mean broken. Those defaults are all anxiety: reconnecting banners, sync
-spinners, staleness warnings, notifications nagging you back.
-
-**None of that applies, and none of it should be built.** A member's copy is
-complete. When they open the app it is simply there. There is nothing to
-reconnect to.
-
-For these users this is not a nicety. A carer who is already exhausted does not
-need software implying she has fallen behind on something.
-
-**Rule: no interface element may suggest that being away is a problem.** No sync
-status, no "you are offline" bar, no last-updated warnings. Information that
-arrived while someone was away is shown as new, never as a backlog they are late
-on.
-
-### Mobile
-
-Not a blocker any more, but not free either.
-
-- **iOS**: Holochain 0.7.0 added wasmer's `wasmi` interpreted backend, which
-  complies with Apple's ban on hot-loaded binaries — the App Store barrier is
-  gone, and they demonstrated a Holochain app on an iPhone via Tauri. Remaining:
-  wasmi is slower (irrelevant at this data size), a Lair keystore loading bug
-  fixed in 0.7.1, and no ready-made packaging template.
-- **Android**: proven since 0.3 (Volla ship a phone with a Holochain app), but the
-  route is p2p-shipyard, which is stalled on 0.6.
-
-The blocker moved from physics to packaging. The desktop demo needs neither.
-
-## The demo
-
-Two laptops and a third device. A person, their daughter, a nurse.
-
-The daughter edits the About Me; it appears on the nurse's screen. **Turn off the
-router** — it keeps working. Take a device out of the room, change something,
-bring it back — it reconciles.
-
-> There's no account, no server, and no company. If I'm hit by a bus tomorrow,
+> There is no account, no server and no company. If I am hit by a bus tomorrow,
 > this carries on working.
+
+---
 
 ## Licence
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+Built by one person who is not a software engineer, with AI assistance, and the
+design decisions are his. [What that means in
+practice](docs/what-is-proven.md#who-is-building-this-and-with-what).

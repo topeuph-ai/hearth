@@ -44,27 +44,50 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**45 tests, run in CI on every push**, in
-[`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs). They are written
-as attacks rather than as feature checks. Among them:
+**41 tests, run in CI on every push**, in
+[`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
+on the ordering rule. They are written as attacks rather than as feature checks.
+Among them:
 
 - An uninvited agent cannot join a circle.
 - An invitation cannot be passed on to somebody it was not made for.
 - A member cannot forge an invitation.
 - A member cannot write the person's record, cannot hijack its update chain,
   and cannot delete it.
-- Nobody can acknowledge their own record.
-- A circle with no founder, or with a malformed one, admits nobody — a broken
-  configuration closes the door rather than opening it.
+- Nobody can acknowledge their own record, and an acknowledgement cannot be
+  attached to something that is not a record.
+- A circle with no founder, with a malformed one, or naming a second person it
+  cannot read, admits nobody — a broken configuration closes the door rather
+  than opening it.
 - Nobody can create a circle in another person's name.
 - Two holders' circles are genuinely different networks.
 - With a second yes configured: half an invitation opens nothing; the holder
   cannot give the second agreement herself; a circle with no second yes is
   unaffected.
+- **A signal that claims to be from somebody else reaches no screen**, and one
+  that names its real sender still does.
+- **Correcting yourself is the version that shows** — a corrected introduction,
+  and a changed decision about a suggestion, both come back as the latest rather
+  than as whichever arrived first.
 
 These run against a real conductor, not a mock. **What they prove is that the
 rules are enforced. What they cannot prove is that the rules are the right
 rules** — that is a question for a reviewer, not a test.
+
+There is one honest limitation in how much of this can be tested at all.
+Everything is written through the app's own functions, and several of the link
+rules cannot be reached that way — the function that introduces you always links
+to your own introduction, so "you may only introduce yourself" has nothing to
+attack it with, and nothing deletes a link, so the rule about who may is
+unreachable too. Those rules are correct as read, and untested because there is
+no legitimate route to breaking them. Reaching them would mean shipping
+attack tools inside the app, which is a worse trade.
+
+**A note for anybody running these on Windows: you cannot.** The test crate
+pulls in a keystore that builds OpenSSL from source, which needs a full Perl
+toolchain that Git for Windows does not ship. CI runs them on Linux on every
+push, and that is where they are verified. It is why the CI badge at the top of
+the README matters more here than it would elsewhere.
 
 ### The whole journey works on one machine
 
@@ -162,11 +185,35 @@ there is no server to hold accounts — the invitation has to carry the grant
 itself. That is the operator trade made concrete, and it needs work rather than
 a wish.
 
-### Nothing has been through a security review
+### Two of the six checks Holochain offers are not switched on
 
-No audit, no external review, no penetration testing of any kind. The tests
-above were written by the same process that wrote the code, which is exactly the
-limitation you would expect it to have.
+Found in an audit on 2026-09-09, and stated here rather than left to be
+discovered, because it is the sort of thing a reviewer finds in ten minutes.
+
+When somebody writes something in a circle, Holochain does not ask one machine
+whether it is allowed. It asks several, each looking at a different aspect of
+the same act. This zome answers four of those questions and lets two through
+unchecked — the one about the record as a filed document, and the one about the
+running list of what an agent has done.
+
+**No way to exploit it was found.** The two that *are* checked cover the
+contents and the links, and every list this app reads is reached by following a
+link, so a forged entry or a forged link is refused before anybody could see
+it. But the reason to write it down is that the same shape of gap has already
+happened here once: link creation was, at one point, entirely unchecked, and it
+was found by reading the code rather than by any test.
+
+It cannot be fixed now. The check lives in the frozen file, so changing it
+means every existing circle becomes unreachable. It is queued in
+[`to-a-product.md`](to-a-product.md) as the first thing to do whenever that
+file next moves.
+
+### Nothing has been through a full security review
+
+No external review, no penetration testing of any kind. There has been one
+audit — the one above came out of it — but it was carried out by the same kind
+of process that wrote the code, which is exactly the limitation you would
+expect it to have.
 
 ---
 

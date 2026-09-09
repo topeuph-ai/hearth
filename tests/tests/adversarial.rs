@@ -119,6 +119,13 @@ fn zome(cell_id: &CellId) -> SweetZome {
     SweetZome::new(cell_id.clone(), ZOME.into())
 }
 
+/// A hash that refers to nothing, for tests about a message rather than about
+/// what the message points at. A signal is never looked up — it is a nudge, and
+/// the tests below are about who it claims to be from.
+fn fake_hash() -> ActionHash {
+    ActionHash::from_raw_36(vec![0; 36])
+}
+
 /// Alice founds a circle and Bob joins it with a genuine invitation.
 async fn a_circle_with_a_member() -> (SweetConductor, CellId, CellId) {
     let conductor = SweetConductor::standard().await;
@@ -1419,4 +1426,254 @@ async fn the_whole_journey() {
         .call(&zome(&alice), "get_acknowledgements", original)
         .await;
     assert_eq!(readers.len(), 1, "the holder should know it was read");
+}
+
+// ---------------------------------------------------------------------------
+// Signals: a nudge that cannot lie about who it is from
+// ---------------------------------------------------------------------------
+//
+// A signal is not evidence. The acknowledgement written to the chain is the
+// evidence, and a signal only saves somebody going to look.
+//
+// But the interface acts on one directly — it puts a sentence on the screen
+// naming a person — so it has to be true. Every signal says who it is from, and
+// that field is filled in by whoever sent it. Until it was checked against who
+// actually called, any member of a circle could make the holder's screen say
+// that a district nurse had read the record when nobody had.
+
+/// Claiming to be somebody else gets you nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_signal_that_names_the_wrong_sender_is_dropped() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let mut bob_hears = conductor.subscribe_to_app_signals("bob".to_string());
+
+    // Bob announces that Alice has offered something. She has not.
+    let _: () = conductor
+        .call(
+            &zome(&bob_cell),
+            "recv_remote_signal",
+            aboutme::Signal::Suggested {
+                suggestion: fake_hash(),
+                by: alice_cell.agent_pubkey().clone(),
+                text: "Words Alice never wrote.".to_string(),
+            },
+        )
+        .await;
+
+    let heard = tokio::time::timeout(std::time::Duration::from_secs(5), bob_hears.recv()).await;
+
+    assert!(
+        heard.is_err(),
+        "a signal claiming to be from somebody else must reach no screen"
+    );
+}
+
+/// And the honest case still works, so the check above is not simply a wall.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_signal_from_the_person_it_names_is_delivered() {
+    let (conductor, _alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let mut bob_hears = conductor.subscribe_to_app_signals("bob".to_string());
+
+    let _: () = conductor
+        .call(
+            &zome(&bob_cell),
+            "recv_remote_signal",
+            aboutme::Signal::Suggested {
+                suggestion: fake_hash(),
+                by: bob_cell.agent_pubkey().clone(),
+                text: "Her allotment.".to_string(),
+            },
+        )
+        .await;
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(60), bob_hears.recv())
+        .await
+        .expect("a signal that names its real sender should arrive")
+        .expect("the signal channel should stay open");
+
+    match signal {
+        Signal::App { signal, .. } => {
+            let decoded: aboutme::Signal = signal
+                .into_inner()
+                .decode()
+                .expect("the signal should be one of ours");
+            let aboutme::Signal::Suggested { by, .. } = decoded else {
+                panic!("expected a Suggested signal, got {decoded:?}");
+            };
+            assert_eq!(by, *bob_cell.agent_pubkey());
+        }
+        other => panic!("expected an app signal, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Everybody must agree which one is the current one
+// ---------------------------------------------------------------------------
+//
+// Lists here are assembled from links, and the order links arrive in is not
+// promised to be the same on any two machines. Anywhere a reader takes the last
+// of something as the one that counts, that order has to be imposed rather than
+// inherited — see `order_versions` in the integrity crate, which says the same
+// thing about versions of a record.
+
+/// Correcting how you describe yourself, and having the correction be the one
+/// that shows.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_latest_introduction_is_the_one_that_counts() {
+    let (conductor, _alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    for name in ["Dave Smyth", "Dave Smythe"] {
+        let _: Record = conductor
+            .call(
+                &zome(&bob_cell),
+                "introduce_myself",
+                aboutme_integrity::Member {
+                    name: name.to_string(),
+                    relationship: "her nephew".to_string(),
+                },
+            )
+            .await;
+    }
+
+    let members: Vec<Record> = conductor.call(&zome(&bob_cell), "get_members", ()).await;
+
+    // A reader folds these into a map keyed by author, so the last one wins.
+    // Both of Bob's are here; the corrected spelling has to be the later.
+    let mine: Vec<String> = members
+        .iter()
+        .filter(|r| r.action().author() == bob_cell.agent_pubkey())
+        .filter_map(|r| {
+            r.entry()
+                .to_app_option::<aboutme_integrity::Member>()
+                .ok()
+                .flatten()
+        })
+        .map(|m| m.name)
+        .collect();
+
+    assert_eq!(
+        mine,
+        vec!["Dave Smyth".to_string(), "Dave Smythe".to_string()],
+        "introductions must come back oldest first, so a correction is last"
+    );
+}
+
+/// Changing your mind about a suggestion, and having the change be the one that
+/// shows.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_latest_decision_is_the_one_that_counts() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    // Set aside, and then thought better of.
+    for accepted in [false, true] {
+        let _: Record = conductor
+            .call(
+                &zome(&alice_cell),
+                "decide_on_suggestion",
+                aboutme::DecideInput {
+                    suggestion: offered.action_address().clone(),
+                    accepted,
+                },
+            )
+            .await;
+    }
+
+    let after: Vec<aboutme::SuggestionWithOutcome> = conductor
+        .call(&zome(&alice_cell), "get_suggestions", ())
+        .await;
+
+    assert_eq!(after.len(), 1);
+    let outcome = after[0]
+        .outcome
+        .as_ref()
+        .expect("a decided suggestion has an outcome")
+        .entry()
+        .to_app_option::<aboutme_integrity::SuggestionOutcome>()
+        .ok()
+        .flatten()
+        .expect("and it is an outcome");
+
+    assert!(
+        outcome.accepted,
+        "the decision shown must be the last one made, not the first"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Configuration that fails closed, in the case that was added last
+// ---------------------------------------------------------------------------
+
+/// A circle naming a second person it cannot read admits nobody at all —
+/// including the holder.
+///
+/// The equivalent for a malformed founder has a test above. This one was added
+/// afterwards and did not get one, which is exactly how the two would drift
+/// apart. Getting it wrong must close the door rather than open it: absence of
+/// configuration must never mean absence of a membrane, and neither must a typo
+/// in it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_circle_with_an_unreadable_second_person_admits_nobody() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none().with_properties(CircleProperties {
+            founder: Some(alice.to_string()),
+            lobby: false,
+            seconder: Some("not an identifier at all".to_string()),
+        }),
+    )
+    .await
+    .expect("the packed DNA should load");
+
+    let result = join(&conductor, "alice", &alice, &dna, None).await;
+
+    assert!(
+        result.is_err(),
+        "a circle that names a second person it cannot read must close, \
+         not quietly forget the second person"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// An acknowledgement must be about a record
+// ---------------------------------------------------------------------------
+
+/// Reading something is only meaningful about an About Me.
+///
+/// The hash an acknowledgement points at comes from whoever is acknowledging,
+/// so it is the one part of this they choose. Without the check, an
+/// acknowledgement could be attached to anything at all and counted as evidence
+/// that somebody had read the person's record.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acknowledgement_cannot_point_at_something_that_is_not_a_record() {
+    let (conductor, _alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // A real entry Bob wrote, which is simply not an About Me.
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "acknowledge",
+            aboutme::AcknowledgeInput {
+                about_me: offered.action_address().clone(),
+                role: "district nurse".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "an acknowledgement must reference an About Me and nothing else"
+    );
 }
