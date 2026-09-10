@@ -123,6 +123,26 @@ pub struct ProposedMember {
     pub signature: Signature,
 }
 
+/// Who the holder has asked to agree to who joins.
+///
+/// Written in the circle rather than baked into its identity, which is the
+/// whole point: **it can be written again.** If the person appointed dies,
+/// loses the device their keys were on, or simply has to be replaced, the
+/// holder appoints somebody else and the circle carries on. Before this, that
+/// situation had no way out but a new circle and everybody re-invited.
+///
+/// Append-only, like every other agreement here. Appointing somebody new does
+/// not erase who was appointed before, and the record of who was trusted with
+/// this, and when, stays in the circle where everybody can see it. That
+/// visibility is what the safeguard actually rests on now.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Appointment {
+    /// The person asked to agree. Never the holder herself — a safeguard the
+    /// person under pressure can satisfy alone is not one.
+    pub agrees: AgentPubKey,
+}
+
 /// Somebody asking to be let into a circle they cannot see.
 ///
 /// Written in a waiting room, which is an open network holding nothing but
@@ -176,6 +196,13 @@ pub struct Admission {
 pub struct Endorsement {
     /// The proposal being agreed to.
     pub proposed: ActionHash,
+
+    /// The appointment this agreement is given under.
+    ///
+    /// Named for the same reason the invitation names it: who is appointed can
+    /// change, and validation must reach the same answer on every machine
+    /// forever. A fixed hash is a question with one answer.
+    pub appointment: ActionHash,
 
     /// The seconder's signature over the same key the holder signed.
     pub signature: Signature,
@@ -240,6 +267,7 @@ pub enum EntryTypes {
     // The waiting room's whole vocabulary: ask, and be answered.
     Knock(Knock),
     Admission(Admission),
+    Appointment(Appointment),
 }
 
 #[hdk_link_types]
@@ -265,6 +293,9 @@ pub enum LinkTypes {
     WaitingRoomToKnock,
     /// Knock -> the answer to it, where the person who knocked will look.
     KnockToAdmission,
+    /// Anchor -> Appointment, so the circle can see who has been asked
+    /// to agree to who joins, and when.
+    CircleToAppointment,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -328,6 +359,37 @@ pub struct CircleProperties {
     /// second signature simply does not exist until it is given.
     pub seconder: Option<String>,
 
+    /// Whether this circle asks two people to agree before anybody joins.
+    ///
+    /// **The rule lives here; the person does not.** Naming the person here
+    /// made them permanent, because this forms part of the circle's identity
+    /// and identity cannot be edited. If they died, lost their device, or
+    /// simply had to be replaced, the only way out was a new circle with
+    /// everybody re-invited — and for a record about somebody in declining
+    /// health, one of the two people becoming unable to answer is not an edge
+    /// case. It is the expected course of events.
+    ///
+    /// So who agrees is an entry the holder writes, and can write again. She
+    /// can appoint somebody the day she meets them, and appoint somebody else
+    /// the day the first person is past helping.
+    ///
+    /// **What this costs, stated plainly.** When the person was named here,
+    /// the network refused to admit anybody without their signature. Now the
+    /// holder can issue an invitation citing no appointment at all, and it
+    /// will be accepted — because "has she appointed anybody yet?" is a
+    /// question whose answer changes, and validation must give the same
+    /// answer on every machine forever.
+    ///
+    /// So this is enforced by **being visible**, not by being impossible.
+    /// Every admission records whether it was seconded and by whom, where the
+    /// whole circle can see it. That is a real reduction from what came
+    /// before and it is deliberate: it is also exactly what this project has
+    /// always claimed the second yes to be. A tripwire, not a lock. The
+    /// holder could always have made a circle without one; what she cannot do
+    /// is drop it quietly.
+    #[serde(default)]
+    pub requires_second_yes: bool,
+
     /// The circle this waiting room serves, as a base64 agent key.
     ///
     /// **A waiting room is how somebody gets in without anybody collecting
@@ -370,15 +432,40 @@ pub struct Invitation {
     /// not a weaker invitation, it is not one yet.
     #[serde(default)]
     pub seconded: Option<Signature>,
+
+    /// Which appointment the second signature was given under.
+    ///
+    /// **This is what lets the second person change without re-forming the
+    /// circle.** Their key used to be in the circle's identity, which made it
+    /// permanent: if they died, lost their device, or simply had to be
+    /// replaced, the only way out was a new circle with everybody re-invited.
+    /// For a record about somebody in declining health that is not an edge
+    /// case, it is the expected course of events.
+    ///
+    /// So the circle's identity carries the *rule* — that two people must
+    /// agree — and who the second person is becomes an entry the holder
+    /// writes. This names which one was in force, so every peer can check the
+    /// signature against the right key without having to know what the holder
+    /// has done since. A fixed hash is a question with one answer everywhere,
+    /// which is what validation needs and what "who is appointed right now"
+    /// could never be.
+    ///
+    /// `None` means the holder admitted this person on her own signature.
+    /// That is permitted, and it is **seen**: see the note on
+    /// `requires_second_yes`, which explains why this is a tripwire rather
+    /// than a lock, and what that does and does not buy.
+    #[serde(default)]
+    pub appointment: Option<ActionHash>,
 }
 
 /// How this circle decides who belongs.
 pub enum Membrane {
     /// A real circle, closed around one person.
     ///
-    /// The second key, where there is one, is somebody who must also agree
-    /// before anybody joins.
-    Founder(AgentPubKey, Option<AgentPubKey>),
+    /// The flag says whether this circle asks two people to agree. Who
+    /// the second person is lives in the circle, not here, so that it can
+    /// change without the circle having to be made again.
+    Founder(AgentPubKey, bool),
     /// A shared launching point. Anyone may join it; nobody may write in it.
     /// See `lobby`.
     Lobby,
@@ -400,17 +487,27 @@ pub fn membrane() -> ExternResult<Membrane> {
         return Ok(Membrane::Misconfigured);
     };
 
-    // A seconder that cannot be read is not a seconder that can be ignored.
-    // Naming one and getting it wrong closes the circle, exactly as a
-    // mistyped founder does: absence of configuration must never mean absence
-    // of a membrane, and neither must a typo in it.
-    let seconder = match p.seconder.as_deref() {
-        None => None,
+    /*
+     * A circle asks two people to agree if it says so, or if it names one.
+     *
+     * `seconder` is the older way of saying it, when the person was written
+     * into the circle's identity and could never be changed. It is still read
+     * so that a circle made that way still asks for two agreements — and, as
+     * before, a named seconder that cannot be read closes the circle rather
+     * than being quietly ignored. Absence of configuration must never mean
+     * absence of a membrane, and neither must a typo in it.
+     *
+     * New circles set the flag and name nobody here. Who agrees is an entry
+     * they write, and can write again.
+     */
+    let named_in_identity = match p.seconder.as_deref() {
+        None => false,
         Some(text) => match AgentPubKey::try_from(text.trim()) {
-            Ok(key) => Some(key),
+            Ok(_) => true,
             Err(_) => return Ok(Membrane::Misconfigured),
         },
     };
+    let asks_two = p.requires_second_yes || named_in_identity;
 
     // A waiting room names the circle it serves. Unreadable is closed, for
     // the same reason a mistyped founder is: a room nobody can be admitted
@@ -425,7 +522,7 @@ pub fn membrane() -> ExternResult<Membrane> {
 
     match p.founder {
         Some(founder) => match AgentPubKey::try_from(founder.as_str()) {
-            Ok(key) => Ok(Membrane::Founder(key, seconder)),
+            Ok(key) => Ok(Membrane::Founder(key, asks_two)),
             Err(_) => Ok(Membrane::Misconfigured),
         },
         // Checked before the plain lobby, because a room that serves a circle
@@ -439,12 +536,24 @@ pub fn membrane() -> ExternResult<Membrane> {
     }
 }
 
-fn check_membrane(
+/// The membrane, checked as far as the caller is allowed to look.
+///
+/// `may_read_the_circle` is false during `genesis_self_check`, which runs on
+/// the joiner's own machine before they have joined anything and therefore has
+/// no network to ask. It is true in `validate`, which runs on peers who are
+/// already here and can.
+///
+/// This split is not a workaround; it is what the two callbacks are for. The
+/// local pass catches a damaged or plainly wrong invitation immediately, with
+/// a sentence somebody can act on. The real gate is the network's, and it
+/// checks everything.
+fn check_membrane_as_far_as(
     agent: &AgentPubKey,
     membrane_proof: &Option<MembraneProof>,
+    may_read_the_circle: bool,
 ) -> ExternResult<ValidateCallbackResult> {
-    let (founder, seconder) = match membrane()? {
-        Membrane::Founder(key, seconder) => (key, seconder),
+    let (founder, asks_two) = match membrane()? {
+        Membrane::Founder(key, asks_two) => (key, asks_two),
         Membrane::Lobby => return Ok(ValidateCallbackResult::Valid),
         // A waiting room is open on purpose. Being in it is not being in
         // anything — the only thing it holds is people asking, and the
@@ -476,26 +585,79 @@ fn check_membrane(
 
     // Signed over the invitee's own key, so an invitation cannot be passed on
     // to somebody else.
-    if !verify_signature(founder, invitation.signature, agent.clone())? {
+    if !verify_signature(founder.clone(), invitation.signature, agent.clone())? {
         return invalid("Invitation was not issued by the person whose circle this is");
     }
 
-    // Where this circle names somebody who must also agree, their signature is
-    // over the same key, and it is checked here by every peer rather than
-    // anywhere it could be skipped.
-    if let Some(seconder) = seconder {
+    /*
+     * The second agreement, checked against the appointment it was given
+     * under.
+     *
+     * Who agrees is no longer part of the circle's identity, so this cannot be
+     * read off the properties any more. The invitation names which appointment
+     * it relies on, and that is a fixed hash — a question with the same answer
+     * on every machine forever, which is what validation requires and what
+     * "who is appointed right now" could never be.
+     *
+     * An invitation naming no appointment carries only the holder's signature,
+     * and is accepted. That is the tripwire and not a lock: see
+     * `requires_second_yes`, which sets out exactly what that buys and what it
+     * does not. `asks_two` is therefore not consulted here — it shapes what
+     * the app offers and what the circle can see, not what the door refuses.
+     */
+    let _ = asks_two;
+
+    if let Some(appointment_hash) = invitation.appointment {
         /*
-         * The seconder needs no second agreement to their own admission.
+         * As far as this can be taken without the circle to ask.
          *
-         * They were chosen by the holder, and asking them to countersign
-         * their own way in adds nothing anybody could check. It also removes
-         * a bootstrap problem that made the whole feature awkward: without
-         * this, the one person who must agree to every arrival cannot get in
-         * without agreeing to themselves from outside a circle they are not
-         * in yet. They come in first, on the holder's invitation alone, and
-         * from then on nobody else arrives without them.
+         * Before joining there is no network, so the appointment cannot be
+         * fetched and the signature cannot be checked against it. What can be
+         * said is that an invitation naming an appointment and carrying no
+         * second agreement is unfinished — which is the common case worth
+         * catching early, and it costs the person a readable sentence rather
+         * than a silent refusal from strangers later.
          */
-        if agent == &seconder {
+        if !may_read_the_circle {
+            return if invitation.seconded.is_some() {
+                Ok(ValidateCallbackResult::Valid)
+            } else {
+                invalid(
+                    "This invitation is not finished. This circle asks two people \
+                     to agree before anybody joins, and only one of them has.",
+                )
+            };
+        }
+
+        let action = must_get_action(appointment_hash)?;
+        let Some(entry_hash) = action.action().entry_hash() else {
+            return invalid("This invitation names something that is not an appointment");
+        };
+        let entry = must_get_entry(entry_hash.clone())?;
+        let Ok(appointment) = Appointment::try_from(entry.content.clone()) else {
+            return invalid("This invitation names something that is not an appointment");
+        };
+
+        // Only the holder appoints. Without this, anybody could write an
+        // appointment naming themselves and second their own way in.
+        if action.action().author() != &founder {
+            return invalid(
+                "The appointment this invitation relies on was not made by the \
+                 person whose circle this is",
+            );
+        }
+
+        /*
+         * The appointed person needs no second agreement to their own
+         * admission.
+         *
+         * Asking them to countersign their own way in adds nothing anybody
+         * could check, and it removes a knot that cannot otherwise be untied:
+         * the one person who must agree to every arrival cannot get in
+         * without agreeing to themselves from outside a circle they are not
+         * in yet.
+         */
+        if agent == &appointment.agrees {
             return Ok(ValidateCallbackResult::Valid);
         }
 
@@ -505,7 +667,7 @@ fn check_membrane(
                  this invitation only has one of them",
             );
         };
-        if !verify_signature(seconder, seconded, agent.clone())? {
+        if !verify_signature(appointment.agrees, seconded, agent.clone())? {
             return invalid(
                 "The second agreement on this invitation is not from the person \
                  this circle asks to give it",
@@ -520,7 +682,8 @@ fn check_membrane(
 /// readable reason rather than being silently rejected by the network later.
 #[hdk_extern]
 pub fn genesis_self_check(data: GenesisSelfCheckData) -> ExternResult<ValidateCallbackResult> {
-    check_membrane(&data.agent_key, &data.membrane_proof)
+    // No network here, so as far as it can be taken alone.
+    check_membrane_as_far_as(&data.agent_key, &data.membrane_proof, false)
 }
 
 /// Is this agent the person whose circle this is?
@@ -690,17 +853,33 @@ fn validate_create_link(
         // entry here and have it read as an agreement; the entry rule would
         // still hold, but the list is what everyone actually reads.
         LinkTypes::ProposedMemberToEndorsement => {
-            if !is_the_seconder(author)? {
-                return invalid(
-                    "Only the person this circle asks to agree may record an agreement",
-                );
-            }
+            // The entry itself names the appointment, and the entry rule has
+            // already checked it. Here the link is only tied to its own
+            // author, so nobody can file somebody else's agreement.
             let Some(target) = as_action_hash(&action.target_address) else {
                 return invalid("An agreement link must point at an action");
             };
             let target_action = must_get_action(target)?;
             if target_action.action().author() != author {
                 return invalid("You may only link your own agreement");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the holder puts somebody forward to agree, and only her own.
+        LinkTypes::CircleToAppointment => {
+            if !is_the_person(author)? {
+                return invalid(
+                    "Only the person whose circle this is may ask somebody to agree",
+                );
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only record your own appointment");
             }
             Ok(ValidateCallbackResult::Valid)
         }
@@ -844,21 +1023,51 @@ fn validate_admission(
     Ok(ValidateCallbackResult::Valid)
 }
 
-/// Is this agent the one this circle asks to agree as well?
+/// Is this agent the one a particular appointment asks to agree?
 ///
-/// Read from the circle's own identity, exactly as the membrane reads it, so
-/// the rule inside the circle and the rule at the door cannot drift apart. A
-/// circle with nobody named asks nobody, and nobody can therefore endorse.
-fn is_the_seconder(agent: &AgentPubKey) -> ExternResult<bool> {
-    Ok(match membrane()? {
-        Membrane::Founder(_, Some(seconder)) => &seconder == agent,
-        Membrane::Founder(_, None) => false,
-        Membrane::Lobby => false,
-        // A waiting room asks nobody to agree. What happens to a knock is
-        // settled in the circle, which is where both agreements live.
-        Membrane::WaitingRoom(_) => false,
-        Membrane::Misconfigured => false,
-    })
+/// The appointment has to be named rather than looked up, for the reason that
+/// runs through all of this: who is appointed can change, and validation must
+/// reach the same answer on every machine forever. A fixed hash is a question
+/// with one answer. "Who is appointed now" is not, and never can be.
+fn is_appointed_by(agent: &AgentPubKey, appointment: &ActionHash) -> ExternResult<bool> {
+    let founder = match membrane()? {
+        Membrane::Founder(key, _) => key,
+        // A lobby, a waiting room and a broken circle all appoint nobody.
+        _ => return Ok(false),
+    };
+
+    let action = must_get_action(appointment.clone())?;
+
+    // Only the holder appoints. Without this, anybody could write an
+    // appointment naming themselves and then agree to their own arrivals.
+    if action.action().author() != &founder {
+        return Ok(false);
+    }
+
+    let Some(entry_hash) = action.action().entry_hash() else {
+        return Ok(false);
+    };
+    let entry = must_get_entry(entry_hash.clone())?;
+    let Ok(appointed) = Appointment::try_from(entry.content.clone()) else {
+        return Ok(false);
+    };
+
+    Ok(&appointed.agrees == agent)
+}
+
+/// Only the holder may appoint somebody, and never herself.
+fn validate_appointment(
+    appointment: &Appointment,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may ask somebody to agree");
+    }
+    // A safeguard the person under pressure can satisfy alone is not one.
+    if &appointment.agrees == author {
+        return invalid("The person who agrees to who joins has to be somebody else");
+    }
+    Ok(ValidateCallbackResult::Valid)
 }
 
 /// The holder's half of a two-person admission.
@@ -901,7 +1110,7 @@ fn validate_endorsement(
     endorsement: &Endorsement,
     author: &AgentPubKey,
 ) -> ExternResult<ValidateCallbackResult> {
-    if !is_the_seconder(author)? {
+    if !is_appointed_by(author, &endorsement.appointment)? {
         return invalid(
             "Only the person this circle asks to agree may give the second agreement",
         );
@@ -979,7 +1188,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         FlatOp::CreateRecord(OpRecord::AgentValidationPkg {
             membrane_proof,
             action,
-        }) => check_membrane(action.author(), &membrane_proof),
+        }) => check_membrane_as_far_as(action.author(), &membrane_proof, true),
 
         FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, action.author()),
@@ -991,6 +1200,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Endorsement(e) => validate_endorsement(&e, action.author()),
             EntryTypes::Knock(k) => validate_knock(&k),
             EntryTypes::Admission(a) => validate_admission(&a, action.author()),
+            EntryTypes::Appointment(a) => validate_appointment(&a, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -1045,6 +1255,12 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             // already read and is deciding about.
             EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
             EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
+            // Appoint somebody else instead. Rewriting who was trusted, and
+            // when, would take away the only thing this safeguard now rests
+            // on, which is that everybody can see it.
+            EntryTypes::Appointment(_) => {
+                invalid("An appointment cannot be changed; appoint somebody else")
+            }
         },
 
         FlatOp::Link(OpLink::CreateLink {

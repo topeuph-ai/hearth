@@ -791,23 +791,16 @@ $("create-circle-form").addEventListener("submit", async (event) => {
      * as a genesis error, which says nothing anybody could act on. One look at
      * the shape of it turns that into a sentence about the thing they pasted.
      */
+    /*
+     * Nobody is named here any more, and nothing is asked for.
+     *
+     * The person used to be written into the circle's identity, so their
+     * identifier had to be collected before the circle could exist — which put
+     * the hardest step of all right at the beginning. Now the circle carries
+     * only the rule, and she picks somebody from the people in it whenever she
+     * has somebody to pick.
+     */
     const wantsASecondYes = !$("seconder-field").hidden;
-    if (wantsASecondYes) {
-      const pasted = $("create-seconder").value.trim();
-      if (!pasted.startsWith("uhCAk")) {
-        throw new Error(
-          "That does not look like an identifier. It is a long line of " +
-            "letters and numbers beginning uhCAk, copied from “Your " +
-            "identifier” in their own Hearth — not their name.",
-        );
-      }
-      if (pasted === asText(me)) {
-        throw new Error(
-          "That is your own identifier. The point of a second person is that " +
-            "they are somebody else.",
-        );
-      }
-    }
 
     const cell = await whileWorking(
       $("create-circle-submit"),
@@ -818,13 +811,11 @@ $("create-circle-form").addEventListener("submit", async (event) => {
           name: label,
           network_seed: crypto.randomUUID(),
           /*
-           * Named here when the front page asked for one, which is the whole
-           * reason that third choice exists: baked in at creation, the circle
-           * is made once. Appointing somebody afterwards still works and
-           * still re-forms the circle, because admission is enforced by what
-           * is in the circle's identity and that cannot be edited later.
+           * The rule, not the person. Any non-empty value sets the flag; the
+           * circle names nobody, and who agrees is written inside it later
+           * and can be written again.
            */
-          seconder: wantsASecondYes ? $("create-seconder").value.trim() : null,
+          seconder: wantsASecondYes ? "yes" : null,
         }),
     );
     circle = { cellId: cell.cell_id };
@@ -2478,91 +2469,37 @@ $("done-inviting").addEventListener("click", () => {
 $("appoint-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    // "" is the deliberate choice of nobody, which create_circle takes as
-    // null — a circle that asks one person, like any other.
-    const seconder = $("appoint-who").value || null;
-    const seconderName = seconder
-      ? members.get(seconder)?.name?.trim() || "them"
-      : null;
-    const label = $("circle-heading").textContent;
-    const entry = entryOf(record?.current?.record);
-
     /*
-     * Asked of what is written, not of whether a record exists.
+     * Appointing somebody is now a sentence written in the circle.
      *
-     * Making a circle seeds a record with her name in it, so `entry` is
-     * truthy from the first second — which meant this check could never fire
-     * and an empty record was carried across in silence. `hasBeenWritten`
-     * exists for exactly this distinction and is what was meant.
+     * It used to be a new circle. The person's key was part of the circle's
+     * identity, and identity cannot be edited — so naming somebody, or
+     * changing who was named, meant building a fresh circle, copying the
+     * record across and every single member joining again.
+     *
+     * That was not a design so much as the only thing possible, and it made
+     * the one situation everybody will eventually meet — the second person
+     * dies, or loses the device their keys were on — cost the whole circle.
+     *
+     * The circle now carries the rule and an entry carries the person. So
+     * this writes one line, and nobody is inconvenienced.
      */
-    if (!hasBeenWritten(entry)) {
-      throw new Error(
-        "There is nothing written in this circle yet to carry across. Write " +
-          "the record first.",
-      );
+    const chosen = $("appoint-who").value || null;
+    if (!chosen) {
+      throw new Error("Choose somebody, or close this and leave it as it is.");
     }
 
-    // Carried over with the record, because she is in the new circle too.
-    const myIntroduction = members.get(asText(me));
+    const theirName = members.get(chosen)?.name?.trim() || "They";
 
-    const cell = await whileWorking($("appoint-submit"), "Making the new circle…", () =>
-      call("create_circle", {
-        founder: asText(me),
-        name: label,
-        network_seed: crypto.randomUUID(),
-        seconder,
-      }),
+    await whileWorking($("appoint-submit"), "Asking them…", () =>
+      call("appoint", chosen, circle.cellId),
     );
 
-    const wasOwnRecord = isOwnRecord(circle.cellId);
-
-    circle = { cellId: cell.cell_id };
-    holder = asText(me);
-    markAsOwnRecord(circle.cellId, wasOwnRecord);
-    setLabelFor(circle.cellId, label);
-
-    // Her own words, moved over whole. display_name included, so the new
-    // circle is never nameless.
-    await call("create_about_me", entry, circle.cellId);
-
-    /*
-     * And who she said she was, moved over with them.
-     *
-     * Without this the new circle knew her record but not her, so "Who are
-     * you?" appeared on a circle she had made thirty seconds earlier — and
-     * she had already answered it, twice, in the circle this one replaces.
-     *
-     * The same thing is done when a circle is first created, and for the same
-     * reason. This is the other place a circle comes into being.
-     */
-    if (myIntroduction?.name?.trim()) {
-      await call(
-        "introduce_myself",
-        {
-          name: myIntroduction.name,
-          relationship: myIntroduction.relationship ?? "",
-        },
-        circle.cellId,
-      );
-    }
-
-    circles.push({ cellId: circle.cellId, name: label, madeWith: label });
-    peopleLastSeen = new Set();
-    forgetTheInvitation();
-    $("circle-heading").textContent = label;
     $("appoint-details").open = false;
-
-    alwaysAWayBack();
-    show("circle");
-    await loadCircle();
-
     announce(
-      seconderName
-        ? `A new circle, where ${seconderName} has to agree to who joins. ` +
-            `Everyone needs inviting again, including ${seconderName}.`
-        : "A new circle, where you decide on your own who joins. Everyone " +
-            "needs inviting again.",
+      `${theirName} now has to agree to who joins. Nobody has to join again.`,
     );
+    await loadCircle();
   } catch (error) {
     problem(error);
   }
