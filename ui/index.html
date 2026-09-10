@@ -1145,15 +1145,42 @@
           not require being in it. This is only here so somebody who is both a
           member and the second yes can find it from where they already are.
         -->
+        <!--
+          People put forward, waiting on the second agreement.
+
+          One list, read by two people from opposite ends. The holder sees how
+          far each one has got and, once it is finished, the invitation to
+          send. The person who has to agree sees a name and a button.
+
+          It replaces five copy-and-pastes between two devices that were
+          already members of the same circle and perfectly able to talk to each
+          other. The only message that still has to leave is the last one, to
+          the person joining, who is by definition outside.
+        -->
+        <section id="pending-members" hidden>
+          <h3 id="pending-heading">Waiting to be let in</h3>
+          <p id="pending-explains-holder" class="hint" hidden>
+            <span id="pending-seconder-name">The second person</span> has to
+            agree before any of these can join.
+          </p>
+          <p id="pending-explains-seconder" class="hint" hidden>
+            Nobody joins this circle unless you agree as well. Nothing here has
+            been checked — the names are what the holder calls them.
+          </p>
+          <ul id="pending-list"></ul>
+        </section>
+
         <section id="second-here" hidden>
-          <h3>You are the second yes here</h3>
-          <p>
-            Nobody joins this circle unless you agree as well. When somebody
-            sends you half an invitation, this is where you finish it.
+          <h3>If they are not in this circle</h3>
+          <p class="hint">
+            The list above only works for somebody who is in the circle. If the
+            person who agrees is not — a solicitor, or somebody who should
+            never read the record — you can still send them half an invitation
+            by hand.
           </p>
           <div class="actions">
-            <button type="button" id="go-and-second">
-              Agree to an invitation
+            <button type="button" id="go-and-second" class="secondary">
+              Agree to an invitation sent by hand
             </button>
           </div>
         </section>

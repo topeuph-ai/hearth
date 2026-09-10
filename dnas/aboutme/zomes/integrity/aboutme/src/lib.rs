@@ -81,6 +81,63 @@ pub struct Member {
     pub relationship: String,
 }
 
+/// Somebody the holder wants to let in, waiting on the second agreement.
+///
+/// **Why this exists at all.** Where a circle asks two people to agree, both
+/// agreements are signatures, and they used to reach each other by hand: the
+/// holder sent half an invitation to the second person, who sent it back
+/// finished, who sent it on. Five copy-and-pastes of near-identical text
+/// between two devices that were already members of the same circle and
+/// perfectly able to talk to each other. People pasted the wrong line into the
+/// wrong box, which is not a mistake anybody should be given the chance to
+/// make about who may read a vulnerable person's record.
+///
+/// So the agreements travel in the circle instead. This is the first half,
+/// written by the holder where the second person will see it.
+///
+/// **The membrane is untouched by this.** Whoever joins still presents both
+/// signatures as their membrane proof, because somebody who has not joined yet
+/// cannot read anything here. This changes how the two signatures reach one
+/// another, and nothing about what the door checks.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct ProposedMember {
+    /// The key that would be admitted.
+    pub invitee: AgentPubKey,
+
+    /// Who the holder says that key belongs to.
+    ///
+    /// A claim, exactly like the role on an acknowledgement, and nothing here
+    /// or anywhere else checks it. It is carried because the person being
+    /// asked to agree cannot answer "should this key be let in?" and can
+    /// answer "should Ronnie, her cousin, be let in?".
+    pub name: String,
+
+    /// The holder's own agreement: her signature over `invitee`.
+    ///
+    /// Kept here so the second person's device can build a finished invitation
+    /// without anybody copying anything. Validation checks it really is hers
+    /// and really is over that key, so a proposal cannot carry a signature
+    /// that would fail at the door later — a promise that breaks quietly the
+    /// day somebody tries to use it.
+    pub signature: Signature,
+}
+
+/// The second agreement, given in the circle rather than by hand.
+///
+/// Only the person this circle names may write one, and every peer checks that
+/// independently — the same rule the membrane applies, applied here so that a
+/// second yes cannot be manufactured by anybody else inside the circle.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Endorsement {
+    /// The proposal being agreed to.
+    pub proposed: ActionHash,
+
+    /// The seconder's signature over the same key the holder signed.
+    pub signature: Signature,
+}
+
 /// Which part of the record a suggestion is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
@@ -134,6 +191,9 @@ pub enum EntryTypes {
     Suggestion(Suggestion),
     SuggestionOutcome(SuggestionOutcome),
     Member(Member),
+    // Appended, so every existing entry type keeps the index it already had.
+    ProposedMember(ProposedMember),
+    Endorsement(Endorsement),
 }
 
 #[hdk_link_types]
@@ -150,6 +210,11 @@ pub enum LinkTypes {
     SuggestionToOutcome,
     /// Anchor -> Member, so the circle can put names to people.
     CircleToMember,
+    /// Anchor -> ProposedMember, so the person who has to agree finds what is
+    /// waiting for them rather than being sent it.
+    CircleToProposedMember,
+    /// ProposedMember -> the second agreement on it.
+    ProposedMemberToEndorsement,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -501,6 +566,43 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Only the holder puts somebody forward, and only her own proposals.
+        LinkTypes::CircleToProposedMember => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may propose somebody");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("The circle's list must point at the holder's own proposal");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the person this circle asks, and only their own agreement.
+        //
+        // Without the second half of this a member could link somebody else's
+        // entry here and have it read as an agreement; the entry rule would
+        // still hold, but the list is what everyone actually reads.
+        LinkTypes::ProposedMemberToEndorsement => {
+            if !is_the_seconder(author)? {
+                return invalid(
+                    "Only the person this circle asks to agree may record an agreement",
+                );
+            }
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("An agreement link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only link your own agreement");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // You may only attach your own acknowledgement.
         LinkTypes::AboutMeToAcknowledgement => {
             let Some(target) = as_action_hash(&action.target_address) else {
@@ -543,6 +645,89 @@ fn validate_acknowledgement(
     let entry = must_get_entry(entry_hash.clone())?;
     if AboutMe::try_from(entry.content.clone()).is_err() {
         return invalid("Acknowledgement must reference an About Me entry");
+    }
+
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Is this agent the one this circle asks to agree as well?
+///
+/// Read from the circle's own identity, exactly as the membrane reads it, so
+/// the rule inside the circle and the rule at the door cannot drift apart. A
+/// circle with nobody named asks nobody, and nobody can therefore endorse.
+fn is_the_seconder(agent: &AgentPubKey) -> ExternResult<bool> {
+    Ok(match membrane()? {
+        Membrane::Founder(_, Some(seconder)) => &seconder == agent,
+        Membrane::Founder(_, None) => false,
+        Membrane::Lobby => false,
+        Membrane::Misconfigured => false,
+    })
+}
+
+/// The holder's half of a two-person admission.
+///
+/// Two rules, and the second is the one that matters. Anybody could otherwise
+/// write a proposal carrying a signature that is not really the holder's, or
+/// not really over that key — and nothing would notice until the person it
+/// names tried to join and was turned away by the door for reasons nobody
+/// could see. A promise that breaks silently, later, is worse than a refusal
+/// now.
+fn validate_proposed_member(
+    proposed: &ProposedMember,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may propose somebody");
+    }
+
+    if !verify_signature(
+        author.clone(),
+        proposed.signature.clone(),
+        proposed.invitee.clone(),
+    )? {
+        return invalid(
+            "A proposal must carry the holder's own agreement, over the key it names",
+        );
+    }
+
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// The second agreement, checked by every peer rather than taken on trust.
+///
+/// This is the rule that makes the whole safeguard worth having. Without it
+/// any member could write an endorsement and the holder's device would
+/// assemble an invitation from it — a second yes given by somebody who was
+/// never asked for one, which is precisely the thing this feature exists to
+/// prevent.
+fn validate_endorsement(
+    endorsement: &Endorsement,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_seconder(author)? {
+        return invalid(
+            "Only the person this circle asks to agree may give the second agreement",
+        );
+    }
+
+    // It must be about a real proposal, so an endorsement cannot be attached
+    // to something else and later read as agreement to somebody.
+    let action = must_get_action(endorsement.proposed.clone())?;
+    let Some(entry_hash) = action.action().entry_hash() else {
+        return invalid("An agreement must refer to a proposed member");
+    };
+    let entry = must_get_entry(entry_hash.clone())?;
+    let Ok(proposed) = ProposedMember::try_from(entry.content.clone()) else {
+        return invalid("An agreement must refer to a proposed member");
+    };
+
+    // Over the same key the holder signed, and nothing else.
+    if !verify_signature(
+        author.clone(),
+        endorsement.signature.clone(),
+        proposed.invitee.clone(),
+    )? {
+        return invalid("The second agreement must be over the key the proposal names");
     }
 
     Ok(ValidateCallbackResult::Valid)
@@ -605,6 +790,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Suggestion(s) => validate_suggestion(&s),
             EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, action.author()),
             EntryTypes::Member(m) => validate_member(&m),
+            EntryTypes::ProposedMember(p) => validate_proposed_member(&p, action.author()),
+            EntryTypes::Endorsement(e) => validate_endorsement(&e, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -638,6 +825,22 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
                     return invalid("Only you may change how you are described");
                 }
                 validate_member(&m)
+            }
+            /*
+             * Neither of these can be edited, and both refusals are the same
+             * refusal: an agreement is a thing that was given at a moment, and
+             * a record of it that can be rewritten afterwards is not evidence
+             * of anything.
+             *
+             * Changing your mind about who may join is possible and costs
+             * nothing — propose somebody else, or simply never agree. What is
+             * not possible is altering what was already agreed to.
+             */
+            EntryTypes::ProposedMember(_) => {
+                invalid("A proposal cannot be changed; make another one")
+            }
+            EntryTypes::Endorsement(_) => {
+                invalid("An agreement cannot be changed once it is given")
             }
         },
 

@@ -92,22 +92,57 @@ invisible:
 3. **Invite them, before anybody else.** Naming somebody does not put them in
    the circle, and until they are in, *nobody* can join — every other
    invitation needs their agreement, and they cannot give it if they are not
-   reachable. The app now makes their invitation for you and shows it until
-   they arrive, because this is the step everyone missed.
+   there. The app makes their invitation for you and shows it until they
+   arrive, because this is the step everyone missed.
 4. They join. They are the one person who needs no second agreement, because
    asking them to countersign their own arrival is a knot that cannot be
    untied.
-5. From then on, everybody else needs both signatures.
+5. From then on, everybody else needs both agreements — and from here on it is
+   two taps rather than a relay.
 
-**Agreeing to who joins does not require being in the circle.** The signature
-is one key over another key; it touches nothing else. So it has its own screen,
-reached from the front page, and whoever holds this power can guard a circle
-they never enter and never read.
+### The two agreements find each other
 
-That was not true for a while: the screen lived inside the circle, which
-quietly forced the second person to join and read somebody's record before they
-could agree to anybody. The comment in the code said otherwise, which is how it
-survived.
+Both agreements are signatures over the same key. They used to reach each other
+**by hand**: the holder made half an invitation and sent it to the second
+person, who agreed and sent it back, who sent it on. Five copy-and-pastes of
+near-identical base64 between two devices that were already members of the same
+circle and perfectly able to talk to each other.
+
+It was as bad as that sounds. People pasted the wrong line into the wrong box —
+which is not a mistake anybody should be given the chance to make about who may
+read a vulnerable person's record.
+
+So the agreements travel in the circle instead:
+
+1. The holder writes down who she wants to let in, and what she calls them.
+2. It appears in the second person's own copy of the circle, with a button.
+3. They agree. Their signature is written beside the proposal.
+4. The finished invitation appears on the holder's screen, assembled from the
+   two agreements, ready to send.
+
+**One message still leaves**, to the person joining — because they are outside
+the circle by definition, and that is the whole thing the door is for.
+
+**None of this changed the membrane.** Whoever joins still presents both
+signatures at the door and every peer still checks both, exactly as before.
+Somebody who has not joined cannot read anything inside, so the invitation
+still has to carry its own proof. What changed is only how the two signatures
+find one another.
+
+Two new rules, and both are checked by every peer:
+
+- Only the holder may put somebody forward, and the proposal must carry her
+  real signature over the key it names — so a proposal cannot promise
+  something that would fail at the door later, silently.
+- **Only the person the circle names may give the second agreement.** This is
+  the whole safeguard. If any member could agree, the second yes would be a
+  second yes from whoever happened to be about.
+
+The cost is that the second person has to be *in* the circle, where before the
+design hoped they need not be. That hope was never real — the screen for
+agreeing lived inside the circle anyway, so they always had to join. The
+by-hand route is still there for a circle whose second person genuinely stays
+outside, but it is no longer the way in.
 
 ---
 

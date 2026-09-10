@@ -37,5 +37,27 @@
 # Anybody making a desktop app for another platform assembles it from that
 # file rather than compiling the zomes. See the README.
 
-linux    bc8697a3c80e68b741b9ad6e52cee6ff71e4c9e158b86e69eabec8d82b282d34
-windows  392dc1703ce4e2a381082784cb9c0169065dd9dff680f90c42679ae0e88b29df
+# ---------------------------------------------------------------------------
+# Rebased a second time, deliberately. This is a migration.
+# ---------------------------------------------------------------------------
+#
+# Two entry types were added so that the two agreements a circle asks for can
+# reach each other inside the circle instead of being carried between devices
+# by hand. See docs/to-a-product.md.
+#
+# **Every circle made before this is unreachable to builds after it.** That is
+# not a bug and it is not recoverable: it is what changing this file means, and
+# it is why the file is frozen the rest of the time.
+#
+# The previous hashes, kept so anybody looking at an older build can tell which
+# side of the line they are on:
+#
+#   linux    bc8697a3c80e68b741b9ad6e52cee6ff71e4c9e158b86e69eabec8d82b282d34
+#   windows  392dc1703ce4e2a381082784cb9c0169065dd9dff680f90c42679ae0e88b29df
+#
+# The membrane itself did not change. Whoever joins still presents the same two
+# signatures at the door, because somebody who has not joined yet cannot read
+# anything inside. What changed is how those two signatures find each other.
+
+linux    UNKNOWN-until-the-first-CI-run
+windows  c5b078d362082751ebee7b7add862be056374b953ddf998b9320645c872bb13e

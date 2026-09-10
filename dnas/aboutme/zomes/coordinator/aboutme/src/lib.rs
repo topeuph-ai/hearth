@@ -911,6 +911,21 @@ pub enum Signal {
         by: AgentPubKey,
         text: String,
     },
+    /// The holder has put somebody forward and is waiting on the second
+    /// agreement. Sent only to the person who has to give it.
+    Proposed {
+        proposed: ActionHash,
+        by: AgentPubKey,
+        /// What the holder called them. A claim, never checked.
+        name: String,
+    },
+    /// The second agreement has been given. Sent only to the holder, who is
+    /// the one waiting on it, and whose screen can now show a finished
+    /// invitation instead of a job half done.
+    Endorsed {
+        proposed: ActionHash,
+        by: AgentPubKey,
+    },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -960,7 +975,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
     let claimed = match &signal {
         Signal::Acknowledged { by, .. }
         | Signal::Introduced { by, .. }
-        | Signal::Suggested { by, .. } => by,
+        | Signal::Suggested { by, .. }
+        | Signal::Proposed { by, .. }
+        | Signal::Endorsed { by, .. } => by,
     };
 
     if claimed != &caller {
@@ -1205,4 +1222,303 @@ pub fn who_holds_this(_: ()) -> ExternResult<Option<AgentPubKey>> {
         Membrane::Founder(key, _) => Some(key),
         _ => None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Two agreements, without the post
+// ---------------------------------------------------------------------------
+//
+// Where a circle asks two people to agree, both agreements are signatures, and
+// they used to reach each other by hand: the holder sent half an invitation to
+// the second person, who sent it back finished, who sent it on. Five
+// copy-and-pastes of near-identical text between two devices that were already
+// members of the same circle.
+//
+// They are members of the same circle, so they can simply tell each other. The
+// holder writes down who she wants to let in; the second person sees it and
+// agrees; the finished invitation appears on the holder's screen. One thing to
+// send, to the person joining, which is the one place a message genuinely has
+// to leave the circle.
+//
+// The membrane is untouched. Whoever joins still presents both signatures at
+// the door, because somebody who has not joined cannot read any of this.
+
+const PROPOSED_ANCHOR: &str = "proposed";
+
+fn proposed_path() -> ExternResult<TypedPath> {
+    Path::from(PROPOSED_ANCHOR).typed(LinkTypes::CircleToProposedMember)
+}
+
+/// Everything an invitation carries besides the signatures themselves.
+///
+/// Pulled out because it is now needed twice: once when an invitation is made
+/// directly, and once when one is assembled from two agreements that arrived
+/// separately. Two copies of this drifting apart would produce invitations
+/// that differ in ways nobody would notice until somebody could not join.
+fn bundle_around(
+    invitee: &AgentPubKey,
+    invitee_name: String,
+    invitation: Invitation,
+) -> ExternResult<InvitationBundle> {
+    let me = agent_info()?.agent_initial_pubkey;
+
+    let about = match get_circle_about_me(())?.first() {
+        Some(original) => get_current_about_me(original.clone())?
+            .record
+            .and_then(|r| r.entry().as_option().cloned())
+            .and_then(|e| AboutMe::try_from(e).ok())
+            .map(|a| a.display_name)
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+
+    let seconder = match membrane()? {
+        Membrane::Founder(_, seconder) => seconder.map(|k| k.to_string()),
+        _ => None,
+    };
+
+    // My own introduction, off my own chain: what I told this circle I am
+    // called. Read locally because it is mine, and empty if I never said.
+    let inviter = on_my_own_chain(UnitEntryTypes::Member)?
+        .last()
+        .and_then(|record| record.entry().to_app_option::<Member>().ok().flatten())
+        .map(|m| m.name)
+        .unwrap_or_default();
+
+    Ok(InvitationBundle {
+        founder: match membrane()? {
+            Membrane::Founder(founder, _) => founder.to_string(),
+            _ => me.to_string(),
+        },
+        inviter,
+        invitee: invitee.to_string(),
+        invitee_name,
+        seconder,
+        network_seed: dna_info()?.modifiers.network_seed,
+        about,
+        invitation,
+    })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProposeInput {
+    pub invitee: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Put somebody forward, where the person who has to agree will see it.
+///
+/// Only meaningful from the holder — validation refuses it from anybody else,
+/// on every peer independently, so there is no permission check to forget
+/// here.
+#[hdk_extern]
+pub fn propose_member(input: ProposeInput) -> ExternResult<Record> {
+    let invitee = AgentPubKey::try_from(input.invitee.trim()).map_err(|_| {
+        wasm_error!(
+            "That does not look like somebody's identifier. It is a long line of \
+             letters and numbers beginning uhCAk, which they can copy from their \
+             own copy of Hearth. It is not their name."
+        )
+    })?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let signature = sign(me.clone(), invitee.clone())?;
+    let name = input.name.trim().to_string();
+
+    let action_hash = create_entry(EntryTypes::ProposedMember(ProposedMember {
+        invitee: invitee.clone(),
+        name: name.clone(),
+        signature,
+    }))?;
+
+    let path = proposed_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToProposedMember,
+        (),
+    )?;
+
+    // Tell the person who has to agree, so they do not have to be watching.
+    // Fire and forget, like every other signal here: the proposal is on the
+    // chain either way, and they will see it whenever they next look.
+    if let Membrane::Founder(_, Some(seconder)) = membrane()? {
+        if seconder != me {
+            let _ = send_remote_signal(
+                Signal::Proposed {
+                    proposed: action_hash.clone(),
+                    by: me,
+                    name,
+                },
+                vec![seconder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the proposal just written"))
+}
+
+/// Give the second agreement to somebody the holder has put forward.
+///
+/// Called by whoever the circle names, on their own machine, having read who
+/// it is. Validation refuses it from anybody else — that check is the whole
+/// safeguard, and it is made by every peer rather than here.
+#[hdk_extern]
+pub fn endorse(proposed: ActionHash) -> ExternResult<Record> {
+    let record = get(proposed.clone(), GetOptions::default())?
+        .ok_or_else(|| wasm_error!("That proposal could not be found"))?;
+
+    let entry = record
+        .entry()
+        .to_app_option::<ProposedMember>()
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .ok_or_else(|| wasm_error!("That is not somebody put forward to join"))?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let signature = sign(me.clone(), entry.invitee.clone())?;
+
+    let action_hash = create_entry(EntryTypes::Endorsement(Endorsement {
+        proposed: proposed.clone(),
+        signature,
+    }))?;
+
+    create_link(
+        proposed.clone(),
+        action_hash.clone(),
+        LinkTypes::ProposedMemberToEndorsement,
+        (),
+    )?;
+
+    // Tell the holder, so the finished invitation appears in front of her
+    // rather than being waited for.
+    if let Membrane::Founder(founder, _) = membrane()? {
+        if founder != me {
+            let _ = send_remote_signal(Signal::Endorsed { proposed, by: me }, vec![founder]);
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the agreement just written"))
+}
+
+/// Somebody put forward, and how far they have got.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PendingMember {
+    pub proposed: ActionHash,
+    /// The key that would be admitted, as text.
+    pub invitee: String,
+    /// What the holder called them. A claim, never checked.
+    pub name: String,
+    /// Whether the second person has agreed yet.
+    pub agreed: bool,
+    /// The finished invitation, once both agreements exist.
+    ///
+    /// `None` until then, and that is the whole state anybody needs: nothing
+    /// to assemble by hand, and nothing to send too early.
+    pub invitation: Option<InvitationBundle>,
+}
+
+/// Everybody currently put forward, oldest first.
+#[hdk_extern]
+pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
+    let path = proposed_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToProposedMember)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut proposals = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    // Mine too, so the holder sees what she just put forward without waiting
+    // for the network to hear about it.
+    and_my_own(
+        &mut proposals,
+        on_my_own_chain(UnitEntryTypes::ProposedMember)?,
+    );
+    oldest_first(&mut proposals);
+
+    // My own agreements, for the same reason on the other side.
+    let mine = on_my_own_chain(UnitEntryTypes::Endorsement)?;
+
+    let mut out = Vec::new();
+    for record in proposals {
+        let hash = record.action_address().clone();
+        let Some(proposed) = record
+            .entry()
+            .to_app_option::<ProposedMember>()
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+
+        let mut endorsements = get_links(
+            LinkQuery::try_new(hash.clone(), LinkTypes::ProposedMemberToEndorsement)?,
+            GetStrategy::Network,
+        )?;
+        endorsements.sort_by(|a, b| {
+            a.timestamp
+                .cmp(&b.timestamp)
+                .then_with(|| a.target.cmp(&b.target))
+        });
+
+        let mut endorsement = match endorsements
+            .last()
+            .and_then(|l| l.target.clone().into_action_hash())
+        {
+            Some(h) => get(h, GetOptions::default())?,
+            None => None,
+        };
+
+        if endorsement.is_none() {
+            endorsement = mine
+                .iter()
+                .rev()
+                .find(|r| {
+                    r.entry()
+                        .to_app_option::<Endorsement>()
+                        .ok()
+                        .flatten()
+                        .is_some_and(|e| e.proposed == hash)
+                })
+                .cloned();
+        }
+
+        let seconded = endorsement
+            .and_then(|r| r.entry().to_app_option::<Endorsement>().ok().flatten())
+            .map(|e| e.signature);
+
+        // Assembled only when both halves are here. An invitation with one
+        // agreement on it is not a weaker invitation; it is not one yet, and
+        // handing it over would send somebody to a door that will not open.
+        let invitation = match &seconded {
+            Some(_) => Some(bundle_around(
+                &proposed.invitee,
+                proposed.name.clone(),
+                Invitation {
+                    signature: proposed.signature.clone(),
+                    seconded: seconded.clone(),
+                },
+            )?),
+            None => None,
+        };
+
+        out.push(PendingMember {
+            proposed: hash,
+            invitee: proposed.invitee.to_string(),
+            name: proposed.name,
+            agreed: seconded.is_some(),
+            invitation,
+        });
+    }
+
+    Ok(out)
 }

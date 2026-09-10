@@ -1807,3 +1807,232 @@ async fn an_invitation_without_a_name_is_still_an_invitation() {
         .await
         .expect("a nameless invitation still admits the person it names");
 }
+
+// ---------------------------------------------------------------------------
+// Two agreements that reach each other inside the circle
+// ---------------------------------------------------------------------------
+//
+// The two agreements used to be carried between devices by hand. They now
+// travel as entries, which means two new rules that only hold if something
+// rejects when they are broken — and one of them, "only the person this circle
+// asks may agree", is the whole of the safeguard.
+
+/// A circle that asks two people, with both of them actually in it.
+///
+/// The by-hand route did not need the second person inside; this one does,
+/// because they read the proposal from their own copy of the circle.
+async fn a_circle_with_both_people_in_it() -> (
+    SweetConductor,
+    CellId,      // the holder
+    CellId,      // the second person
+    CellId,      // an ordinary member, in the circle and asked nothing
+    AgentPubKey, // somebody waiting to be let in
+) {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ruth = SweetAgents::one(conductor.keystore()).await;
+    let dave = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let dna = circle_dna_with_seconder(&alice, Some(&ruth)).await;
+
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    // The seconder needs no second agreement to their own admission.
+    let for_ruth: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: ruth.to_string(),
+                name: "Ruth".to_string(),
+            },
+        )
+        .await;
+    let ruth_cell = join(&conductor, "ruth", &ruth, &dna, Some(&for_ruth.invitation))
+        .await
+        .expect("the second person comes in on the holder's invitation alone");
+
+    // An ordinary member, admitted the long way, who is asked nothing.
+    let for_dave: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: dave.to_string(),
+                name: "Dave".to_string(),
+            },
+        )
+        .await;
+    let seconded: Signature = conductor
+        .call(&zome(&ruth_cell), "second_an_invitation", dave.to_string())
+        .await;
+    let dave_invitation = aboutme_integrity::Invitation {
+        signature: for_dave.invitation.signature.clone(),
+        seconded: Some(seconded),
+    };
+    let dave_cell = join(&conductor, "dave", &dave, &dna, Some(&dave_invitation))
+        .await
+        .expect("two agreements admit an ordinary member");
+
+    (conductor, alice_cell, ruth_cell, dave_cell, ronnie)
+}
+
+/// The whole point: nobody carries anything, and the result opens the door.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_agreements_given_in_the_circle_make_a_working_invitation() {
+    let (conductor, alice_cell, ruth_cell, _dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    // Alice puts Ronnie forward. Nothing is sent to anybody.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "Ronnie Smythe, Margaret's cousin".to_string(),
+            },
+        )
+        .await;
+
+    // Ruth reads it from her own copy of the circle.
+    let waiting: Vec<aboutme::PendingMember> = conductor
+        .call(&zome(&ruth_cell), "get_pending_members", ())
+        .await;
+    let ronnies = waiting
+        .iter()
+        .find(|p| p.invitee == ronnie.to_string())
+        .expect("the second person sees who has been put forward");
+    assert_eq!(ronnies.name, "Ronnie Smythe, Margaret's cousin");
+    assert!(!ronnies.agreed, "nobody has agreed yet");
+    assert!(
+        ronnies.invitation.is_none(),
+        "and there is no invitation until somebody has"
+    );
+
+    let _: Record = conductor
+        .call(&zome(&ruth_cell), "endorse", ronnies.proposed.clone())
+        .await;
+
+    // The finished invitation appears on the holder's side, assembled from two
+    // agreements neither of them copied anywhere.
+    let now: Vec<aboutme::PendingMember> = conductor
+        .call(&zome(&alice_cell), "get_pending_members", ())
+        .await;
+    let finished = now
+        .iter()
+        .find(|p| p.invitee == ronnie.to_string())
+        .expect("still listed");
+    assert!(finished.agreed, "the second agreement is recorded");
+    let invitation = finished
+        .invitation
+        .as_ref()
+        .expect("both agreements make an invitation");
+
+    // And it actually works, which is the only claim worth making.
+    let dna =
+        circle_dna_with_seconder(alice_cell.agent_pubkey(), Some(ruth_cell.agent_pubkey())).await;
+    join(
+        &conductor,
+        "ronnie",
+        &ronnie,
+        &dna,
+        Some(&invitation.invitation),
+    )
+    .await
+    .expect("an invitation assembled from two agreements must open the door");
+}
+
+/// A member cannot put somebody forward.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_propose_somebody() {
+    let (conductor, _alice_cell, _ruth_cell, dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&dave_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "A friend of mine".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "only the person whose circle it is may put somebody forward"
+    );
+}
+
+/// **The rule the whole safeguard rests on.**
+///
+/// If any member could agree, the second yes would be a second yes from
+/// whoever happened to be about — which is not a safeguard, it is a queue.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_give_the_second_agreement() {
+    let (conductor, alice_cell, _ruth_cell, dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let proposal: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "Ronnie".to_string(),
+            },
+        )
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&dave_cell),
+            "endorse",
+            proposal.action_address().clone(),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "only the person this circle asks may give the second agreement"
+    );
+}
+
+/// And the holder cannot agree with herself.
+///
+/// The same rule as the by-hand route enforced, kept when the route changed.
+/// A safeguard the person under pressure can satisfy alone is not one.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_give_the_second_agreement_herself() {
+    let (conductor, alice_cell, _ruth_cell, _dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let proposal: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "Ronnie".to_string(),
+            },
+        )
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "endorse",
+            proposal.action_address().clone(),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "the holder must not be able to agree with herself"
+    );
+}

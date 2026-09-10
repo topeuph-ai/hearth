@@ -1013,47 +1013,55 @@ $("invite-form").addEventListener("submit", async (event) => {
       );
     }
 
-    const invitation = await call(
-      "invite",
-      { invitee, name: $("invitee-name").value.trim() },
-      circle.cellId,
-    );
+    const name = $("invitee-name").value.trim();
+
+    /*
+     * Where somebody has to agree, this puts the person forward rather than
+     * making half an invitation to carry about.
+     *
+     * The half invitation is not gone — it is what the person joining
+     * eventually receives — but the holder no longer has to be the postal
+     * service for it. She writes down who she wants to let in, the second
+     * person sees it in their own copy of the circle and agrees, and the
+     * finished invitation appears in the list below. Nothing is copied
+     * between the two of them, because they are both already here.
+     */
+    if (seconderHere) {
+      await call("propose_member", { invitee, name }, circle.cellId);
+      $("invitee").value = "";
+      $("invitee-name").value = "";
+      forgetTheInvitation();
+      announce(
+        `Put forward. ${
+          members.get(seconderHere)?.name?.trim() || "The second person"
+        } has to agree before they can join.`,
+      );
+      await loadCircle();
+      $("pending-members").scrollIntoView({ block: "nearest" });
+      return;
+    }
+
+    const invitation = await call("invite", { invitee, name }, circle.cellId);
     const output = $("invitation-output");
     output.hidden = false;
     output.textContent = invitationToToken(invitation);
-    /*
-     * Half an invitation is not a worse invitation; it is not one yet. Said
-     * before the wall of base64 rather than after it, because somebody who has
-     * scrolled that far has already started copying.
-     */
-    const seconder = await call("who_seconds_here", null, circle.cellId);
-    $("needs-seconding").hidden = !seconder;
-    $("invitation-finished").hidden = true;
 
     /*
-     * Where it comes back to, and what it is called meanwhile.
+     * A circle that asks nobody else. One invitation, finished, send it.
      *
-     * With a second yes, what is on screen now is half of something. Calling
-     * the button "Copy the invitation" at this point invites her to send the
-     * person joining a thing that cannot let them in — and it looks exactly
-     * like the finished one.
+     * The half-invitation apparatus that used to live here has moved: where a
+     * circle does ask somebody, the branch above puts the person forward and
+     * the two agreements find each other inside the circle.
      */
-    awaitingSecondYes = seconder ? invitee : null;
-    $("finished-invitation").value = "";
-    $("finish-problem").hidden = true;
-    $("copy-invitation").textContent = seconder
-      ? "Copy the half invitation"
-      : "Copy the invitation";
-
+    $("needs-seconding").hidden = true;
+    $("invitation-finished").hidden = true;
+    awaitingSecondYes = null;
+    $("copy-invitation").textContent = "Copy the invitation";
     $("copy-invitation").hidden = false;
     $("done-inviting").hidden = false;
     $("invitee").value = "";
     $("invitee-name").value = "";
-    announce(
-      seconder
-        ? "Half an invitation ready. Send it to whoever agrees to who joins."
-        : "Invitation ready. Send it to them however you like.",
-    );
+    announce("Invitation ready. Send it to them however you like.");
   } catch (error) {
     problem(error);
   }
@@ -1332,6 +1340,27 @@ async function start() {
     }
     if (payload?.kind === "Suggested") {
       announce("Someone has suggested something for the record.");
+      if (circle) await loadCircle();
+    }
+    /*
+     * The two halves of an admission, arriving without anybody carrying them.
+     *
+     * Both are nudges rather than the thing itself: the proposal and the
+     * agreement are written in the circle either way, and the list shows them
+     * whenever anybody next looks. A signal that goes missing costs a wait,
+     * never a decision.
+     */
+    if (payload?.kind === "Proposed") {
+      const who = payload.name?.trim();
+      announce(
+        who
+          ? `You are asked to agree to letting ${who} in.`
+          : "You are asked to agree to letting somebody in.",
+      );
+      if (circle) await loadCircle();
+    }
+    if (payload?.kind === "Endorsed") {
+      announce("Agreed. Their invitation is ready to send.");
       if (circle) await loadCircle();
     }
   });
@@ -1747,7 +1776,18 @@ async function offerToAppointASecondYes() {
   // And the other side of the same fact: if the circle asks somebody, and it
   // is me, this is where I agree to who joins.
   const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
-  $("second-here").hidden = !asksMe;
+  seconderHere = alreadyAsks ? asText(alreadyAsks) : null;
+  await loadPending();
+
+  /*
+   * The route for a second person who is not in the circle.
+   *
+   * Offered to the holder as well as to them, because she is the one who
+   * has to send the half invitation for it, and tucked below the list
+   * because it is the exception. Somebody who can be reached inside the
+   * circle should be, and then none of it is needed.
+   */
+  $("second-here").hidden = !(isHolder() || asksMe);
 
   /*
    * Somewhere to bring a finished invitation back to, always — not only in
@@ -1774,8 +1814,15 @@ async function offerToAppointASecondYes() {
    * back. Two boxes wanting a long line of base64, one of them pointless, and
    * the finished invitation went into the wrong one.
    */
-  $("finish-invitation").hidden =
-    !holderOfATwoPersonCircle || !$("invitation-finished").hidden;
+  /*
+   * The by-hand route, kept but no longer the way in.
+   *
+   * Both agreements now travel inside the circle, so the holder never makes
+   * half an invitation and there is never one to paste back. This stays
+   * hidden while that works, rather than being deleted, until the new path
+   * has been walked by somebody who is not me.
+   */
+  $("finish-invitation").hidden = true;
 
   /*
    * Only asked where somebody will actually read it.
@@ -2814,3 +2861,157 @@ for (const id of ["about-me", "about-someone-else"]) {
   $(id).addEventListener("change", updateWhoseCircle);
 }
 updateWhoseCircle();
+
+// ---------------------------------------------------------------------------
+// People put forward, waiting on the second agreement
+// ---------------------------------------------------------------------------
+//
+// One list, read from both ends. The holder sees how far each one has got and,
+// once both agreements exist, the invitation to send. The person who has to
+// agree sees a name and a button.
+//
+// This is what replaced the posting back and forth. Two devices already in the
+// same circle can simply tell each other, and the only message that still has
+// to leave is the last one, to the person joining, who is outside by
+// definition.
+
+let pending = [];
+
+/** Who this circle asks to agree, as text, or null. Set on every re-read. */
+let seconderHere = null;
+
+async function loadPending() {
+  const section = $("pending-members");
+  const amSeconder = Boolean(seconderHere) && seconderHere === asText(me);
+
+  // Nobody else has any business with this list: it names people who are not
+  // in the circle yet, and what the holder calls them.
+  if (!seconderHere || !(isHolder() || amSeconder)) {
+    section.hidden = true;
+    pending = [];
+    $("pending-list").replaceChildren();
+    return;
+  }
+
+  pending = await orNothingYet(
+    call("get_pending_members", null, circle.cellId),
+    [],
+  );
+
+  renderPending(amSeconder);
+}
+
+function renderPending(amSeconder) {
+  const section = $("pending-members");
+  const list = $("pending-list");
+  list.replaceChildren();
+
+  // An empty list is not worth a heading. Nobody is waiting, which is the
+  // ordinary state of a circle.
+  section.hidden = pending.length === 0;
+  $("pending-explains-holder").hidden = amSeconder || pending.length === 0;
+  $("pending-explains-seconder").hidden = !amSeconder || pending.length === 0;
+
+  if (!amSeconder) {
+    $("pending-seconder-name").textContent =
+      members.get(seconderHere)?.name?.trim() || "The second person";
+  }
+
+  for (const item of pending) {
+    list.append(pendingCard(item, amSeconder));
+  }
+}
+
+function pendingCard(item, amSeconder) {
+  const li = document.createElement("li");
+  li.className = "suggestion";
+
+  const who = document.createElement("p");
+  // Never dressed up as established. It is what the holder calls them.
+  who.textContent = item.name?.trim() || "Somebody with no name given";
+  li.append(who);
+
+  const key = document.createElement("p");
+  key.className = "hint";
+  key.textContent = item.invitee;
+  li.append(key);
+
+  if (amSeconder && !item.agreed) {
+    const check = document.createElement("p");
+    check.className = "hint";
+    check.textContent =
+      "Nobody has checked that this is who they say it is. If you were " +
+      "expecting this, compare the identifier with the one you were told.";
+    li.append(check);
+
+    const agree = document.createElement("button");
+    agree.type = "button";
+    agree.textContent = "I agree to this";
+    agree.addEventListener("click", () =>
+      whileWorking(agree, "Agreeing…", async () => {
+        await call("endorse", item.proposed, circle.cellId);
+        announce("Agreed. They can be let in now.");
+        await loadCircle();
+      }).catch(problem),
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(agree);
+    li.append(actions);
+    return li;
+  }
+
+  if (!item.agreed) {
+    const waiting = document.createElement("p");
+    waiting.className = "who";
+    // No spinner and no elapsed time. Somebody has not got to it yet, which is
+    // not a fault and not something to be anxious about.
+    waiting.textContent = "Not agreed to yet.";
+    li.append(waiting);
+    return li;
+  }
+
+  const agreed = document.createElement("p");
+  agreed.className = "outcome";
+  agreed.textContent = amSeconder
+    ? "You agreed to this."
+    : "Agreed. This is their invitation — send it to them.";
+  li.append(agreed);
+
+  // The holder is the one who sends it on, so only she needs it in hand.
+  if (!amSeconder && item.invitation) {
+    const token = invitationToToken(item.invitation);
+
+    const out = document.createElement("output");
+    out.textContent = token;
+    li.append(out);
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "secondary";
+    copy.textContent = "Copy their invitation";
+    copy.addEventListener("click", async () => {
+      const wasLabel = copy.textContent;
+      try {
+        await navigator.clipboard.writeText(token);
+        copy.textContent = "Copied";
+        announce("Invitation copied. Send it to them however you like.");
+        setTimeout(() => {
+          copy.textContent = wasLabel;
+        }, 3000);
+      } catch {
+        // Some browsers refuse without a gesture they recognise. The text is
+        // on screen and can be selected, so this is a convenience failing.
+        announce("Could not copy it. Select the text and copy it yourself.");
+      }
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(copy);
+    li.append(actions);
+  }
+
+  return li;
+}
