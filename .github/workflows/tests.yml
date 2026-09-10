@@ -16,6 +16,50 @@ env:
   HOLOCHAIN_VERSION: 0.7.0
 
 jobs:
+  # Does the test suite still compile?
+  #
+  # Its own job, on purpose, and for two reasons.
+  #
+  # It cannot be answered on the machine this is written on — the test crate
+  # pulls a vendored OpenSSL that needs a Perl toolchain Windows does not ship
+  # — so CI is the first compiler ever to see a change to these tests. That
+  # makes the round trip the slowest part of changing them.
+  #
+  # And in the job below, everything after the freeze check is skipped when the
+  # freeze check fails. So a test that would not compile could sit behind an
+  # unrelated red step, invisible, for as many pushes as it took to notice. It
+  # did: two runs were spent that way on 2026-09-10.
+  #
+  # Separate, and first, means a compile error comes back in minutes and never
+  # hides behind something else.
+  it-compiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tests/target
+          key: ${{ runner.os }}-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-check-
+
+      # --tests, so the test code itself is type-checked and not just the
+      # library it sits on. No codegen, no linking, and nothing is run: this
+      # answers "does it compile" and nothing else, which is the question that
+      # was taking half an hour to answer.
+      - name: The adversarial suite compiles
+        working-directory: tests
+        run: cargo check --tests
+
   adversarial:
     runs-on: ubuntu-latest
     steps:
