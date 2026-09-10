@@ -50,7 +50,13 @@ async fn circle_dna_with_seconder(
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
         lobby: false,
-        seconder: seconder.map(|k| k.to_string()),
+        // Nobody is named in the circle's identity any more. The flag says
+        // two people must agree; who the second is, is written inside the
+        // circle and can be written again. The argument is kept so callers
+        // still read as "a circle that asks two people".
+        seconder: None,
+        requires_second_yes: seconder.is_some(),
+        waiting_for: None,
     };
     SweetDnaFile::from_bundle_with_overrides(
         &dna_path(),
@@ -582,6 +588,7 @@ async fn two_people_agreeing_lets_somebody_in() {
     let invitation = Invitation {
         signature: bundle.invitation.signature.clone(),
         seconded: Some(seconded),
+        appointment: None,
     };
 
     assert!(
@@ -659,6 +666,7 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     let invitation = Invitation {
         signature: bundle.invitation.signature.clone(),
         seconded: Some(forged),
+        appointment: None,
     };
 
     assert!(
@@ -839,6 +847,8 @@ async fn a_circle_with_no_founder_admits_nobody() {
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: None,
             seconder: None,
+            requires_second_yes: false,
+            waiting_for: None,
             lobby: false,
         }),
     )
@@ -864,6 +874,8 @@ async fn a_circle_with_a_malformed_founder_admits_nobody() {
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: Some("not-an-agent-key".to_string()),
             seconder: None,
+            requires_second_yes: false,
+            waiting_for: None,
             lobby: false,
         }),
     )
@@ -1855,6 +1867,13 @@ async fn a_circle_with_both_people_in_it() -> (
         .await
         .expect("the second person comes in on the holder's invitation alone");
 
+    // And is asked, once she is here. Who agrees is written in the circle now,
+    // not baked into its identity, so this is the moment it happens — and it
+    // is a moment that can happen again if she is ever unable to answer.
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "appoint", ruth.to_string())
+        .await;
+
     // An ordinary member, admitted the long way, who is asked nothing.
     let for_dave: aboutme::InvitationBundle = conductor
         .call(
@@ -1872,6 +1891,7 @@ async fn a_circle_with_both_people_in_it() -> (
     let dave_invitation = aboutme_integrity::Invitation {
         signature: for_dave.invitation.signature.clone(),
         seconded: Some(seconded),
+        appointment: None,
     };
     let dave_cell = join(&conductor, "dave", &dave, &dna, Some(&dave_invitation))
         .await
@@ -2035,4 +2055,436 @@ async fn the_holder_cannot_give_the_second_agreement_herself() {
         result.is_err(),
         "the holder must not be able to agree with herself"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Who is asked to agree, and what happens when they cannot
+// ---------------------------------------------------------------------------
+//
+// The second person used to be part of the circle's identity, which made them
+// permanent. Now it is an entry the holder writes, which is what lets her
+// appoint somebody else the day the first person is past helping. These are
+// the rules that keeps honest.
+
+/// Only the holder decides who is asked to agree.
+///
+/// Without this any member could appoint themselves and then agree to their
+/// own arrivals, which is not a safeguard, it is a formality.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_appoint_anybody() {
+    let (conductor, _alice_cell, _ruth_cell, dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(&zome(&dave_cell), "appoint", ronnie.to_string())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "only the person whose circle this is may ask somebody to agree"
+    );
+}
+
+/// And she cannot appoint herself.
+///
+/// A safeguard the person under pressure can satisfy alone is not one. The
+/// whole case this exists for is somebody leaning on her.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_appoint_herself() {
+    let (conductor, alice_cell, _ruth_cell, _dave_cell, _ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "appoint",
+            alice_cell.agent_pubkey().to_string(),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "the person who agrees to who joins has to be somebody else"
+    );
+}
+
+/// **The way out of the situation everybody eventually meets.**
+///
+/// The second person dies, or loses the device their keys were on. Before this
+/// the circle could never admit anybody again and the only escape was a new
+/// circle with every member joining afresh. Now she appoints somebody else,
+/// and the person she appoints can agree.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_appoint_somebody_else_and_the_circle_carries_on() {
+    let (conductor, alice_cell, _ruth_cell, dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    // Ruth is past helping. Dave is asked instead.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "appoint",
+            dave_cell.agent_pubkey().to_string(),
+        )
+        .await;
+
+    let asked: Option<AgentPubKey> = conductor
+        .call(&zome(&alice_cell), "who_seconds_here", ())
+        .await;
+    assert_eq!(
+        asked.as_ref(),
+        Some(dave_cell.agent_pubkey()),
+        "the newest appointment is the one in force"
+    );
+
+    // And it works end to end: Alice puts Ronnie forward, Dave agrees, and the
+    // invitation that comes out opens the door.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "Ronnie".to_string(),
+            },
+        )
+        .await;
+
+    let waiting: Vec<aboutme::PendingMember> = conductor
+        .call(&zome(&dave_cell), "get_pending_members", ())
+        .await;
+    let theirs = waiting
+        .iter()
+        .find(|p| p.invitee == ronnie.to_string())
+        .expect("the newly appointed person sees who has been put forward");
+
+    let _: Record = conductor
+        .call(&zome(&dave_cell), "endorse", theirs.proposed.clone())
+        .await;
+
+    let now: Vec<aboutme::PendingMember> = conductor
+        .call(&zome(&alice_cell), "get_pending_members", ())
+        .await;
+    let invitation = now
+        .iter()
+        .find(|p| p.invitee == ronnie.to_string())
+        .and_then(|p| p.invitation.as_ref())
+        .expect("the replacement's agreement makes a whole invitation");
+
+    let dna = circle_dna_with_seconder(alice_cell.agent_pubkey(), Some(&ronnie)).await;
+    join(
+        &conductor,
+        "ronnie",
+        &ronnie,
+        &dna,
+        Some(&invitation.invitation),
+    )
+    .await
+    .expect("a circle whose second person was replaced still admits people");
+}
+
+/// Somebody who has been replaced cannot give new agreements.
+///
+/// The point of being able to replace them is that replacing them means
+/// something. Note what this does *not* claim: an agreement Ruth already gave
+/// stays good, and an invitation built from it still opens the door. That is
+/// deliberate — an agreement is a thing somebody did at a moment, and moments
+/// do not become undone. What changes is that she cannot give another.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replaced_second_person_can_no_longer_agree_to_anybody_new() {
+    let (conductor, alice_cell, ruth_cell, dave_cell, ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    // Dave is asked instead of Ruth.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "appoint",
+            dave_cell.agent_pubkey().to_string(),
+        )
+        .await;
+
+    let asked: Option<AgentPubKey> = conductor
+        .call(&zome(&alice_cell), "who_seconds_here", ())
+        .await;
+    assert_eq!(
+        asked.as_ref(),
+        Some(dave_cell.agent_pubkey()),
+        "the replacement is the one asked now"
+    );
+
+    // Somebody new is put forward, and Ruth tries to agree to them.
+    let proposal: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "propose_member",
+            aboutme::ProposeInput {
+                invitee: ronnie.to_string(),
+                name: "Ronnie".to_string(),
+            },
+        )
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&ruth_cell),
+            "endorse",
+            proposal.action_address().clone(),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "somebody who has been replaced must not be able to agree to anybody new"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The waiting room
+// ---------------------------------------------------------------------------
+
+/// A waiting room for one circle. Anybody may enter it.
+async fn a_waiting_room(holder: &AgentPubKey) -> DnaFile {
+    SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none()
+            .with_network_seed("a-door".to_string())
+            .with_properties(CircleProperties {
+                founder: None,
+                lobby: false,
+                seconder: None,
+                requires_second_yes: false,
+                waiting_for: Some(holder.to_string()),
+            }),
+    )
+    .await
+    .expect("the packed DNA should load")
+}
+
+/// An invitation as one line of text, the way the room carries it.
+fn as_text(invitation: &Invitation) -> String {
+    let bytes = SerializedBytes::try_from(invitation.clone())
+        .expect("an invitation packs into bytes")
+        .bytes()
+        .to_vec();
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn from_text(text: &str) -> Invitation {
+    let bytes: Vec<u8> = (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex"))
+        .collect();
+    Invitation::try_from(SerializedBytes::from(UnsafeBytes::from(bytes)))
+        .expect("and unpacks again")
+}
+
+fn a_knock() -> aboutme_integrity::Knock {
+    aboutme_integrity::Knock {
+        name: "Ronnie Smythe".to_string(),
+        relationship: "her cousin".to_string(),
+    }
+}
+
+/// Anybody may knock, without an invitation and without being known.
+///
+/// This is the whole point of the room. A door where you must already be known
+/// in order to ask is the closed door it exists to replace.
+#[tokio::test(flavor = "multi_thread")]
+async fn anybody_may_knock_at_a_waiting_room() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .expect("a waiting room is open, so there is nothing to present");
+
+    let _: Record = conductor
+        .call(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+
+    let at_the_door: Vec<aboutme::Knocking> =
+        conductor.call(&zome(&ronnie_cell), "get_knocks", ()).await;
+
+    assert_eq!(at_the_door.len(), 1);
+    assert_eq!(at_the_door[0].name, "Ronnie Smythe");
+    assert_eq!(
+        at_the_door[0].who,
+        ronnie.to_string(),
+        "whoever knocked brought their own key by arriving"
+    );
+    assert!(!at_the_door[0].answered);
+}
+
+/// Knocking means nothing in the plain lobby every installation shares.
+///
+/// Without this rule, "somebody wants to join Margaret Smythe's circle" would
+/// be written into a network that every person who installs this app is in.
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_may_knock_in_the_ordinary_lobby() {
+    let conductor = SweetConductor::standard().await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let lobby = lobby_dna().await;
+    let ronnie_cell = join(&conductor, "ronnie-lobby", &ronnie, &lobby, None)
+        .await
+        .expect("anyone may enter the lobby");
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a knock in the shared lobby would be seen by everybody who installs this app"
+    );
+}
+
+/// Only the holder of the circle answers knocks at its door.
+///
+/// A forged answer could admit nobody — the circle's own door still checks the
+/// signature — but it would let a stranger hand somebody a thing that looks
+/// like a welcome and silently is not.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_holder_may_answer_a_knock() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+    let mallory = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .unwrap();
+    let mallory_cell = join(&conductor, "mallory-room", &mallory, &room, None)
+        .await
+        .expect("the room is open to her too, which is the point of testing this");
+
+    let knocked: Record = conductor
+        .call(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&mallory_cell),
+            "admit",
+            aboutme::AdmitInput {
+                knock: knocked.action_address().clone(),
+                invitation: "anything at all".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "somebody who does not hold the circle must not be able to answer for it"
+    );
+}
+
+/// A room naming a holder it cannot read admits nobody.
+///
+/// The same rule as a circle with a mistyped founder: a room nobody can be
+/// admitted from is visibly broken, and one that admits on a typo is not.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waiting_room_naming_nobody_readable_is_closed() {
+    let conductor = SweetConductor::standard().await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = SweetDnaFile::from_bundle_with_overrides(
+        &dna_path(),
+        DnaModifiersOpt::none().with_properties(CircleProperties {
+            founder: None,
+            lobby: false,
+            seconder: None,
+            requires_second_yes: false,
+            waiting_for: Some("not an identifier at all".to_string()),
+        }),
+    )
+    .await
+    .expect("the packed DNA should load");
+
+    let result = join(&conductor, "ronnie-room", &ronnie, &room, None).await;
+
+    assert!(
+        result.is_err(),
+        "a waiting room that names nobody readable must close, not open"
+    );
+}
+
+/// **The whole journey in, without anybody sending anybody an identifier.**
+///
+/// Ronnie knocks. Alice answers by leaving an invitation in the open room.
+/// Ronnie collects it and it opens the circle. Nothing was copied between them
+/// except the address of the room, which is public and never changes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_knock_answered_lets_somebody_into_the_circle() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    // Alice's circle, and the door to it.
+    let dna = circle_dna(&alice).await;
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None).await.unwrap();
+
+    let room = a_waiting_room(&alice).await;
+    let alice_room = join(&conductor, "alice-room", &alice, &room, None)
+        .await
+        .unwrap();
+    let ronnie_room = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .unwrap();
+
+    // He asks. She has never seen his identifier and never asked for it.
+    let _: Record = conductor
+        .call(&zome(&ronnie_room), "knock", a_knock())
+        .await;
+
+    let at_the_door: Vec<aboutme::Knocking> =
+        conductor.call(&zome(&alice_room), "get_knocks", ()).await;
+    let asking = at_the_door.first().expect("she sees him at the door");
+
+    // She makes his invitation from the key his knock brought with it.
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: asking.who.clone(),
+                name: asking.name.clone(),
+            },
+        )
+        .await;
+
+    // Left in the open room. Safe there because it is signed over his key and
+    // admits nobody else.
+    // The room carries the invitation as opaque text, exactly as the app does
+    // — it packs it into one line before sending. Hex here rather than the
+    // app's base64, because what is being tested is that the room hands back
+    // what it was given, not the encoding.
+    let carried = as_text(&bundle.invitation);
+    let _: Record = conductor
+        .call(
+            &zome(&alice_room),
+            "admit",
+            aboutme::AdmitInput {
+                knock: asking.knock.clone(),
+                invitation: carried.clone(),
+            },
+        )
+        .await;
+
+    // He collects it.
+    let waiting_for_him: Option<String> = conductor
+        .call(&zome(&ronnie_room), "my_admission", ())
+        .await;
+    let collected = waiting_for_him.expect("the answer is waiting where he can reach it");
+    assert_eq!(collected, carried);
+
+    let invitation = from_text(&collected);
+
+    join(&conductor, "ronnie", &ronnie, &dna, Some(&invitation))
+        .await
+        .expect("an invitation collected from the door must open the circle");
 }
