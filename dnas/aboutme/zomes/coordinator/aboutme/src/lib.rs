@@ -1701,6 +1701,9 @@ pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
     and_my_own(&mut knocks, on_my_own_chain(UnitEntryTypes::Knock)?);
     oldest_first(&mut knocks);
 
+    // Read once, before the loop, because it does not change inside it.
+    let my_answers = on_my_own_chain(UnitEntryTypes::Admission)?;
+
     let mut out = Vec::new();
     for record in knocks {
         let hash = record.action_address().clone();
@@ -1713,12 +1716,35 @@ pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
             GetStrategy::Network,
         )?;
 
+        /*
+         * And my own answers, which the network has not heard about yet.
+         *
+         * The rule at the top of this file, broken here and found by walking
+         * it: what I wrote myself is never a question for the network. She
+         * pressed "Let them in", the answer was written, the person was
+         * admitted and arrived in the circle — and her own screen went on
+         * asking the network whether she had done it, was told no, and left
+         * them sitting at the door with the button still under them.
+         *
+         * The worst kind of wrong, too: pressing it again would have made a
+         * second invitation for somebody already inside.
+         */
+        let answered = !answers.is_empty()
+            || my_answers.iter().any(|record| {
+                record
+                    .entry()
+                    .to_app_option::<Admission>()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|a| a.knock == hash)
+            });
+
         out.push(Knocking {
             knock: hash,
             who: record.action().author().to_string(),
             name: knock.name,
             relationship: knock.relationship,
-            answered: !answers.is_empty(),
+            answered,
         });
     }
 
