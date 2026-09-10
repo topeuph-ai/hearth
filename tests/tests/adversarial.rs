@@ -511,6 +511,7 @@ async fn a_circle_that_asks_two_people() -> (
     CellId, // the seconder's lobby cell
     DnaFile,
     AgentPubKey, // somebody waiting to be invited
+    ActionHash,  // the appointment asking Ruth to agree
 ) {
     let conductor = SweetConductor::standard().await;
     let alice = SweetAgents::one(conductor.keystore()).await;
@@ -522,18 +523,27 @@ async fn a_circle_that_asks_two_people() -> (
         .await
         .expect("the founder needs no invitation to her own circle");
 
+    // Asked, now that circles carry the rule rather than the person. She
+    // does not have to be in the circle to be asked — an appointment names
+    // a key, and Alice has hers.
+    let appointment: Record = conductor
+        .call(&zome(&alice_cell), "appoint", ruth.to_string())
+        .await;
+    let appointment = appointment.action_address().clone();
+
     let lobby = lobby_dna().await;
     let ruth_lobby = join(&conductor, "ruth-lobby", &ruth, &lobby, None)
         .await
         .expect("anyone may enter the lobby");
 
-    (conductor, alice_cell, ruth_lobby, dna, bob)
+    (conductor, alice_cell, ruth_lobby, dna, bob, appointment)
 }
 
 /// One signature is not enough where the circle asks for two.
 #[tokio::test(flavor = "multi_thread")]
 async fn half_an_invitation_opens_nothing() {
-    let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+    let (conductor, alice_cell, _ruth_lobby, dna, bob, _appointment) =
+        a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
         .call(
@@ -566,7 +576,8 @@ async fn half_an_invitation_opens_nothing() {
 /// Two signatures do.
 #[tokio::test(flavor = "multi_thread")]
 async fn two_people_agreeing_lets_somebody_in() {
-    let (conductor, alice_cell, ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+    let (conductor, alice_cell, ruth_lobby, dna, bob, appointment) =
+        a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
         .call(
@@ -588,7 +599,10 @@ async fn two_people_agreeing_lets_somebody_in() {
     let invitation = Invitation {
         signature: bundle.invitation.signature.clone(),
         seconded: Some(seconded),
-        appointment: None,
+        // Named, or the door has no second agreement to check and would let
+        // Bob in on Alice's signature alone — which would make this test pass
+        // without proving anything about Ruth at all.
+        appointment: Some(appointment),
     };
 
     assert!(
@@ -643,7 +657,8 @@ async fn the_second_yes_needs_no_second_yes_of_their_own() {
 /// The holder cannot be both people. That is the entire point.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_holder_cannot_give_the_second_yes_herself() {
-    let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
+    let (conductor, alice_cell, _ruth_lobby, dna, bob, appointment) =
+        a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
         .call(
@@ -666,7 +681,10 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     let invitation = Invitation {
         signature: bundle.invitation.signature.clone(),
         seconded: Some(forged),
-        appointment: None,
+        // Naming the appointment is what gives the door something to check
+        // her forged signature against. Without it there is no second
+        // agreement being claimed at all, and nothing to catch.
+        appointment: Some(appointment),
     };
 
     assert!(
