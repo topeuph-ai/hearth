@@ -123,6 +123,49 @@ pub struct ProposedMember {
     pub signature: Signature,
 }
 
+/// Somebody asking to be let into a circle they cannot see.
+///
+/// Written in a waiting room, which is an open network holding nothing but
+/// these and the answers to them. The person knocking brings their own key by
+/// arriving, which is the whole point: nobody has to collect an identifier
+/// from them first, and that was the step where this stopped being possible
+/// for anybody elderly or being helped.
+///
+/// Everything here is a claim, checked by nobody. It is what the people
+/// deciding have to go on, and the interface must present it as somebody's
+/// word rather than as a fact — the same rule as every other name in this
+/// app.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Knock {
+    /// What they call themselves.
+    pub name: String,
+    /// How they say they are connected. "Her cousin", "district nurse".
+    pub relationship: String,
+}
+
+/// The answer to a knock, left where the person who knocked can collect it.
+///
+/// **Safe in the open, and that is a property rather than a hope.** What this
+/// carries is an invitation, and an invitation is signed over one person's own
+/// key — so it admits nobody else and is a useless blob to anybody who picks
+/// it up. That is what lets the answer be left lying in a room anyone may
+/// enter, instead of having to be carried by hand to the one person it is for.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Admission {
+    /// Which knock this answers.
+    pub knock: ActionHash,
+
+    /// The invitation, as the one line of text the app passes around anyway.
+    ///
+    /// Opaque here on purpose. This room does not know what a circle is, what
+    /// its rules are, or who its members are; it carries a question in and an
+    /// answer out. Whether the answer opens anything is settled at the
+    /// circle's own door, by every peer there, exactly as before.
+    pub invitation: String,
+}
+
 /// The second agreement, given in the circle rather than by hand.
 ///
 /// Only the person this circle names may write one, and every peer checks that
@@ -194,6 +237,9 @@ pub enum EntryTypes {
     // Appended, so every existing entry type keeps the index it already had.
     ProposedMember(ProposedMember),
     Endorsement(Endorsement),
+    // The waiting room's whole vocabulary: ask, and be answered.
+    Knock(Knock),
+    Admission(Admission),
 }
 
 #[hdk_link_types]
@@ -215,6 +261,10 @@ pub enum LinkTypes {
     CircleToProposedMember,
     /// ProposedMember -> the second agreement on it.
     ProposedMemberToEndorsement,
+    /// Anchor -> Knock, so the people deciding find who is asking.
+    WaitingRoomToKnock,
+    /// Knock -> the answer to it, where the person who knocked will look.
+    KnockToAdmission,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -277,6 +327,30 @@ pub struct CircleProperties {
     /// actively agrees. A veto has to arrive in time to stop something; a
     /// second signature simply does not exist until it is given.
     pub seconder: Option<String>,
+
+    /// The circle this waiting room serves, as a base64 agent key.
+    ///
+    /// **A waiting room is how somebody gets in without anybody collecting
+    /// their identifier first.** A circle is closed, so a person outside it
+    /// cannot write to it — which is the membrane working, and also why
+    /// joining used to begin with "send me the long line of characters from
+    /// your app". For somebody elderly, or somebody being helped, that is the
+    /// step where it stops being possible.
+    ///
+    /// So the holder shares one address, which never changes and can go to
+    /// anybody: a family group, a phone call, a note. It leads to an open
+    /// network where the only thing anybody can do is knock — say who they
+    /// are and ask. They bring their own key with them by arriving.
+    ///
+    /// Whoever knocks is admitted or not by the circle's own rules, which
+    /// this room knows nothing about. All it does is carry the question in
+    /// and the answer out.
+    ///
+    /// Nothing about anybody's record is here, and nothing can be: the
+    /// entries this room permits are a knock and an answer to one, and every
+    /// other write is refused exactly as in the plain lobby.
+    #[serde(default)]
+    pub waiting_for: Option<String>,
 }
 
 /// What an invited person presents when they join.
@@ -308,6 +382,9 @@ pub enum Membrane {
     /// A shared launching point. Anyone may join it; nobody may write in it.
     /// See `lobby`.
     Lobby,
+    /// A waiting room for one circle, holding the key of whoever holds that
+    /// circle. Anyone may join and knock; only that person may answer.
+    WaitingRoom(AgentPubKey),
     /// No usable configuration. Nobody may join and nobody may write.
     Misconfigured,
 }
@@ -335,13 +412,30 @@ pub fn membrane() -> ExternResult<Membrane> {
         },
     };
 
+    // A waiting room names the circle it serves. Unreadable is closed, for
+    // the same reason a mistyped founder is: a room nobody can be admitted
+    // from is visibly broken, and one that admits on a typo is not.
+    let waiting_for = match p.waiting_for.as_deref() {
+        None => None,
+        Some(text) => match AgentPubKey::try_from(text.trim()) {
+            Ok(key) => Some(key),
+            Err(_) => return Ok(Membrane::Misconfigured),
+        },
+    };
+
     match p.founder {
         Some(founder) => match AgentPubKey::try_from(founder.as_str()) {
             Ok(key) => Ok(Membrane::Founder(key, seconder)),
             Err(_) => Ok(Membrane::Misconfigured),
         },
-        None if p.lobby => Ok(Membrane::Lobby),
-        None => Ok(Membrane::Misconfigured),
+        // Checked before the plain lobby, because a room that serves a circle
+        // is a different thing from the empty room the app is installed with,
+        // and only one of them lets anybody write anything.
+        None => match waiting_for {
+            Some(holder) => Ok(Membrane::WaitingRoom(holder)),
+            None if p.lobby => Ok(Membrane::Lobby),
+            None => Ok(Membrane::Misconfigured),
+        },
     }
 }
 
@@ -352,6 +446,10 @@ fn check_membrane(
     let (founder, seconder) = match membrane()? {
         Membrane::Founder(key, seconder) => (key, seconder),
         Membrane::Lobby => return Ok(ValidateCallbackResult::Valid),
+        // A waiting room is open on purpose. Being in it is not being in
+        // anything — the only thing it holds is people asking, and the
+        // answers to them, neither of which is anybody's record.
+        Membrane::WaitingRoom(_) => return Ok(ValidateCallbackResult::Valid),
         Membrane::Misconfigured => {
             return invalid(
                 "This circle has no founder configured, so nobody may join it. \
@@ -435,6 +533,10 @@ fn is_the_person(agent: &AgentPubKey) -> ExternResult<bool> {
         // A lobby holds nothing and accepts nothing. It exists so the app can
         // be installed and can then clone real circles from it.
         Membrane::Lobby => false,
+        // Nor in a waiting room. Nobody's record is there to speak as, and
+        // the holder being named in its properties does not make it hers to
+        // write in — it is a doorstep, not a room in the house.
+        Membrane::WaitingRoom(_) => false,
         // Unreachable in practice, since nobody can join a misconfigured
         // circle. Written as a refusal anyway: the default answer to "may
         // this agent speak as the person" is no.
@@ -603,6 +705,38 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Anybody may knock, and only about themselves.
+        LinkTypes::WaitingRoomToKnock => {
+            if who_this_room_serves()?.is_none() {
+                return invalid("Knocking only means something in a circle's waiting room");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only knock for yourself");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the holder answers, and only with their own answer.
+        LinkTypes::KnockToAdmission => {
+            match who_this_room_serves()? {
+                Some(holder) if &holder == author => {}
+                _ => return invalid("Only the person whose circle this is may answer a knock"),
+            }
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("An answer link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only link your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // You may only attach your own acknowledgement.
         LinkTypes::AboutMeToAcknowledgement => {
             let Some(target) = as_action_hash(&action.target_address) else {
@@ -650,6 +784,66 @@ fn validate_acknowledgement(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// Whoever holds the circle a waiting room serves, if this is one.
+fn who_this_room_serves() -> ExternResult<Option<AgentPubKey>> {
+    Ok(match membrane()? {
+        Membrane::WaitingRoom(holder) => Some(holder),
+        _ => None,
+    })
+}
+
+/// Anybody may knock, and only in a room built for it.
+///
+/// No check on who the author is, deliberately — a room where you must
+/// already be known in order to ask is not a waiting room, it is the closed
+/// door it was meant to replace.
+///
+/// What is checked is that this is a waiting room at all. Without that, these
+/// entries would be writable in the plain lobby every installation shares,
+/// which would put "somebody wants to join Margaret Smythe's circle" in front
+/// of every person who ever installs this app.
+fn validate_knock(knock: &Knock) -> ExternResult<ValidateCallbackResult> {
+    if who_this_room_serves()?.is_none() {
+        return invalid("Knocking only means something in a circle's waiting room");
+    }
+    if knock.name.trim().is_empty() {
+        return invalid("Say what you are called, so they know who is asking");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder of the circle answers knocks at its door.
+///
+/// Without this, anybody in the room could answer one — and an answer is an
+/// invitation. It would not admit them anywhere, because a forged invitation
+/// carries no valid signature and the circle's own door still checks that. But
+/// it would let a stranger hand somebody a thing that looks like a welcome and
+/// silently is not, which is its own kind of cruelty.
+fn validate_admission(
+    admission: &Admission,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some(holder) = who_this_room_serves()? else {
+        return invalid("There is nothing to answer outside a circle's waiting room");
+    };
+    if &holder != author {
+        return invalid("Only the person whose circle this is may answer a knock");
+    }
+
+    // It must answer a real knock, so an admission cannot be left floating and
+    // later read as an answer to somebody.
+    let action = must_get_action(admission.knock.clone())?;
+    let Some(entry_hash) = action.action().entry_hash() else {
+        return invalid("An answer must refer to a knock");
+    };
+    let entry = must_get_entry(entry_hash.clone())?;
+    if Knock::try_from(entry.content.clone()).is_err() {
+        return invalid("An answer must refer to a knock");
+    }
+
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// Is this agent the one this circle asks to agree as well?
 ///
 /// Read from the circle's own identity, exactly as the membrane reads it, so
@@ -660,6 +854,9 @@ fn is_the_seconder(agent: &AgentPubKey) -> ExternResult<bool> {
         Membrane::Founder(_, Some(seconder)) => &seconder == agent,
         Membrane::Founder(_, None) => false,
         Membrane::Lobby => false,
+        // A waiting room asks nobody to agree. What happens to a knock is
+        // settled in the circle, which is where both agreements live.
+        Membrane::WaitingRoom(_) => false,
         Membrane::Misconfigured => false,
     })
 }
@@ -792,6 +989,8 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Member(m) => validate_member(&m),
             EntryTypes::ProposedMember(p) => validate_proposed_member(&p, action.author()),
             EntryTypes::Endorsement(e) => validate_endorsement(&e, action.author()),
+            EntryTypes::Knock(k) => validate_knock(&k),
+            EntryTypes::Admission(a) => validate_admission(&a, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -842,6 +1041,10 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Endorsement(_) => {
                 invalid("An agreement cannot be changed once it is given")
             }
+            // You may knock again; you may not rewrite the knock somebody has
+            // already read and is deciding about.
+            EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
+            EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
         },
 
         FlatOp::Link(OpLink::CreateLink {

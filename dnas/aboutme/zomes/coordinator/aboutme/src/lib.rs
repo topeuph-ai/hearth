@@ -677,6 +677,9 @@ fn circle_modifiers(
         seconder: seconder
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty()),
+        // A circle is not a waiting room. Its own room is a separate cell,
+        // and it is the only thing anybody outside can reach.
+        waiting_for: None,
     };
 
     // Clone modifiers arrive as YAML, which is why the founder is carried as a
@@ -926,6 +929,18 @@ pub enum Signal {
         proposed: ActionHash,
         by: AgentPubKey,
     },
+    /// Somebody is at the door of a waiting room. Sent only to the holder of
+    /// the circle it serves, who is the only person who can answer.
+    Knocked {
+        by: AgentPubKey,
+        /// What they call themselves. A claim.
+        name: String,
+        /// How they say they are connected. A claim.
+        relationship: String,
+    },
+    /// A knock has been answered, so there is an invitation to collect. Sent
+    /// only to the person who knocked.
+    Admitted { by: AgentPubKey },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -977,7 +992,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Introduced { by, .. }
         | Signal::Suggested { by, .. }
         | Signal::Proposed { by, .. }
-        | Signal::Endorsed { by, .. } => by,
+        | Signal::Endorsed { by, .. }
+        | Signal::Knocked { by, .. }
+        | Signal::Admitted { by } => by,
     };
 
     if claimed != &caller {
@@ -1521,4 +1538,251 @@ pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
     }
 
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// The waiting room
+// ---------------------------------------------------------------------------
+//
+// Joining used to begin with "send me the long line of characters from your
+// app". That is the step where this stopped being possible for somebody
+// elderly, or somebody being helped: an invitation is signed over a key, so
+// the key had to be collected first, one person at a time, by hand.
+//
+// A waiting room turns it round. The holder shares one address that never
+// changes and can go to anybody — a family group, a phone call, a note on the
+// fridge. Whoever has it can knock: say who they are and ask. They bring their
+// own key with them by arriving.
+//
+// It is a separate network on purpose. A circle is closed, so somebody outside
+// cannot write to it — that is the membrane doing its job, and no amount of
+// interface removes it. So the room is somewhere they *can* write, holding
+// nothing but questions and the answers to them.
+
+const KNOCK_ANCHOR: &str = "knocks";
+
+fn knock_path() -> ExternResult<TypedPath> {
+    Path::from(KNOCK_ANCHOR).typed(LinkTypes::WaitingRoomToKnock)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WaitingRoomInput {
+    /// Whoever holds the circle this room serves, as base64 text.
+    pub holder: String,
+    /// Makes this room distinct from any other. Part of its address.
+    pub network_seed: String,
+    /// What this device calls it. Not part of the address.
+    pub name: String,
+}
+
+fn waiting_room_modifiers(
+    holder: &AgentPubKey,
+    network_seed: String,
+) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
+    let properties = CircleProperties {
+        founder: None,
+        lobby: false,
+        seconder: None,
+        waiting_for: Some(holder.to_string()),
+    };
+
+    let yaml = yaml_serde::to_value(&properties).map_err(|e| {
+        wasm_error!(format!(
+            "Could not express the waiting room's properties as YAML: {e}"
+        ))
+    })?;
+
+    Ok(DnaModifiersOpt::none()
+        .with_network_seed(network_seed)
+        .with_properties(YamlProperties::new(yaml)))
+}
+
+/// Open a waiting room, or step into somebody else's.
+///
+/// The same call for both, because they are the same act: a waiting room is
+/// open, so there is nothing to present and nobody to ask. The holder makes
+/// one for her circle; whoever she gives the address to arrives in the same
+/// room by computing the same one.
+#[hdk_extern]
+pub fn enter_waiting_room(input: WaitingRoomInput) -> ExternResult<ClonedCell> {
+    let holder = AgentPubKey::try_from(input.holder.trim())
+        .map_err(|_| wasm_error!("That waiting room names nobody this app can read"))?;
+
+    create_clone_cell(CreateCloneCellInput {
+        cell_id: this_cell()?,
+        modifiers: waiting_room_modifiers(&holder, input.network_seed)?,
+        membrane_proof: None,
+        name: Some(input.name),
+    })
+}
+
+/// Ask to be let in.
+///
+/// No permission check, deliberately. A room where you must already be known
+/// in order to ask is the closed door this exists to replace — and knocking
+/// admits nobody. Everything said here is a claim, and the people deciding are
+/// told so.
+#[hdk_extern]
+pub fn knock(knock: Knock) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Knock(knock.clone()))?;
+
+    let path = knock_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::WaitingRoomToKnock,
+        (),
+    )?;
+
+    // Tell the holder somebody is at the door. Fire and forget, as ever: the
+    // knock is written either way and she will see it when she next looks.
+    if let Membrane::WaitingRoom(holder) = membrane()? {
+        let me = agent_info()?.agent_initial_pubkey;
+        if holder != me {
+            let _ = send_remote_signal(
+                Signal::Knocked {
+                    by: me,
+                    name: knock.name,
+                    relationship: knock.relationship,
+                },
+                vec![holder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the knock just written"))
+}
+
+/// Somebody at the door, and what has become of them.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Knocking {
+    pub knock: ActionHash,
+    /// Whoever knocked. This is the key an invitation would be made for, and
+    /// it is theirs by the fact of their having written the knock — which is
+    /// the whole reason nobody had to collect it from them.
+    pub who: String,
+    /// What they call themselves. A claim.
+    pub name: String,
+    /// How they say they are connected. A claim.
+    pub relationship: String,
+    /// True once they have been answered.
+    pub answered: bool,
+}
+
+/// Everybody at the door, oldest first.
+#[hdk_extern]
+pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
+    let path = knock_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::WaitingRoomToKnock)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut knocks = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    and_my_own(&mut knocks, on_my_own_chain(UnitEntryTypes::Knock)?);
+    oldest_first(&mut knocks);
+
+    let mut out = Vec::new();
+    for record in knocks {
+        let hash = record.action_address().clone();
+        let Some(knock) = record.entry().to_app_option::<Knock>().ok().flatten() else {
+            continue;
+        };
+
+        let answers = get_links(
+            LinkQuery::try_new(hash.clone(), LinkTypes::KnockToAdmission)?,
+            GetStrategy::Network,
+        )?;
+
+        out.push(Knocking {
+            knock: hash,
+            who: record.action().author().to_string(),
+            name: knock.name,
+            relationship: knock.relationship,
+            answered: !answers.is_empty(),
+        });
+    }
+
+    Ok(out)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AdmitInput {
+    pub knock: ActionHash,
+    /// The finished invitation, as the one line of text the app passes about.
+    pub invitation: String,
+}
+
+/// Answer a knock by leaving the invitation where they will find it.
+///
+/// Safe in the open: an invitation is signed over one person's own key, so it
+/// admits nobody else and is a useless blob to anyone who picks it up. That is
+/// what lets the answer be left in a room anybody may enter rather than
+/// carried by hand to the one person it is for.
+#[hdk_extern]
+pub fn admit(input: AdmitInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Admission(Admission {
+        knock: input.knock.clone(),
+        invitation: input.invitation,
+    }))?;
+
+    create_link(
+        input.knock.clone(),
+        action_hash.clone(),
+        LinkTypes::KnockToAdmission,
+        (),
+    )?;
+
+    // Tell them the door is open, so they are not left refreshing.
+    if let Some(record) = get(input.knock, GetOptions::default())? {
+        let waiting = record.action().author().clone();
+        let me = agent_info()?.agent_initial_pubkey;
+        if waiting != me {
+            let _ = send_remote_signal(Signal::Admitted { by: me }, vec![waiting]);
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the answer just written"))
+}
+
+/// The invitation waiting for me here, if there is one.
+///
+/// Read from my own knocks outwards rather than from the whole room, so this
+/// answers "have I been let in" and never "who else has".
+#[hdk_extern]
+pub fn my_admission(_: ()) -> ExternResult<Option<String>> {
+    let mine: Vec<ActionHash> = on_my_own_chain(UnitEntryTypes::Knock)?
+        .into_iter()
+        .map(|r| r.action_address().clone())
+        .collect();
+
+    for knock in mine.into_iter().rev() {
+        let answers = get_links(
+            LinkQuery::try_new(knock, LinkTypes::KnockToAdmission)?,
+            GetStrategy::Network,
+        )?;
+
+        for link in answers {
+            let Some(hash) = link.target.into_action_hash() else {
+                continue;
+            };
+            let Some(record) = get(hash, GetOptions::default())? else {
+                continue;
+            };
+            if let Some(admission) = record.entry().to_app_option::<Admission>().ok().flatten() {
+                return Ok(Some(admission.invitation));
+            }
+        }
+    }
+
+    Ok(None)
 }
