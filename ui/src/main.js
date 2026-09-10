@@ -2757,11 +2757,10 @@ $("go-back").addEventListener("click", () => {
  * time the questions change, and they have changed a lot.
  */
 function goToCreate(withASecondYes) {
+  // Nothing to clear and nothing required: the panel this shows explains what
+  // will happen and asks for nothing, because the second person is chosen
+  // later from the people who are actually in the circle.
   $("seconder-field").hidden = !withASecondYes;
-  $("create-seconder").required = withASecondYes;
-  // Starting fresh each time, so a mind changed on the front page does not
-  // leave an identifier behind on a path that no longer asks for one.
-  $("create-seconder").value = "";
   show("create");
   $("person-name").focus();
 }
