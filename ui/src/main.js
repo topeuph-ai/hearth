@@ -161,6 +161,8 @@ function show(...ids) {
     "choose",
     "create",
     "join",
+    // Asking to be let in, from outside every circle.
+    "knock",
     // Agreeing to who joins is its own screen, because it belongs to nobody's
     // circle. See the note on it in index.html.
     "second",
@@ -830,6 +832,36 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     markAsOwnRecord(circle.cellId, myOwn);
     $("circle-heading").textContent = label;
 
+    /*
+     * A door for it, opened at the same moment.
+     *
+     * One address, made once, that works for everybody and never changes. It
+     * is what replaces asking each person for their identifier before they
+     * can be invited — the step that defeats an elderly holder and made
+     * inviting anybody a chore.
+     *
+     * Its own seed, so it is a different network from the circle: the room is
+     * open and the circle is not, and they must never be the same place.
+     *
+     * If it fails, the circle is still perfectly good and she can still
+     * invite by identifier. So this does not throw.
+     */
+    try {
+      const room = {
+        holder: asText(me),
+        seed: crypto.randomUUID(),
+        about: fullName,
+      };
+      await call("enter_waiting_room", {
+        holder: room.holder,
+        network_seed: room.seed,
+        name: `${label} — door`,
+      });
+      rememberRoom(circle.cellId, room);
+    } catch (error) {
+      console.error("Could not open a waiting room for this circle.", error);
+    }
+
     // Start the record with their name in it, so it is never nameless.
     await call(
       "create_about_me",
@@ -1309,7 +1341,29 @@ async function start() {
      *
      * The zome sends these to one person on purpose, for the same reason. This
      * is the other half of it.
+     *
+     * The two below are the exception, and have to be dealt with before this
+     * check rather than after it: a waiting room is a different network from
+     * the circle it serves, so its signals never come from the cell on screen.
+     * Somebody knocking has no circle open at all.
      */
+    if (payload?.kind === "Knocked") {
+      const who = payload.name?.trim() || "Somebody";
+      const said = payload.relationship?.trim();
+      announce(
+        said
+          ? `${who} is asking to join. They say they are ${said}.`
+          : `${who} is asking to join.`,
+      );
+      if (circle) await loadCircle();
+      return;
+    }
+    if (payload?.kind === "Admitted") {
+      announce("You have been let in.");
+      await lookForMyAdmission();
+      return;
+    }
+
     const from = asText(signal?.value?.cell_id?.[0]);
     if (!circle || from !== asText(circle.cellId?.[0])) return;
 
@@ -1778,6 +1832,12 @@ async function offerToAppointASecondYes() {
   const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
   seconderHere = alreadyAsks ? asText(alreadyAsks) : null;
   await loadPending();
+  await loadTheDoor();
+  // Anybody now agreed to has their invitation left at the door. She
+  // decided when she pressed "Let them in"; this is the consequence of
+  // that and the second agreement, and doing it here is what removes the
+  // errand of coming back to press something again.
+  await deliverAnythingAgreed();
 
   /*
    * The route for a second person who is not in the circle.
@@ -2214,6 +2274,10 @@ async function loadCircles() {
   circles = cells
     .map((c) => c?.value ?? c?.cloned ?? c)
     .filter((c) => c?.clone_id || c?.original_dna_hash)
+    // A waiting room is a cell on this device but it is not a circle: it
+    // holds no record and nobody is in it. Listing it beside real circles
+    // would put a door in the phone book.
+    .filter((c) => !propertiesOf(c)?.waiting_for)
     // A circle taken off this device is disabled, not deleted, so the
     // conductor still lists it. It should not be on her screen.
     .filter((c) => c.enabled !== false)
@@ -2348,6 +2412,8 @@ $("leave-circle").addEventListener("click", async () => {
     // Her name and what this device called this circle, gone from the store as
     // well as from the screen.
     forgetWhatThisDeviceKnew(leavingCell);
+  // And the door to it, which is hers alone and means nothing without it.
+  forgetRoom(leavingCell);
     forgetTheCircle();
     $("leave-details").open = false;
 
@@ -2572,6 +2638,12 @@ wireCopyButton(
   "copy-seconder-invitation",
   () => $("seconder-invitation-output").textContent,
   "Their invitation copied",
+);
+
+wireCopyButton(
+  "copy-door-address",
+  () => $("door-address-output").textContent,
+  "Address copied",
 );
 
 /*
@@ -3014,4 +3086,436 @@ function pendingCard(item, amSeconder) {
   }
 
   return li;
+}
+
+// ---------------------------------------------------------------------------
+// The waiting room
+// ---------------------------------------------------------------------------
+//
+// Joining used to begin with "send me the long line of characters from your
+// app". A waiting room turns that round: the holder shares one address that
+// never changes and works for everybody, and whoever has it knocks. They bring
+// their own key by arriving.
+//
+// The room is a separate network. A circle is closed, so somebody outside
+// cannot write to it — that is the membrane working, not a gap. The room is
+// somewhere they can write, and it holds nothing but questions and answers.
+
+/**
+ * A room's address, as one line of text.
+ *
+ * Deliberately not shaped like an invitation. It is public, it is the same for
+ * everybody, and it lets somebody ask rather than enter — so it should not
+ * look like the thing that does let people in.
+ */
+function roomToAddress(room) {
+  return btoa(JSON.stringify({ door: room.holder, seed: room.seed, about: room.about }));
+}
+
+function addressToRoom(text) {
+  const parsed = JSON.parse(atob(text.trim()));
+  if (typeof parsed?.door !== "string" || typeof parsed?.seed !== "string") {
+    throw new Error("not a waiting room address");
+  }
+  return { holder: parsed.door, seed: parsed.seed, about: parsed.about ?? "" };
+}
+
+/*
+ * Which room belongs to which circle, remembered per device.
+ *
+ * The room is a separate cell with its own seed, and nothing in the circle
+ * points at it — a circle cannot hold a reference to a network its members
+ * might not be in. So the holder's own device remembers, the same way it
+ * remembers what she calls the circle.
+ *
+ * A consequence worth knowing: a holder who moves to a new device has the
+ * circle but not the room, and would have to open a new one. Not fixed, and
+ * noted in the docs rather than left to be discovered.
+ */
+const roomKey = (cellId) => `hearth:room:${asText(cellId?.[0])}`;
+
+function rememberRoom(cellId, room) {
+  try {
+    localStorage.setItem(roomKey(cellId), JSON.stringify(room));
+  } catch {
+    // A convenience, not a rule. She can still invite by identifier.
+  }
+}
+
+function roomFor(cellId) {
+  try {
+    const raw = localStorage.getItem(roomKey(cellId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function forgetRoom(cellId) {
+  try {
+    localStorage.removeItem(roomKey(cellId));
+  } catch {
+    // Nothing to do about a browser that will not clear its own store.
+  }
+}
+
+/** The properties a cloned cell was made with, unpacked. */
+function propertiesOf(cell) {
+  let props = cell?.dna_modifiers?.properties;
+  if (props instanceof Uint8Array) {
+    try {
+      props = decode(props);
+    } catch {
+      return {};
+    }
+  }
+  return props ?? {};
+}
+
+/** Every waiting-room cell on this device, by holder and seed. */
+async function waitingRoomCells() {
+  const info = await client.appInfo();
+  const rooms = [];
+  for (const raw of info.cell_info[ROLE] ?? []) {
+    const c = raw?.value ?? raw?.cloned ?? raw;
+    if (!c?.clone_id || c.enabled === false) continue;
+    const props = propertiesOf(c);
+    if (!props?.waiting_for) continue;
+    rooms.push({
+      cellId: c.cell_id,
+      holder: props.waiting_for,
+      seed: c.dna_modifiers?.network_seed ?? "",
+    });
+  }
+  return rooms;
+}
+
+/** The cell for a room, opening it if this device is not in it yet. */
+async function cellForRoom(room, name) {
+  const already = (await waitingRoomCells()).find(
+    (r) => r.holder === room.holder && r.seed === room.seed,
+  );
+  if (already) return already.cellId;
+
+  const cell = await call("enter_waiting_room", {
+    holder: room.holder,
+    network_seed: room.seed,
+    name,
+  });
+  return cell.cell_id;
+}
+
+// ---------------------------------------------------------------------------
+// The holder's side: who is at the door
+// ---------------------------------------------------------------------------
+
+let knocking = [];
+
+async function loadTheDoor() {
+  const door = $("at-the-door");
+  const address = $("door-address");
+  const room = isHolder() ? roomFor(circle?.cellId) : null;
+
+  if (!room) {
+    door.hidden = true;
+    address.hidden = true;
+    knocking = [];
+    $("knock-list").replaceChildren();
+    return;
+  }
+
+  address.hidden = false;
+  $("door-address-output").textContent = roomToAddress(room);
+
+  let roomCell;
+  try {
+    roomCell = await cellForRoom(room, `${labelFor(circle.cellId, "Circle")} — door`);
+  } catch (error) {
+    // The room is a convenience on top of inviting by identifier. Losing it
+    // must not take the circle screen with it.
+    console.error(error);
+    door.hidden = true;
+    return;
+  }
+
+  knocking = await orNothingYet(call("get_knocks", null, roomCell), []);
+
+  // Somebody who has already been answered is not still at the door.
+  const waiting = knocking.filter((k) => !k.answered);
+
+  door.hidden = false;
+  $("nobody-knocking").hidden = waiting.length > 0;
+
+  const list = $("knock-list");
+  list.replaceChildren();
+  for (const item of waiting) {
+    list.append(knockCard(item, roomCell));
+  }
+}
+
+function knockCard(item, roomCell) {
+  const li = document.createElement("li");
+  li.className = "suggestion";
+
+  const who = document.createElement("p");
+  const said = item.relationship?.trim();
+  // Never "Ronnie Smythe, her cousin" as though anybody had checked. Both
+  // halves are what this person says about themselves.
+  who.textContent = said
+    ? `${item.name} — says they are ${said}`
+    : item.name;
+  li.append(who);
+
+  const key = document.createElement("p");
+  key.className = "hint";
+  key.textContent = item.who;
+  li.append(key);
+
+  const caution = document.createElement("p");
+  caution.className = "hint";
+  caution.textContent =
+    "Anybody with the address can ask, and nothing here has been checked. " +
+    "Only let in somebody you were expecting.";
+  li.append(caution);
+
+  const allow = document.createElement("button");
+  allow.type = "button";
+  allow.textContent = "Let them in";
+
+  const ignore = document.createElement("button");
+  ignore.type = "button";
+  ignore.className = "secondary";
+  ignore.textContent = "Not now";
+
+  allow.addEventListener("click", () =>
+    whileWorking(allow, "Letting them in…", async () => {
+      ignore.disabled = true;
+      try {
+        await letThemIn(item, roomCell);
+      } finally {
+        ignore.disabled = false;
+      }
+    }).catch(problem),
+  );
+
+  /*
+   * "Not now" writes nothing anywhere.
+   *
+   * A refusal recorded in an open room would be a public snub, readable by
+   * everybody who has the address including the person refused. Nothing is
+   * owed to somebody who knocked uninvited, and silence is the kindest
+   * available answer as well as the safest.
+   */
+  ignore.addEventListener("click", () => {
+    ignored.add(item.knock ? asText(item.knock) : item.who);
+    renderIgnored();
+    announce("Left where they are. Nothing was sent to them.");
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  actions.append(allow, ignore);
+  li.append(actions);
+
+  return li;
+}
+
+/** Knocks put aside on this device, for this visit only. */
+const ignored = new Set();
+
+function renderIgnored() {
+  const list = $("knock-list");
+  list.replaceChildren();
+  const waiting = knocking.filter(
+    (k) => !k.answered && !ignored.has(asText(k.knock)) && !ignored.has(k.who),
+  );
+  $("nobody-knocking").hidden = waiting.length > 0;
+  for (const item of waiting) {
+    list.append(knockCard(item, currentRoomCell));
+  }
+}
+
+let currentRoomCell = null;
+
+/**
+ * Let somebody in, by whichever route this circle uses.
+ *
+ * With a second person to agree, this puts them forward and the answer waits
+ * on that agreement — the machinery already built for it, reused whole. With
+ * nobody to agree, the invitation is made and left at the door immediately.
+ */
+async function letThemIn(item, roomCell) {
+  currentRoomCell = roomCell;
+
+  if (seconderHere) {
+    await call(
+      "propose_member",
+      { invitee: item.who, name: item.name },
+      circle.cellId,
+    );
+    announce(
+      `Put forward. ${
+        members.get(seconderHere)?.name?.trim() || "The second person"
+      } has to agree before they can be let in.`,
+    );
+    await loadCircle();
+    return;
+  }
+
+  const invitation = await call(
+    "invite",
+    { invitee: item.who, name: item.name },
+    circle.cellId,
+  );
+  await call(
+    "admit",
+    { knock: item.knock, invitation: invitationToToken(invitation) },
+    roomCell,
+  );
+  announce(`${item.name} has been let in. Their app will open the circle.`);
+  await loadCircle();
+}
+
+/**
+ * Leave the invitation at the door for anybody now agreed to.
+ *
+ * She already decided when she pressed "Let them in"; the second person has
+ * now agreed. Delivering it is the mechanical consequence of both, so it
+ * happens rather than waiting for her to come back and press again — which is
+ * the errand this whole thing exists to remove.
+ */
+async function deliverAnythingAgreed() {
+  const room = isHolder() ? roomFor(circle?.cellId) : null;
+  if (!room || !pending.length || !knocking.length) return;
+
+  const roomCell = currentRoomCell;
+  if (!roomCell) return;
+
+  for (const person of pending) {
+    if (!person.agreed || !person.invitation) continue;
+    const theirKnock = knocking.find((k) => k.who === person.invitee && !k.answered);
+    if (!theirKnock) continue;
+
+    try {
+      await call(
+        "admit",
+        {
+          knock: theirKnock.knock,
+          invitation: invitationToToken(person.invitation),
+        },
+        roomCell,
+      );
+      announce(`${person.name || "They"} have been let in.`);
+    } catch (error) {
+      // Reported to the console rather than the screen: she will see them
+      // still listed, and the next re-read tries again.
+      console.error(error);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The other side: asking to be let in
+// ---------------------------------------------------------------------------
+
+let myRoomCell = null;
+
+function goAndKnock() {
+  $("room-address").value = "";
+  $("knock-name").value = "";
+  $("knock-relationship").value = "";
+  $("knocked").hidden = true;
+  $("knock-form").hidden = false;
+  myRoomCell = null;
+  show("knock");
+  $("room-address").focus();
+}
+
+$("choose-knock").addEventListener("click", goAndKnock);
+
+$("knock-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    let room;
+    try {
+      room = addressToRoom($("room-address").value);
+    } catch {
+      throw new Error(
+        "That is not a waiting room address. It is one long line, sent to " +
+          "you by whoever holds the circle — not an invitation and not an " +
+          "identifier.",
+      );
+    }
+
+    const name = $("knock-name").value.trim();
+    const relationship = $("knock-relationship").value.trim();
+
+    await whileWorking($("knock-submit"), "Asking…", async () => {
+      myRoomCell = await cellForRoom(room, room.about || "A circle");
+      await call("knock", { name, relationship }, myRoomCell);
+    });
+
+    $("knock-form").hidden = true;
+    $("knocked").hidden = false;
+    announce("Asked. They will see your name when they next open Hearth.");
+    await lookForMyAdmission();
+  } catch (error) {
+    problem(error);
+  }
+});
+
+$("check-knock").addEventListener("click", async () => {
+  try {
+    await whileWorking($("check-knock"), "Looking…", lookForMyAdmission);
+    if (!$("announcer").textContent) announce("Not yet. They have not looked.");
+  } catch (error) {
+    problem(error);
+  }
+});
+
+/**
+ * Have they said yes? If so, walk in.
+ *
+ * The invitation was left in the open room, which is safe because it is signed
+ * over this key and is a useless blob to anybody else. So there is nothing to
+ * paste and nothing to be sent: it is collected.
+ */
+async function lookForMyAdmission() {
+  if (!myRoomCell) return;
+
+  const token = await orNothingYet(call("my_admission", null, myRoomCell), null);
+  if (!token) return;
+
+  const bundle = tokenToInvitation(token);
+  const label = bundle.about?.trim() || "Their circle";
+
+  const cell = await call("join_circle", {
+    founder: bundle.founder,
+    name: label,
+    network_seed: bundle.network_seed,
+    invitation: bundle.invitation,
+    seconder: bundle.seconder ?? null,
+  });
+
+  circle = { cellId: cell.cell_id };
+  holder = bundle.founder;
+  setLabelFor(cell.cell_id, label);
+  $("circle-heading").textContent = label;
+  circles.push({ cellId: circle.cellId, name: label, madeWith: label });
+
+  // Say who you are in the same breath as arriving, exactly as the invitation
+  // route does — they already typed it to knock, so do not ask again.
+  await call(
+    "introduce_myself",
+    {
+      name: $("knock-name").value.trim(),
+      relationship: $("knock-relationship").value.trim(),
+    },
+    circle.cellId,
+  );
+
+  alwaysAWayBack();
+  show("circle");
+  announce(`You are in ${label}.`);
+  await loadCircle();
 }

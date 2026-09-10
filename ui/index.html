@@ -140,7 +140,23 @@
             </span>
           </button>
           <!--
-            Fourth, and here rather than inside a circle.
+            The way in that does not begin with "send me your identifier".
+
+            An invitation is signed over a key, so the key had to be collected
+            first — one person at a time, by hand. That is the step where this
+            stopped being possible for somebody elderly or being helped.
+
+            Knocking turns it round: you bring your own key by arriving.
+          -->
+          <button type="button" id="choose-knock">
+            <span class="choice-title">Ask to join a circle</span>
+            <span class="choice-detail">
+              Somebody has given you the address of a circle's waiting room.
+              Say who you are and ask to be let in.
+            </span>
+          </button>
+          <!--
+            Last, and here rather than inside a circle.
 
             This used to live on the circle screen, which meant the person who
             has to agree could only agree once they had joined the circle and
@@ -445,6 +461,94 @@
         circle, so it is done on the ordinary cell every install already has,
         and whoever holds this power can stay outside every circle they guard.
       -->
+
+      <!--
+        Asking to be let in, from outside every circle.
+
+        The one thing pasted here is a waiting room's address, which never
+        changes and is the same for everybody — so it can be read down a phone
+        or dropped in a family group, rather than made for one person at a
+        time. Nothing here is checked and nothing here is private: it is a
+        doorstep.
+      -->
+      <section id="knock" hidden>
+        <div class="actions">
+          <button type="button" class="secondary back-to-choose">Back</button>
+        </div>
+        <h2>Ask to join a circle</h2>
+        <p>
+          Whoever holds the circle will see your name and decide. You will not
+          see anything about the person the circle is about unless they let you
+          in.
+        </p>
+
+        <form id="knock-form">
+          <div class="field">
+            <label for="room-address">The waiting room address</label>
+            <p id="room-address-hint" class="hint">
+              One long line, sent to you by whoever holds the circle. The same
+              one works for everybody, so it may have come to you in a group.
+            </p>
+            <textarea
+              id="room-address"
+              name="room-address"
+              rows="3"
+              required
+              aria-describedby="room-address-hint"
+            ></textarea>
+          </div>
+          <div class="field">
+            <label for="knock-name">Your name</label>
+            <p id="knock-name-hint" class="hint">
+              As you would say it. This is what they will see.
+            </p>
+            <input
+              id="knock-name"
+              name="knock-name"
+              type="text"
+              required
+              autocomplete="off"
+              aria-describedby="knock-name-hint"
+            />
+          </div>
+          <div class="field">
+            <label for="knock-relationship">
+              How are you connected to them?
+            </label>
+            <p id="knock-relationship-hint" class="hint">
+              In your own words. “Her cousin”, “district nurse”, “support
+              worker, Tuesdays”. Nobody checks it.
+            </p>
+            <input
+              id="knock-relationship"
+              name="knock-relationship"
+              type="text"
+              autocomplete="off"
+              aria-describedby="knock-relationship-hint"
+            />
+          </div>
+          <button type="submit" id="knock-submit">Ask to be let in</button>
+        </form>
+
+        <div id="knocked" hidden>
+          <p class="notice">
+            <strong>Asked.</strong> They will see your name when they next
+            open Hearth. There is nothing else for you to do — when they say
+            yes, this will open on its own.
+          </p>
+          <!--
+            No spinner, no elapsed time, no "still waiting". Somebody has not
+            got to it yet, which is not a fault and not something to be
+            anxious about.
+          -->
+          <div class="actions">
+            <button type="button" id="check-knock" class="secondary">
+              Check again
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section id="second" hidden>
         <div class="actions">
           <button type="button" class="secondary back-to-choose">Back</button>
@@ -1157,6 +1261,40 @@
           other. The only message that still has to leave is the last one, to
           the person joining, who is by definition outside.
         -->
+        <!--
+          The door, and who is standing at it.
+
+          One address, shared once, that works for everybody and never
+          changes. It replaces collecting an identifier from each person
+          before you can invite them — which is the step that defeats an
+          elderly holder, and the reason inviting anybody was a chore.
+        -->
+        <section id="at-the-door" hidden>
+          <h3>People asking to join</h3>
+          <ul id="knock-list"></ul>
+          <p id="nobody-knocking" class="hint" hidden>
+            Nobody is waiting. Give somebody the address below and they can ask
+            from their own Hearth.
+          </p>
+        </section>
+
+        <details id="door-address" hidden>
+          <summary>The address to give people</summary>
+          <p class="hint">
+            Send this to anybody you might want in the circle — one at a time
+            or all at once, by text, email or read down the phone. It is the
+            same for everybody and it never changes, so you only send it once.
+            Having it lets somebody <strong>ask</strong>; it does not let them
+            in, and it shows them nothing.
+          </p>
+          <output id="door-address-output"></output>
+          <div class="actions">
+            <button type="button" id="copy-door-address" class="secondary">
+              Copy the address
+            </button>
+          </div>
+        </details>
+
         <section id="pending-members" hidden>
           <h3 id="pending-heading">Waiting to be let in</h3>
           <p id="pending-explains-holder" class="hint" hidden>
