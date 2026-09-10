@@ -234,6 +234,36 @@ async function call(fnName, payload, cellId) {
   });
 }
 
+/**
+ * A read that is allowed to come back with nothing.
+ *
+ * **Reaching nobody and finding nothing look identical from here**, and this
+ * app has already decided which of the two to believe: being away is not a
+ * failure, and a circle whose other members are asleep is not broken.
+ *
+ * Every list on the circle screen is fetched over the network. Somebody who
+ * has just joined has no peers yet — the whole point of `latency.md` is that
+ * it takes about a minute and a half before anybody finds anybody — so those
+ * reads can simply not answer. Left to throw, that put a person who had done
+ * everything right on the error page, moments after joining, with a message
+ * about a request timing out.
+ *
+ * So a read that fails is a read that found nothing yet. The screen already
+ * knows how to say that, the twenty-second re-read will ask again, and
+ * "Check again" is there for somebody who does not want to wait.
+ *
+ * Deliberately only for reads. Writing something and being told it worked
+ * when it did not is a different matter entirely, and those still fail loudly.
+ */
+async function orNothingYet(work, nothing) {
+  try {
+    return await work;
+  } catch (error) {
+    console.warn("Nobody answered; treating as nothing yet.", error);
+    return nothing;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -616,11 +646,17 @@ async function drawTheCircle() {
    * for everybody and my own chain for me, so there is nothing left here to
    * work around.
    */
-  const originals = await call("get_circle_about_me", null, circle.cellId);
+  const originals = await orNothingYet(
+    call("get_circle_about_me", null, circle.cellId),
+    [],
+  );
   const original = originals[0] ?? null;
 
   const current = original
-    ? await call("get_current_about_me", original, circle.cellId)
+    ? await orNothingYet(
+        call("get_current_about_me", original, circle.cellId),
+        null,
+      )
     : null;
 
   const entry = entryOf(current?.record);
@@ -674,10 +710,13 @@ async function drawTheCircle() {
 
   renderReaders(
     written
-      ? await call(
-          "get_acknowledgements",
-          current.record.signed_action.hashed.hash,
-          circle.cellId,
+      ? await orNothingYet(
+          call(
+            "get_acknowledgements",
+            current.record.signed_action.hashed.hash,
+            circle.cellId,
+          ),
+          [],
         )
       : [],
   );
@@ -694,7 +733,10 @@ async function loadSuggestions() {
   // used.
   $("suggest-section").hidden = amHolder;
 
-  suggestions = await call("get_suggestions", null, circle.cellId);
+  suggestions = await orNothingYet(
+    call("get_suggestions", null, circle.cellId),
+    [],
+  );
   renderSuggestions();
 }
 
@@ -1201,7 +1243,27 @@ function watchForArrivals() {
 }
 
 async function start() {
-  client = await withTimeout(AppWebsocket.connect(), 20, "Connecting");
+  /*
+   * Longer than the client's own default, which is sixty seconds.
+   *
+   * `docs/latency.md` says joining a circle takes about ninety seconds, and it
+   * is right. So the library's default and this app's slowest ordinary
+   * operation were sixty and ninety, and the result was
+   * "Request timed out in 60000 ms: call_zome" thrown at somebody who had done
+   * nothing wrong and whose circle was, in fact, about to work.
+   *
+   * The delay is peer discovery — a brand new circle is an empty space and
+   * nobody is looking in it yet. Until that is properly fixed, waiting is the
+   * honest behaviour, and the reads that pass through `orNothingYet` mean a
+   * long wait shows an empty circle rather than an error.
+   */
+  const LONGER_THAN_JOINING_TAKES = 180_000;
+
+  client = await withTimeout(
+    AppWebsocket.connect({ defaultTimeout: LONGER_THAN_JOINING_TAKES }),
+    20,
+    "Connecting",
+  );
 
   const info = await client.appInfo();
   me = info.agent_pub_key;
@@ -1806,7 +1868,10 @@ function describe(agentKey) {
 }
 
 async function loadMembers() {
-  const records = await call("get_members", null, circle.cellId);
+  const records = await orNothingYet(
+    call("get_members", null, circle.cellId),
+    [],
+  );
   members = new Map();
   for (const r of records) {
     const entry = entryOf(r);
