@@ -619,14 +619,39 @@ fn check_membrane_as_far_as(
          * than a silent refusal from strangers later.
          */
         if !may_read_the_circle {
-            return if invitation.seconded.is_some() {
-                Ok(ValidateCallbackResult::Valid)
-            } else {
-                invalid(
+            let Some(seconded) = &invitation.seconded else {
+                return invalid(
                     "This invitation is not finished. This circle asks two people \
                      to agree before anybody joins, and only one of them has.",
-                )
+                );
             };
+
+            /*
+             * One forgery *can* be caught here, without knowing who was
+             * appointed: the holder signing twice.
+             *
+             * Whoever is appointed, it is never her — an appointment naming the
+             * holder is refused when it is written. So a second agreement that
+             * verifies against her own key is a forgery no matter what the
+             * appointment says, and that can be settled with nothing but the
+             * founder key, which is in the circle's identity and needs no
+             * network to read.
+             *
+             * It matters because it is the attack this whole feature exists
+             * for: the holder under pressure, waiving her own safeguard. Left
+             * to the network it would still be refused, but only after the
+             * person had apparently joined — and a door that opens and then
+             * quietly stops working is worse than one that says no.
+             */
+            if verify_signature(founder.clone(), seconded.clone(), agent.clone())? {
+                return invalid(
+                    "The second agreement on this invitation is from the person \
+                     whose circle it is. It has to be somebody else — that is the \
+                     whole of what it is for.",
+                );
+            }
+
+            return Ok(ValidateCallbackResult::Valid);
         }
 
         let action = must_get_action(appointment_hash)?;
