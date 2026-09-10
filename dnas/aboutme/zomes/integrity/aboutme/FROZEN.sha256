@@ -59,5 +59,5 @@
 # signatures at the door, because somebody who has not joined yet cannot read
 # anything inside. What changed is how those two signatures find each other.
 
-linux    UNKNOWN-until-the-first-CI-run
+linux    5620a3caba5e9f448bdeea2c0dd7cc6be44fca9afe4bb4ac5bddb8315d9c6d3a
 windows  1d7d967437bc81a9616b68e312ac606b31161f058ff060a6908c5364e9a95da0
