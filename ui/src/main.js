@@ -982,14 +982,131 @@ $("invite-form").addEventListener("submit", async (event) => {
      */
     const seconder = await call("who_seconds_here", null, circle.cellId);
     $("needs-seconding").hidden = !seconder;
+    $("invitation-finished").hidden = true;
+
+    /*
+     * Where it comes back to, and what it is called meanwhile.
+     *
+     * With a second yes, what is on screen now is half of something. Calling
+     * the button "Copy the invitation" at this point invites her to send the
+     * person joining a thing that cannot let them in — and it looks exactly
+     * like the finished one.
+     */
+    awaitingSecondYes = seconder ? invitee : null;
+    $("finish-invitation").hidden = !seconder;
+    $("finished-invitation").value = "";
+    $("finish-problem").hidden = true;
+    $("copy-invitation").textContent = seconder
+      ? "Copy the half invitation"
+      : "Copy the invitation";
 
     $("copy-invitation").hidden = false;
     $("done-inviting").hidden = false;
     $("invitee").value = "";
-    announce("Invitation ready. Send it to them however you like.");
+    announce(
+      seconder
+        ? "Half an invitation ready. Send it to whoever agrees to who joins."
+        : "Invitation ready. Send it to them however you like.",
+    );
   } catch (error) {
     problem(error);
   }
+});
+
+/*
+ * Who the half invitation currently on screen was made for.
+ *
+ * Kept so the finished one coming back can be checked against it. By this
+ * point three long lines of base64 have been round a messaging app — the
+ * identifier, the half, and the finished one — and to anybody looking at them
+ * they are the same thing.
+ */
+let awaitingSecondYes = null;
+
+/**
+ * Why a pasted-back invitation is not the one to send on, or null if it is.
+ *
+ * A plain function of its arguments so it can be reasoned about and exercised
+ * without a circle, a conductor or a screen. None of this is the real gate —
+ * the membrane is, and every peer checks it — but a mistake caught here costs
+ * a sentence, and the same mistake caught there costs somebody sitting in
+ * front of a screen that says nothing is wrong while nobody ever arrives.
+ *
+ * `expectedInvitee` and `expectedFounder` are skipped when not known rather
+ * than compared against nothing. Getting that wrong told somebody an
+ * invitation was for a different circle when the real trouble was that it was
+ * for a different person — a true-sounding sentence pointing the wrong way,
+ * which is worse than no sentence.
+ */
+function whyThisFinishedInvitationWillNotDo(
+  text,
+  expectedInvitee,
+  expectedFounder,
+) {
+  let bundle;
+  try {
+    bundle = tokenToInvitation(text);
+  } catch {
+    return (
+      "That is not an invitation this circle can read. It should be one long " +
+      "line, pasted whole — it is easy to catch only part of it."
+    );
+  }
+
+  // The commonest slip: pasting back the half that was just sent out.
+  if (!bundle?.invitation?.seconded) {
+    return (
+      "This one has not been agreed to yet — it is still half an invitation. " +
+      "It may be the same one you sent out. Ask them to paste it into " +
+      "“Agree to somebody joining” and send back what comes out."
+    );
+  }
+
+  // The right shape, for the wrong person. Sending it on would admit nobody,
+  // with nothing on anybody's screen to say why.
+  if (expectedInvitee && bundle.invitee !== expectedInvitee) {
+    return (
+      "This is finished, but it is for somebody else. It only lets in the one " +
+      "person it names, so it is no use to the person you just invited."
+    );
+  }
+
+  // A finished invitation to a different circle. Same shape, wrong door.
+  if (expectedFounder && bundle.founder !== expectedFounder) {
+    return "This invitation is for a different circle.";
+  }
+
+  return null;
+}
+
+/**
+ * The finished invitation, come back from the person who agreed.
+ */
+$("finish-invitation").addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const complain = (message) => {
+    const box = $("finish-problem");
+    box.textContent = message;
+    box.hidden = false;
+  };
+
+  const wrong = whyThisFinishedInvitationWillNotDo(
+    $("finished-invitation").value,
+    awaitingSecondYes,
+    holder,
+  );
+  if (wrong) return complain(wrong);
+
+  $("invitation-output").textContent = $("finished-invitation").value.trim();
+  $("needs-seconding").hidden = true;
+  $("invitation-finished").hidden = false;
+  $("copy-invitation").textContent = "Copy the invitation";
+  $("finish-invitation").hidden = true;
+  awaitingSecondYes = null;
+
+  announce("That invitation is finished. Send it to the person joining.");
+  $("copy-invitation").focus();
 });
 
 // ---------------------------------------------------------------------------
@@ -1506,19 +1623,28 @@ async function offerTheSeconderTheirInvitation(seconder) {
   section.hidden = !stillOutside;
   if (!stillOutside) return;
 
-  const known = members.get(asText(seconder))?.name?.trim();
-  $("seconder-who").textContent = known || "The person you named";
-
   if (!seconderInvitations.has(key)) {
-    // Placed before the call so a slow network shows the sentence rather than
-    // an empty box with a copy button under it.
+    /*
+     * A failure here must not take the circle down with it.
+     *
+     * This runs inside the ordinary re-read of the circle, which happens every
+     * twenty seconds. Left to throw, one unlucky call would put the whole
+     * screen into the error page — the record, the people, the suggestions,
+     * all of it — over a convenience.
+     *
+     * Same reasoning as the signals in the zome: this saves her a job, it is
+     * not the job. She can still invite them by hand from the section below,
+     * which is the route that existed before this panel.
+     */
     $("seconder-invitation-output").textContent = "Making their invitation…";
-    const bundle = await call(
-      "invite",
-      asText(seconder),
-      circle.cellId,
-    );
-    seconderInvitations.set(key, invitationToToken(bundle));
+    try {
+      const bundle = await call("invite", asText(seconder), circle.cellId);
+      seconderInvitations.set(key, invitationToToken(bundle));
+    } catch (error) {
+      console.error(error);
+      section.hidden = true;
+      return;
+    }
   }
 
   $("seconder-invitation-output").textContent = seconderInvitations.get(key);
@@ -2071,6 +2197,14 @@ function forgetTheInvitation() {
   $("invitation-output").textContent = "";
   $("copy-invitation").hidden = true;
   $("done-inviting").hidden = true;
+
+  // And everything about finishing it, which names the person it was for.
+  awaitingSecondYes = null;
+  $("needs-seconding").hidden = true;
+  $("invitation-finished").hidden = true;
+  $("finish-invitation").hidden = true;
+  $("finished-invitation").value = "";
+  $("finish-problem").hidden = true;
 }
 
 $("done-inviting").addEventListener("click", () => {

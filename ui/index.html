@@ -1017,6 +1017,10 @@
             agrees to who joins this circle, and they will send you back the
             finished one.
           </p>
+          <p id="invitation-finished" class="notice" hidden>
+            <strong>This one is finished.</strong> Both agreements are on it.
+            Send it to the person joining.
+          </p>
           <output id="invitation-output" hidden></output>
           <div class="actions">
             <button type="button" id="copy-invitation" class="secondary" hidden>
@@ -1031,6 +1035,40 @@
               Back to <span class="about-whom">them</span>
             </button>
           </div>
+
+          <!--
+            Where the finished invitation comes back to.
+
+            The notice above promises that they will send you back the finished
+            one, and for a while there was nowhere on this page to put it when
+            they did. Worse, the half invitation stayed on screen with a copy
+            button under it, so the obvious next move was to send the person
+            joining the half that cannot let them in.
+
+            It is checked rather than just displayed, because by this point
+            three long lines of base64 have been through a messaging app and
+            they all look alike.
+          -->
+          <form id="finish-invitation" hidden>
+            <div class="field">
+              <label for="finished-invitation">
+                Paste the finished invitation when it comes back
+              </label>
+              <p id="finished-invitation-hint" class="hint">
+                The one they send back after agreeing. It replaces the half
+                above, and that is the one to send on.
+              </p>
+              <textarea
+                id="finished-invitation"
+                name="finished-invitation"
+                rows="3"
+                required
+                aria-describedby="finished-invitation-hint"
+              ></textarea>
+            </div>
+            <div id="finish-problem" class="notice" hidden></div>
+            <button type="submit" id="finish-submit">Check it</button>
+          </form>
         </section>
 
         <!--
