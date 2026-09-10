@@ -1163,6 +1163,8 @@ $("finish-invitation").addEventListener("submit", (event) => {
 
   $("needs-seconding").hidden = true;
   $("invitation-finished").hidden = false;
+  // This job is done. The box that asks for one goes away with it.
+  $("finish-invitation").hidden = true;
   $("done-inviting").hidden = false;
   $("finished-invitation").value = "";
   awaitingSecondYes = null;
@@ -1763,7 +1765,17 @@ async function offerToAppointASecondYes() {
    * somewhere to finish an invitation.
    */
   const holderOfATwoPersonCircle = Boolean(isHolder() && alreadyAsks);
-  $("finish-invitation").hidden = !holderOfATwoPersonCircle;
+
+  /*
+   * Nothing left to finish once something finished is on screen.
+   *
+   * Making this always available fixed one fault and caused another: a
+   * completed invitation sat above a box still asking for one to be pasted
+   * back. Two boxes wanting a long line of base64, one of them pointless, and
+   * the finished invitation went into the wrong one.
+   */
+  $("finish-invitation").hidden =
+    !holderOfATwoPersonCircle || !$("invitation-finished").hidden;
 
   /*
    * Only asked where somebody will actually read it.
