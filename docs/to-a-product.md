@@ -178,6 +178,106 @@ an operator, and this project exists because nobody will be one. AD4M has no
 Holochain in the Language layer, which is a different architecture rather than a
 different answer to this question.
 
+## 0c. Who is actually at the door, and what happens when somebody cannot answer
+
+Two questions that came out of walking the waiting room. Neither is built.
+Both are written down here because the reasoning is the expensive part.
+
+### Being fairly sure the person knocking is who they say
+
+A knock carries a name and a relationship, and neither is checked by anything.
+The people deciding are being asked to judge a stranger from two lines of text.
+
+**The tempting answer is to ask for more: a full name, an address, a date of
+birth.** It should be resisted, and not because it is hard.
+
+Nobody can check any of it. There is no operator — that is the whole project —
+so the screen would show a home address with all the authority a home address
+carries, and behind it would be a text box anybody can type into. Every other
+name in this app says "claimed", or "in their own words", for exactly this
+reason. Collecting more unverified detail does not make identity more certain;
+it makes it *look* more certain, which is worse than saying nothing.
+
+It is also a real data protection escalation. A waiting room is an **open**
+network. A name and a relationship sitting in it is one thing; the home address
+of somebody connected to a vulnerable person is another, and it would need the
+[DPIA](DPIA.md) rewritten rather than amended.
+
+**The answer that does work is a shared secret, sent by a different channel.**
+
+> The holder tells the person a word, on the phone. They type it into their
+> knock. She sees it beside their name.
+
+This proves nothing to the world, and does not have to. It proves it **to her**,
+which is the only thing she needs in order to decide. It carries no personal
+data, it cannot pretend to be more than it is, and it costs one box.
+
+The same idea can be applied to the room itself — a password to get in at all,
+stored as a hash in the room's properties and presented as a membrane proof, so
+every peer checks it and no server is needed. Two things to be clear about if
+it is built:
+
+- The hash is readable by anybody who has the address, so a weak password can
+  be guessed offline. It wants a real secret, or a deliberately slow hash.
+- **The address already contains a random secret.** So a room password is not a
+  second lock so much as a second *channel* — address by message, password by
+  voice. That is a genuine improvement, and it is worth building for that
+  reason rather than the one it appears to offer.
+
+An app password is a separate matter and an ordinary one: it protects the keys
+on the device, and the desktop shell can do it.
+
+### When somebody cannot answer any more
+
+**If the second person is incapacitated, this is solved.** Who agrees is an
+entry the holder writes and can write again, so she appoints somebody else and
+nobody re-joins anything. That was the whole reason for moving the person out
+of the circle's identity.
+
+**If the holder is incapacitated, it is not solved.** Her key *is* the circle's
+identity and cannot be changed. Nobody can write the record, nobody can admit
+anybody, and the circle becomes read-only for good.
+
+One suggestion was to make the holder always be the person the record is about,
+so that the circle's purpose ends when they do. **It does not work, and the
+reason matters:** the population About Me exists for most is often exactly the
+people who cannot hold their own record — advanced dementia, learning
+disability, brain injury, a child. That is why holder and subject are separate
+in the first place.
+
+And death is not the failure case. **Capacity is lost gradually.** If the
+holder had to be the subject, a dementia circle would become unmanageable
+precisely as the dementia progressed — unusable at the moment it is most
+needed.
+
+What does survive from that suggestion, and is worth keeping: **when the
+subject dies, the circle's job is finished.** So succession only has to answer
+the narrower case of the *holder* becoming unable while the subject is still
+living. That is a much smaller problem than "what happens when somebody dies".
+
+**The way out that exists today is to re-form the circle**, and it works here
+for a specific reason: every member already holds a complete copy of the
+record. A daughter can make a new circle, seed it from the copy on her own
+machine, and bring everybody across. Nothing is lost except the old circle's
+identity.
+
+What is missing is that nothing distinguishes a rightful successor from
+somebody helping themselves. There is no authority to appoint one — inventing
+that authority means inventing an operator — so the members decide by which
+circle they join, and disagreement means two circles. That is uncomfortable and
+it is the honest consequence of having nobody in charge.
+
+There is a reading that makes it less uncomfortable, and it may be the right
+one. **An About Me is the person's own account of themselves.** Quietly
+transferring authorship of it to somebody else when they can no longer object
+is arguably the wrong thing to build. A successor circle, seeded from theirs,
+with `supported_to_write_this_by` naming whoever took over, says what actually
+happened.
+
+Either way it should be a supported act with a button on it — *"start a new
+circle from this one"* — rather than something a family works out during a
+crisis.
+
 ## 0b. Windows and Linux builds are different networks
 
 **Found 2026-09-08, by the CI check written to enforce the freeze.** The check
