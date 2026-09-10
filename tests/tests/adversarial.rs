@@ -1037,6 +1037,10 @@ async fn lobby_dna() -> DnaFile {
             founder: None,
             lobby: true,
             seconder: None,
+            requires_second_yes: false,
+            // A plain lobby, not a door to anywhere. Nobody may write in it,
+            // and that includes knocking.
+            waiting_for: None,
         }),
     )
     .await
@@ -1699,7 +1703,13 @@ async fn a_circle_with_an_unreadable_second_person_admits_nobody() {
         DnaModifiersOpt::none().with_properties(CircleProperties {
             founder: Some(alice.to_string()),
             lobby: false,
+            // The older way of naming a second person, kept working so that a
+            // circle made that way still asks for two agreements. Unreadable
+            // still closes the circle rather than being quietly ignored, which
+            // is what this test is about.
             seconder: Some("not an identifier at all".to_string()),
+            requires_second_yes: false,
+            waiting_for: None,
         }),
     )
     .await
