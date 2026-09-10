@@ -1013,7 +1013,11 @@ $("invite-form").addEventListener("submit", async (event) => {
       );
     }
 
-    const invitation = await call("invite", invitee, circle.cellId);
+    const invitation = await call(
+      "invite",
+      { invitee, name: $("invitee-name").value.trim() },
+      circle.cellId,
+    );
     const output = $("invitation-output");
     output.hidden = false;
     output.textContent = invitationToToken(invitation);
@@ -1044,6 +1048,7 @@ $("invite-form").addEventListener("submit", async (event) => {
     $("copy-invitation").hidden = false;
     $("done-inviting").hidden = false;
     $("invitee").value = "";
+    $("invitee-name").value = "";
     announce(
       seconder
         ? "Half an invitation ready. Send it to whoever agrees to who joins."
@@ -1715,7 +1720,13 @@ async function offerTheSeconderTheirInvitation(seconder) {
      */
     $("seconder-invitation-output").textContent = "Making their invitation…";
     try {
-      const bundle = await call("invite", asText(seconder), circle.cellId);
+      // No name for them: she named them by identifier when the circle was
+      // made, and nobody has asked her what they are called.
+      const bundle = await call(
+        "invite",
+        { invitee: asText(seconder), name: "" },
+        circle.cellId,
+      );
       seconderInvitations.set(key, invitationToToken(bundle));
     } catch (error) {
       console.error(error);
@@ -1751,7 +1762,16 @@ async function offerToAppointASecondYes() {
    * conditional on a moment. If this circle asks two people, the holder has
    * somewhere to finish an invitation.
    */
-  $("finish-invitation").hidden = !(isHolder() && alreadyAsks);
+  const holderOfATwoPersonCircle = Boolean(isHolder() && alreadyAsks);
+  $("finish-invitation").hidden = !holderOfATwoPersonCircle;
+
+  /*
+   * Only asked where somebody will actually read it.
+   *
+   * In a circle with no second person the name would travel to nobody and be
+   * shown to no one, so asking for it would be a box that does nothing.
+   */
+  $("invitee-name-field").hidden = !holderOfATwoPersonCircle;
 
   await offerTheSeconderTheirInvitation(alreadyAsks);
 
@@ -2548,26 +2568,47 @@ $("half-invitation").addEventListener("input", () => {
     const about = bundle?.about?.trim();
     const asking = bundle?.inviter?.trim();
     const who = bundle?.invitee?.trim();
+    const named = bundle?.invitee_name?.trim();
 
     /*
      * A decision somebody can actually make.
      *
      * This said "This would let uhCAki9XAT… into Margaret Smythe's circle",
-     * which is not something anybody can agree to: it named the circle and a
-     * string of characters, and never said who was asking. The name of the
-     * person being let in does not travel — nothing has told this app what
-     * they are called — so the honest shape is to say who is asking, say the
-     * identifier is the only thing we have for the other, and tell somebody
-     * to check it against what they were told.
+     * which is not something anybody can agree to. It named the circle and a
+     * string of characters, and the only thing a person could honestly agree
+     * to was that they had been asked.
+     *
+     * The name now travels, because the holder types it when she invites. It
+     * is her claim and nothing checks it — but her claim is precisely what
+     * the second person is here to judge. The whole case this exists for is
+     * her being talked into admitting a stranger, and "she says this is
+     * Ronnie, her cousin" is answerable: yes I know Ronnie, or who?
+     *
+     * So the name is said plainly and its standing is said just as plainly,
+     * in the next breath rather than in a footnote.
      */
     note.replaceChildren();
     note.hidden = false;
 
     const sentence = document.createElement("p");
+    const whose = about ? `${about}'s` : "their";
     sentence.textContent = asking
-      ? `${asking} is asking you to let somebody into ${about || "their"}${about ? "'s" : ""} circle.`
-      : `Somebody is asking you to let another person into ${about ? `${about}'s` : "a"} circle.`;
+      ? `${asking} is asking you to let ${named || "somebody"} into ${whose} circle.`
+      : `Somebody is asking you to let ${named || "another person"} into ${about ? `${about}'s` : "a"} circle.`;
     note.append(sentence);
+
+    if (named) {
+      const claimed = document.createElement("p");
+      claimed.className = "hint";
+      // Said immediately, not left to be inferred. A name on a screen looks
+      // established, and this one is somebody's word.
+      // "Pam Smythe calls them", but "they call them" — the verb has to follow
+      // whether there is a name to put in front of it.
+      claimed.textContent = asking
+        ? `“${named}” is what ${asking} calls them. Nothing has checked it.`
+        : `“${named}” is what the person asking calls them. Nothing has checked it.`;
+      note.append(claimed);
+    }
 
     const whoLine = document.createElement("p");
     whoLine.className = "hint";
@@ -2578,9 +2619,11 @@ $("half-invitation").addEventListener("input", () => {
     check.className = "hint";
     // Nothing here can tell you it is the right person. Say that, rather than
     // letting a confident-looking screen do the deciding.
-    check.textContent =
-      "Nobody has checked that this is who they say it is. Compare it with " +
-      "the identifier you were told to expect before you agree.";
+    check.textContent = named
+      ? "If you were expecting this, compare the identifier with the one you " +
+        "were told before you agree."
+      : "Nobody has checked that this is who they say it is. Compare it with " +
+        "the identifier you were told to expect before you agree.";
     note.append(check);
   } catch {
     // Half a paste is unfinished, not wrong.

@@ -1006,6 +1006,32 @@
                 aria-describedby="invitee-hint"
               />
             </div>
+            <!--
+              Asked because somebody else has to make a decision about it.
+
+              An identifier names nobody. The person who has to agree to a join
+              was being shown a line of base64 and asked to say yes, so the
+              only thing they could actually agree to was that they had been
+              asked — which protects no one.
+
+              This is what you call them. Nothing checks it, and the screen
+              that shows it says so.
+            -->
+            <div class="field" id="invitee-name-field" hidden>
+              <label for="invitee-name">Who is this?</label>
+              <p id="invitee-name-hint" class="hint">
+                Their name, as you would say it — “Ronnie Smythe, Margaret’s
+                cousin”. It is shown to the person who has to agree, so they
+                know who they are agreeing to. Nobody checks it.
+              </p>
+              <input
+                id="invitee-name"
+                name="invitee-name"
+                type="text"
+                autocomplete="off"
+                aria-describedby="invitee-name-hint"
+              />
+            </div>
             <button type="submit">Make an invitation</button>
           </form>
           <!--

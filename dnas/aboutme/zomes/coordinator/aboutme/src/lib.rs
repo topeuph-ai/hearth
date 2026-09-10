@@ -57,6 +57,35 @@ pub struct InvitationBundle {
     /// safeguard — it is a rubber stamp with extra steps. It is also simply
     /// what they need in order to sign at all: the signature is over this key.
     pub invitee: String,
+
+    /// Who the person inviting says that key belongs to.
+    ///
+    /// A key identifies nobody. It is a long line of characters anybody can
+    /// generate, and no care taken here changes that — tying a key to a named
+    /// human being is what a certificate authority does, and a certificate
+    /// authority is an operator, which is the thing this project does not
+    /// have.
+    ///
+    /// So this is not identification and must never be shown as though it
+    /// were. It is the holder's own claim about who she is letting in, and
+    /// that turns out to be exactly what the second person needs.
+    ///
+    /// The case the second yes exists for is somebody being talked into
+    /// admitting a stranger. Judging that means judging *her* — "she says this
+    /// is Ronnie, her cousin" — against which the honest answers are "yes, I
+    /// know Ronnie" and "who?". Without a name there is nothing to answer at
+    /// all, and agreeing means agreeing that she asked, which safeguards
+    /// nobody.
+    ///
+    /// **Not signed**, which is a real limit rather than an oversight. Signing
+    /// it would mean putting it inside the membrane proof, and that lives in
+    /// the frozen integrity zome. What a forged label cannot do is change who
+    /// gets in: the signature is over the key, so altering the name misleads
+    /// the reader without admitting anybody the holder had not already signed
+    /// for. See `docs/to-a-product.md`.
+    #[serde(default)]
+    pub invitee_name: String,
+
     /// Whoever this circle asks to agree as well, if it asks anybody. It forms
     /// part of the DNA hash, so it has to travel with the invitation or the
     /// joiner computes a different circle and lands nowhere.
@@ -69,11 +98,25 @@ pub struct InvitationBundle {
     pub invitation: Invitation,
 }
 
-/// `invitee` is their identifier as they sent it to you: base64 text
-/// beginning `uhCAk`, not a name.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InviteInput {
+    /// Their identifier as they sent it to you: base64 text beginning
+    /// `uhCAk`, and not a name.
+    pub invitee: String,
+
+    /// What you call the person that identifier belongs to.
+    ///
+    /// Your claim, not a fact, and nothing anywhere checks it. See
+    /// `invitee_name` on the bundle for why it is worth carrying anyway.
+    /// Optional: an invitation with no name still works, it is just harder for
+    /// the second person to judge.
+    #[serde(default)]
+    pub name: String,
+}
+
 #[hdk_extern]
-pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
-    let invitee = AgentPubKey::try_from(invitee.trim()).map_err(|_| {
+pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
+    let invitee = AgentPubKey::try_from(input.invitee.trim()).map_err(|_| {
         wasm_error!(
             "That does not look like somebody's identifier. It is a long line of              letters and numbers beginning uhCAk, which they can copy from their              own copy of Hearth. It is not their name."
         )
@@ -109,6 +152,7 @@ pub fn invite(invitee: String) -> ExternResult<InvitationBundle> {
         founder: me.to_string(),
         inviter,
         invitee: invitee.to_string(),
+        invitee_name: input.name.trim().to_string(),
         seconder,
         network_seed: dna_info()?.modifiers.network_seed,
         about,

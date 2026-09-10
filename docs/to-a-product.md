@@ -149,6 +149,27 @@ verify who gave it. Per Holochain's own documentation, that split is exactly
 meaning a new circle and stops meaning everybody re-joins. What it costs is a
 migration, which is why it is on this page and not in the code.
 
+**Third: sign the name on an invitation.**
+
+An invitation now carries who the holder says the key belongs to, because
+without it the second person was being shown a line of base64 and asked to
+agree — and the only thing they could honestly agree to was that they had been
+asked. It is her claim, nothing checks it, and every screen that shows it says
+so.
+
+**It is not signed**, and the reason is the freeze: signing it means putting it
+inside the membrane proof, which is built in the integrity zome.
+
+The limit that leaves is narrow but real. The signature is over the key, so
+altering the name in transit cannot admit anybody the holder did not already
+sign for — what it can do is mislead the person deciding. And misleading that
+person is exactly the threat the second yes exists for: somebody being talked
+into an admission. Whoever is doing the talking is usually also the one
+carrying the message.
+
+So when the integrity zome next moves, the name belongs inside what gets
+signed.
+
 **For contrast, two routes deliberately not taken.** Unyt's answer to mutable
 membership is [`joining-service`](https://github.com/unytco/joining-service), "a
 per-hApp REST API that brokers onboarding… controlling who can join" — which is

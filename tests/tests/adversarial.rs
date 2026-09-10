@@ -74,9 +74,7 @@ async fn join(
     let bundle = app_bundle_from_dnas(&[("circle".to_string(), dna.clone())], false, None).await;
 
     let membrane_proof = invitation
-        .map(|i| {
-            SerializedBytes::try_from(i.clone()).map(MembraneProof::new)
-        })
+        .map(|i| SerializedBytes::try_from(i.clone()).map(MembraneProof::new))
         .transpose()?;
 
     let roles = HashMap::from([(
@@ -138,7 +136,14 @@ async fn a_circle_with_a_member() -> (SweetConductor, CellId, CellId) {
         .expect("the founder needs no invitation to her own circle");
 
     let bundle: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&bundle.invitation))
@@ -180,7 +185,14 @@ async fn an_invitation_cannot_be_passed_on() {
 
     // Alice invites Bob. Bob hands his invitation to Dave.
     let for_bob: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let result = join(&conductor, "dave", &dave, &dna, Some(&for_bob.invitation)).await;
@@ -200,7 +212,14 @@ async fn a_member_cannot_forge_an_invitation() {
 
     let alice_cell = join(&conductor, "alice", &alice, &dna, None).await.unwrap();
     let for_bob: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
     let bob_cell = join(&conductor, "bob", &bob, &dna, Some(&for_bob.invitation))
         .await
@@ -209,10 +228,24 @@ async fn a_member_cannot_forge_an_invitation() {
     // Bob can call invite() — there is no permission check on it — but his
     // signature is not the founder's.
     let forged: aboutme::InvitationBundle = conductor
-        .call(&zome(&bob_cell), "invite", mallory.to_string())
+        .call(
+            &zome(&bob_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: mallory.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
-    let result = join(&conductor, "mallory", &mallory, &dna, Some(&forged.invitation)).await;
+    let result = join(
+        &conductor,
+        "mallory",
+        &mallory,
+        &dna,
+        Some(&forged.invitation),
+    )
+    .await;
     assert!(
         result.is_err(),
         "only the founder's signature admits anyone"
@@ -314,11 +347,7 @@ async fn what_i_just_wrote_is_there_the_instant_i_look() {
 
     // Bob offers something and must see that it was written down.
     let suggestion: Record = conductor
-        .call(
-            &zome(&bob_cell),
-            "suggest",
-            a_suggestion(),
-        )
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
         .await;
 
     let offered: Vec<aboutme::SuggestionWithOutcome> = conductor
@@ -378,7 +407,10 @@ async fn editing_your_own_record_in_order_is_not_a_disagreement() {
     // Two corrections, one after the other, each on top of the last — which is
     // what a person sitting at one machine actually does.
     let mut head = original.clone();
-    for matters in ["Seeing my grandchildren", "Seeing my grandchildren on Sundays"] {
+    for matters in [
+        "Seeing my grandchildren",
+        "Seeing my grandchildren on Sundays",
+    ] {
         let mut edited = an_about_me("Alice Bell");
         edited.what_matters_to_me = matters.into();
 
@@ -498,7 +530,14 @@ async fn half_an_invitation_opens_nothing() {
     let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     assert!(
@@ -524,7 +563,14 @@ async fn two_people_agreeing_lets_somebody_in() {
     let (conductor, alice_cell, ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     // Ruth signs from the lobby, never having joined the circle: she is
@@ -564,7 +610,14 @@ async fn the_second_yes_needs_no_second_yes_of_their_own() {
         .expect("the founder needs no invitation to her own circle");
 
     let bundle: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", ruth.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: ruth.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     assert!(
@@ -586,7 +639,14 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     let (conductor, alice_cell, _ruth_lobby, dna, bob) = a_circle_that_asks_two_people().await;
 
     let bundle: aboutme::InvitationBundle = conductor
-        .call(&zome(&alice_cell), "invite", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     // Alice signs a second time, from her own cell, trying to be both
@@ -701,10 +761,7 @@ async fn a_member_cannot_delete_the_persons_record() {
         )
         .await;
 
-    assert!(
-        result.is_err(),
-        "only the author of a record may delete it"
-    );
+    assert!(result.is_err(), "only the author of a record may delete it");
 }
 
 // ---------------------------------------------------------------------------
@@ -1094,7 +1151,10 @@ async fn the_holder_is_told_when_her_invitation_is_taken_up() {
             assert_eq!(by, *bob_cell.agent_pubkey());
             assert_eq!(name, "Dave Smythe");
             assert_eq!(relationship, "her nephew", "in his own words, unchecked");
-            assert!(joined, "the first time somebody speaks up, they have joined");
+            assert!(
+                joined,
+                "the first time somebody speaks up, they have joined"
+            );
         }
         other => panic!("expected an app signal, got {other:?}"),
     }
@@ -1676,4 +1736,74 @@ async fn an_acknowledgement_cannot_point_at_something_that_is_not_a_record() {
         result.is_err(),
         "an acknowledgement must reference an About Me and nothing else"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The second person is told who they are agreeing to
+// ---------------------------------------------------------------------------
+
+/// A key identifies nobody, so the holder says who she thinks it is.
+///
+/// Without this the person being asked to agree sees a line of base64 and
+/// nothing else, and the only thing they can actually agree to is that they
+/// were asked — which safeguards nobody. It is her claim and nothing checks
+/// it; what it gives the second person is something they can answer.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invitation_carries_who_the_holder_says_it_is_for() {
+    let (conductor, alice_cell, _bob_cell) = a_circle_with_a_member().await;
+
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: ronnie.to_string(),
+                name: "  Ronnie Smythe  ".to_string(),
+            },
+        )
+        .await;
+
+    assert_eq!(
+        bundle.invitee_name, "Ronnie Smythe",
+        "the name travels with the invitation, trimmed"
+    );
+    assert_eq!(
+        bundle.invitee,
+        ronnie.to_string(),
+        "and it is attached to the key it was given for"
+    );
+}
+
+/// An invitation with no name still works.
+///
+/// The name is a help, not a requirement. Refusing to make an invitation
+/// without one would turn a courtesy into a gate, and there is nothing to
+/// enforce because nothing is checked anyway.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invitation_without_a_name_is_still_an_invitation() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+    let dna = circle_dna(&alice).await;
+
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None).await.unwrap();
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
+        .await;
+
+    assert_eq!(bundle.invitee_name, "");
+
+    join(&conductor, "bob", &bob, &dna, Some(&bundle.invitation))
+        .await
+        .expect("a nameless invitation still admits the person it names");
 }
