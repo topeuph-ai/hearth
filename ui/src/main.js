@@ -58,6 +58,27 @@ function looksLikeAnInvitation(text) {
   }
 }
 
+/*
+ * Three long lines of characters now pass between people, and to anybody
+ * looking at them they are the same thing: an identifier, an invitation, and
+ * the address of a waiting room. Each has a box of its own, on a screen of its
+ * own, and putting one in the wrong place is the obvious mistake.
+ *
+ * So each box knows the shape of the other two and says which screen the thing
+ * belongs on. Without this, an address pasted into the invitation box reached
+ * the invitation parser and came out as "Cannot read properties of undefined
+ * (reading 'signature')" — a sentence that tells somebody nothing except that
+ * they have broken it, which they have not.
+ */
+function looksLikeARoomAddress(text) {
+  try {
+    const parsed = JSON.parse(atob(text.trim()));
+    return typeof parsed?.door === "string" && typeof parsed?.seed === "string";
+  } catch {
+    return false;
+  }
+}
+
 function invitationToToken(bundle) {
   const seconded = bundle.invitation.seconded;
   return btoa(
@@ -2085,6 +2106,23 @@ $("join-form").addEventListener("submit", async (event) => {
       );
     }
 
+    // The likeliest wrong paste now that a circle has a door as well as
+    // invitations. Both are one long line and neither looks like anything.
+    if (looksLikeARoomAddress(pasted)) {
+      throw new Error(
+        "That is a circle's waiting room address, not an invitation. Go back " +
+          "and choose “Ask to join a circle” instead — you paste it there, say " +
+          "who you are, and they let you in. Nothing else is needed.",
+      );
+    }
+
+    if (!looksLikeAnInvitation(pasted)) {
+      throw new Error(
+        "That is not an invitation this app can read. It should be one long " +
+          "line, pasted whole — it is easy to catch only part of it.",
+      );
+    }
+
     const bundle = tokenToInvitation(pasted);
     const label = $("join-label").value.trim() || bundle.about || "Circle";
 
@@ -3372,9 +3410,27 @@ $("choose-knock").addEventListener("click", goAndKnock);
 $("knock-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
+    const pasted = $("room-address").value.trim();
+
+    // The other half of the same confusion. An invitation is a way *in*; this
+    // box wants the address of the doorstep.
+    if (looksLikeAnInvitation(pasted)) {
+      throw new Error(
+        "That is an invitation, not a waiting room address — and it is better " +
+          "than one, because it lets you straight in. Go back and choose " +
+          "“Join a circle” instead.",
+      );
+    }
+    if (looksLikeAnIdentifier(pasted)) {
+      throw new Error(
+        "That is somebody's identifier, not a waiting room address. The " +
+          "address is a long line sent to you by whoever holds the circle.",
+      );
+    }
+
     let room;
     try {
-      room = addressToRoom($("room-address").value);
+      room = addressToRoom(pasted);
     } catch {
       throw new Error(
         "That is not a waiting room address. It is one long line, sent to " +
