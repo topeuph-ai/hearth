@@ -993,7 +993,6 @@ $("invite-form").addEventListener("submit", async (event) => {
      * like the finished one.
      */
     awaitingSecondYes = seconder ? invitee : null;
-    $("finish-invitation").hidden = !seconder;
     $("finished-invitation").value = "";
     $("finish-problem").hidden = true;
     $("copy-invitation").textContent = seconder
@@ -1098,11 +1097,27 @@ $("finish-invitation").addEventListener("submit", (event) => {
   );
   if (wrong) return complain(wrong);
 
+  /*
+   * Shown, not merely filled in.
+   *
+   * Setting the text without unhiding the box put the finished invitation on
+   * a screen nobody could see, with no copy button — so the answer arrived
+   * and there was still nothing to send the person joining. It only ever
+   * looked right because the half invitation had usually just been made in
+   * the same visit, which left the box open.
+   *
+   * That is the whole of what she came here for, so it is unhidden outright
+   * rather than assumed to be showing already.
+   */
+  $("invitation-output").hidden = false;
   $("invitation-output").textContent = $("finished-invitation").value.trim();
+  $("copy-invitation").hidden = false;
+  $("copy-invitation").textContent = "Copy the invitation";
+
   $("needs-seconding").hidden = true;
   $("invitation-finished").hidden = false;
-  $("copy-invitation").textContent = "Copy the invitation";
-  $("finish-invitation").hidden = true;
+  $("done-inviting").hidden = false;
+  $("finished-invitation").value = "";
   awaitingSecondYes = null;
 
   announce("That invitation is finished. Send it to the person joining.");
@@ -1659,6 +1674,23 @@ async function offerToAppointASecondYes() {
   const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
   $("second-here").hidden = !asksMe;
 
+  /*
+   * Somewhere to bring a finished invitation back to, always — not only in
+   * the minutes after making one.
+   *
+   * This waits on another person. She sends them half an invitation and it
+   * comes back when they get to it: an hour later, or tomorrow. It used to
+   * appear only in the same visit that made the half, so closing the app,
+   * stepping into another circle, or the page simply reloading took away the
+   * only place the answer could go, and she had no way to get it back short
+   * of inviting the same person again.
+   *
+   * There is nothing to remember, so there is no reason for it to be
+   * conditional on a moment. If this circle asks two people, the holder has
+   * somewhere to finish an invitation.
+   */
+  $("finish-invitation").hidden = !(isHolder() && alreadyAsks);
+
   await offerTheSeconderTheirInvitation(alreadyAsks);
 
   /*
@@ -2198,11 +2230,18 @@ function forgetTheInvitation() {
   $("copy-invitation").hidden = true;
   $("done-inviting").hidden = true;
 
-  // And everything about finishing it, which names the person it was for.
+  /*
+   * And everything about finishing it, which names the person it was for.
+   *
+   * Deliberately not the paste box itself. Whether that is on screen is a
+   * fact about the circle — does it ask two people — and not about whether an
+   * invitation was made a moment ago. `offerToAppointASecondYes` owns it, and
+   * runs on every re-read; hiding it here as well is how it came to vanish
+   * for twenty seconds every time somebody pressed "done".
+   */
   awaitingSecondYes = null;
   $("needs-seconding").hidden = true;
   $("invitation-finished").hidden = true;
-  $("finish-invitation").hidden = true;
   $("finished-invitation").value = "";
   $("finish-problem").hidden = true;
 }
