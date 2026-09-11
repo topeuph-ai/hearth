@@ -91,6 +91,23 @@ pub struct InvitationBundle {
     /// joiner computes a different circle and lands nowhere.
     #[serde(default)]
     pub seconder: Option<String>,
+
+    /// Whether this circle asks two people to agree before anybody joins.
+    ///
+    /// **This is the part that is in the DNA hash**, and it has to travel or
+    /// the person joining computes a different circle and lands in a network
+    /// of one — with no error anywhere, because nothing is wrong except that
+    /// they are somewhere else.
+    ///
+    /// `seconder` above used to do this job, back when the person was in the
+    /// identity and therefore always present. Once the person moved into the
+    /// circle, an invitation made before anybody had been appointed carried
+    /// nobody — and the joiner quite correctly built a circle that asks
+    /// nobody. Two circles, one name, both working perfectly, invisible to
+    /// each other for ten minutes until somebody thought to check.
+    #[serde(default)]
+    pub requires_second_yes: bool,
+
     pub network_seed: String,
     /// Whose circle this is, so the recipient knows what they are accepting
     /// before they accept it. A label, not a claim.
@@ -138,6 +155,10 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
     let appointed = appointment_now()?;
     let seconder = appointed.as_ref().map(|(_, key)| key.to_string());
 
+    // The rule this circle was made with. It is in the DNA hash, so it has to
+    // travel with the invitation or the joiner builds a different circle.
+    let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
+
     // My own introduction, off my own chain: what I told this circle I am
     // called. Read locally because it is mine, and empty if I never said.
     let inviter = on_my_own_chain(UnitEntryTypes::Member)?
@@ -152,6 +173,7 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         invitee: invitee.to_string(),
         invitee_name: input.name.trim().to_string(),
         seconder,
+        requires_second_yes: asks_two,
         network_seed: dna_info()?.modifiers.network_seed,
         about,
         invitation: Invitation {
@@ -658,9 +680,21 @@ pub fn delete_about_me(action_hash: ActionHash) -> ExternResult<ActionHash> {
 // Creating and joining are the same operation. The only difference is that a
 // joiner presents an invitation.
 
+/// The circle's identity, which every member must compute identically.
+///
+/// **Everything here is in the DNA hash.** Two people who build these
+/// differently are in two different networks that can never see each
+/// other — and it fails in the worst way there is: invitations are made
+/// and accepted, nothing errors, and nobody ever arrives.
+///
+/// It takes the *rule* and not the person, because that is what the
+/// identity carries now. Passing the person instead was exactly the fault
+/// above: the holder made a circle that asks two people, the invitation
+/// carried nobody because nobody had been appointed yet, and the joiner
+/// computed a circle that asks nobody. Two circles, one name, no error.
 fn circle_modifiers(
     founder: &AgentPubKey,
-    seconder: Option<String>,
+    requires_second_yes: bool,
     network_seed: String,
 ) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
     // Part of the DNA hash, exactly like the founder. Naming somebody who must
@@ -674,7 +708,7 @@ fn circle_modifiers(
         // people to agree; who the second is, is written in the circle and
         // can be written again.
         seconder: None,
-        requires_second_yes: seconder.map(|s| !s.trim().is_empty()).unwrap_or(false),
+        requires_second_yes,
         // A circle is not a waiting room. Its own room is a separate cell,
         // and it is the only thing anybody outside can reach.
         waiting_for: None,
@@ -709,9 +743,12 @@ pub struct CreateCircleInput {
     pub name: String,
     /// Makes this circle distinct from any other for the same person.
     pub network_seed: String,
-    /// Optionally, somebody who must also agree before anybody may join.
+    /// Whether this circle asks two people to agree before anybody joins.
+    ///
+    /// The rule, not the person — who agrees is written inside the circle
+    /// afterwards. This forms part of the identity and the person does not.
     #[serde(default)]
-    pub seconder: Option<String>,
+    pub requires_second_yes: bool,
 }
 
 /// Bring a new circle into being.
@@ -722,7 +759,7 @@ pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
 
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.requires_second_yes, input.network_seed)?,
         membrane_proof: None,
         name: Some(input.name),
     })
@@ -738,11 +775,28 @@ pub struct JoinCircleInput {
     pub network_seed: String,
     /// From the founder's `invite`, signed over the joiner's own key.
     pub invitation: Invitation,
-    /// Whoever this circle asks to agree as well, if it asks anybody.
+    /// Whether the circle asks two people to agree before anybody joins.
     ///
-    /// Part of the DNA hash, so a joiner who leaves it out computes a
-    /// different circle and lands nowhere. It travels in the invitation for
-    /// exactly that reason.
+    /// Part of the DNA hash, so a joiner who gets it wrong computes a
+    /// different circle and lands nowhere — silently, which is why it
+    /// travels in the invitation rather than being guessed at.
+    ///
+    /// It used to be the second person's key doing this job, back when the
+    /// person was in the identity. They are separate things now, and an
+    /// invitation carrying only the person left the joiner computing a
+    /// circle that asks nobody.
+    #[serde(default)]
+    pub requires_second_yes: bool,
+
+    /// Who the circle had appointed when this invitation was made.
+    ///
+    /// **Not part of the identity, and must never be passed to
+    /// `circle_modifiers`.** It is here only so that a plainly wrong
+    /// invitation can be refused before a cell is built from it — see the note
+    /// in `join_circle` about the dead circle called "Auntie Marge".
+    ///
+    /// Keeping it beside the flag is uncomfortable, because confusing the two
+    /// is exactly the fault this commit fixes. The comment is the guard.
     #[serde(default)]
     pub seconder: Option<String>,
 }
@@ -801,7 +855,11 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
 
             return create_clone_cell(CreateCloneCellInput {
                 cell_id: this_cell()?,
-                modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+                modifiers: circle_modifiers(
+                    &founder,
+                    input.requires_second_yes,
+                    input.network_seed,
+                )?,
                 membrane_proof: Some(proof),
                 name: Some(input.name),
             });
@@ -829,7 +887,7 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
 
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.requires_second_yes, input.network_seed)?,
         membrane_proof: Some(proof),
         name: Some(input.name),
     })
@@ -1288,6 +1346,7 @@ fn bundle_around(
     };
 
     let seconder = appointment_now()?.map(|(_, key)| key.to_string());
+    let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
 
     // My own introduction, off my own chain: what I told this circle I am
     // called. Read locally because it is mine, and empty if I never said.
@@ -1306,6 +1365,7 @@ fn bundle_around(
         invitee: invitee.to_string(),
         invitee_name,
         seconder,
+        requires_second_yes: asks_two,
         network_seed: dna_info()?.modifiers.network_seed,
         about,
         invitation,

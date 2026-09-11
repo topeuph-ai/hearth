@@ -836,7 +836,9 @@ $("create-circle-form").addEventListener("submit", async (event) => {
            * circle names nobody, and who agrees is written inside it later
            * and can be written again.
            */
-          seconder: wantsASecondYes ? "yes" : null,
+          // The rule, which is what the circle is built from. The person is
+          // chosen later and is not part of its identity.
+          requires_second_yes: wantsASecondYes,
         }),
     );
     circle = { cellId: cell.cell_id };
@@ -2195,6 +2197,9 @@ $("join-form").addEventListener("submit", async (event) => {
               // Out of the invitation, because it forms part of the DNA hash:
               // get this wrong and you compute a different circle and arrive
               // nowhere.
+              requires_second_yes: Boolean(bundle.requires_second_yes),
+              // Not part of the hash. Only so a plainly wrong invitation is
+              // refused before a cell is built from it.
               seconder: bundle.seconder ?? null,
             }),
     );
@@ -3568,6 +3573,7 @@ async function collectFrom(roomCell) {
     name: label,
     network_seed: bundle.network_seed,
     invitation: bundle.invitation,
+    requires_second_yes: Boolean(bundle.requires_second_yes),
     seconder: bundle.seconder ?? null,
   });
 

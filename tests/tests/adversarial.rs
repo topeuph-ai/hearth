@@ -948,7 +948,7 @@ async fn two_holders_circles_are_different_networks() {
                 founder: alice_cell.agent_pubkey().to_string(),
                 name: "Alice".to_string(),
                 network_seed: "shared-seed".to_string(),
-                seconder: None,
+                requires_second_yes: false,
             },
         )
         .await;
@@ -962,7 +962,7 @@ async fn two_holders_circles_are_different_networks() {
                 founder: bob_cell.agent_pubkey().to_string(),
                 name: "Bob".to_string(),
                 network_seed: "shared-seed".to_string(),
-                seconder: None,
+                requires_second_yes: false,
             },
         )
         .await;
@@ -1002,7 +1002,7 @@ async fn nobody_can_create_a_circle_in_another_persons_name() {
                 founder: someone_else.to_string(),
                 name: "Not mine to make".to_string(),
                 network_seed: "seed".to_string(),
-                seconder: None,
+                requires_second_yes: false,
             },
         )
         .await;
@@ -1029,7 +1029,7 @@ async fn one_person_can_have_separate_circles() {
                     founder: alice.to_string(),
                     name: seed.to_string(),
                     network_seed: seed.to_string(),
-                    seconder: None,
+                    requires_second_yes: false,
                 },
             )
             .await;
@@ -1112,7 +1112,7 @@ async fn a_circle_can_be_cloned_from_the_lobby() {
                 founder: alice.to_string(),
                 name: "Alice".to_string(),
                 network_seed: "seed".to_string(),
-                seconder: None,
+                requires_second_yes: false,
             },
         )
         .await;
@@ -2515,4 +2515,206 @@ async fn a_knock_answered_lets_somebody_into_the_circle() {
     join(&conductor, "ronnie", &ronnie, &dna, Some(&invitation))
         .await
         .expect("an invitation collected from the door must open the circle");
+}
+
+// ---------------------------------------------------------------------------
+// Both sides must build the same circle
+// ---------------------------------------------------------------------------
+//
+// A circle is its DNA hash, and everything that goes into that hash has to be
+// computed identically by the person who made it and the person joining. Get
+// it wrong and there is no error anywhere: two circles with the same name,
+// both working perfectly, invisible to each other.
+//
+// That is not hypothetical. It happened, and it cost ten minutes of staring at
+// two screens that both said everything was fine — because the invitation
+// carried *who* had been asked to agree but not *whether* anybody had to be,
+// and nobody had been asked yet.
+
+/// The invitation carries the rule, not just the person.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_joiner_lands_in_the_same_circle_when_nobody_is_appointed_yet() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+
+    // The lobby every installation has, which real circles are cloned from.
+    let lobby = lobby_dna().await;
+    let alice_lobby = join(&conductor, "alice-lobby", &alice, &lobby, None)
+        .await
+        .expect("anyone may enter the lobby");
+
+    // A circle that asks two people to agree, with nobody asked yet — which is
+    // every such circle for its first few minutes.
+    let hers: ClonedCell = conductor
+        .call(
+            &zome(&alice_lobby),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.to_string(),
+                name: "Margaret".to_string(),
+                network_seed: "same-circle".to_string(),
+                requires_second_yes: true,
+            },
+        )
+        .await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(hers.cell_id()),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: "Dave".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        bundle.requires_second_yes,
+        "the invitation has to say the circle asks two people, or the joiner \
+         builds one that asks nobody"
+    );
+    assert!(
+        bundle.seconder.is_none(),
+        "and nobody has been asked yet, which is exactly the case that broke"
+    );
+
+    let bob_lobby = join(&conductor, "bob-lobby", &bob, &lobby, None)
+        .await
+        .expect("anyone may enter the lobby");
+
+    let his: ClonedCell = conductor
+        .call(
+            &zome(&bob_lobby),
+            "join_circle",
+            aboutme::JoinCircleInput {
+                founder: bundle.founder.clone(),
+                name: "Margaret".to_string(),
+                network_seed: bundle.network_seed.clone(),
+                invitation: bundle.invitation.clone(),
+                requires_second_yes: bundle.requires_second_yes,
+                seconder: bundle.seconder.clone(),
+            },
+        )
+        .await;
+
+    // The whole assertion. Anything else being equal is not enough: if these
+    // differ they are two networks, and nothing will ever tell either of them.
+    assert_eq!(
+        hers.cell_id().dna_hash(),
+        his.cell_id().dna_hash(),
+        "the holder and the joiner must compute the same circle"
+    );
+}
+
+/// And the same where the circle asks nobody, so the flag is not just ignored.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_joiner_lands_in_the_same_circle_when_it_asks_nobody() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+
+    let lobby = lobby_dna().await;
+    let alice_lobby = join(&conductor, "alice-lobby", &alice, &lobby, None)
+        .await
+        .unwrap();
+
+    let hers: ClonedCell = conductor
+        .call(
+            &zome(&alice_lobby),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.to_string(),
+                name: "Margaret".to_string(),
+                network_seed: "asks-nobody".to_string(),
+                requires_second_yes: false,
+            },
+        )
+        .await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(hers.cell_id()),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
+        .await;
+
+    assert!(!bundle.requires_second_yes);
+
+    let bob_lobby = join(&conductor, "bob-lobby", &bob, &lobby, None)
+        .await
+        .unwrap();
+
+    let his: ClonedCell = conductor
+        .call(
+            &zome(&bob_lobby),
+            "join_circle",
+            aboutme::JoinCircleInput {
+                founder: bundle.founder.clone(),
+                name: "Margaret".to_string(),
+                network_seed: bundle.network_seed.clone(),
+                invitation: bundle.invitation.clone(),
+                requires_second_yes: bundle.requires_second_yes,
+                seconder: bundle.seconder.clone(),
+            },
+        )
+        .await;
+
+    assert_eq!(
+        hers.cell_id().dna_hash(),
+        his.cell_id().dna_hash(),
+        "a circle that asks nobody must also be the same circle on both sides"
+    );
+}
+
+/// Two circles that differ only in the rule are different circles.
+///
+/// The other half of the same fact. If these collided, the flag would not be
+/// in the identity at all and none of the above would mean anything.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_rule_is_part_of_what_makes_a_circle() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+
+    let lobby = lobby_dna().await;
+    let alice_lobby = join(&conductor, "alice-lobby", &alice, &lobby, None)
+        .await
+        .unwrap();
+
+    let asking: ClonedCell = conductor
+        .call(
+            &zome(&alice_lobby),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.to_string(),
+                name: "Asks two".to_string(),
+                network_seed: "identical".to_string(),
+                requires_second_yes: true,
+            },
+        )
+        .await;
+
+    let not_asking: ClonedCell = conductor
+        .call(
+            &zome(&alice_lobby),
+            "create_circle",
+            aboutme::CreateCircleInput {
+                founder: alice.to_string(),
+                name: "Asks nobody".to_string(),
+                network_seed: "identical".to_string(),
+                requires_second_yes: false,
+            },
+        )
+        .await;
+
+    assert_ne!(
+        asking.cell_id().dna_hash(),
+        not_asking.cell_id().dna_hash(),
+        "same holder, same seed, different rule — and so a different circle"
+    );
 }
