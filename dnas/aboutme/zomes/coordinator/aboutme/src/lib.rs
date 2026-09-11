@@ -11,8 +11,39 @@ use std::collections::BTreeSet;
 
 const CIRCLE_ANCHOR: &str = "circle";
 
+/*
+ * Anchors are asked about locally, never over the network.
+ *
+ * `TypedPath::ensure` writes the anchor link if it is not there already, and
+ * the "already" is a `get_links`, which by default asks the network. On a
+ * cell seconds old that is a question with nobody to answer it: the call
+ * blocks and then fails with
+ *
+ *     get_links response channel dropped: likely response timeout
+ *
+ * and everything the function had written is rolled back with it.
+ *
+ * Which is exactly what happened to the third person to arrive. They pasted
+ * the address, their app made the room cell, they knocked — and the knock
+ * died inside `ensure` before it was ever written, in front of a wasm error
+ * naming a host function. Their conductor could read that room perfectly
+ * well a minute later. It simply had no peers yet at the moment it asked.
+ *
+ * The network was never needed for this. The anchor is a fixed hash; a link
+ * from it is found by `get_links` whether or not anybody else has written
+ * one, and the duplicates this can leave are the same path-to-path links
+ * every reader here already ignores. So each agent answers "is it there?"
+ * about their own chain, which is the rule the rest of this file already
+ * follows: never ask the network what you can know yourself.
+ */
+fn anchored(name: &str, link_type: LinkTypes) -> ExternResult<TypedPath> {
+    Ok(Path::from(name)
+        .typed(link_type)?
+        .with_strategy(GetStrategy::Local))
+}
+
 fn circle_path() -> ExternResult<TypedPath> {
-    Path::from(CIRCLE_ANCHOR).typed(LinkTypes::CircleToAboutMe)
+    anchored(CIRCLE_ANCHOR, LinkTypes::CircleToAboutMe)
 }
 
 /// Issue an invitation to join this circle.
@@ -233,7 +264,7 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
 
     let action_hash = create_entry(EntryTypes::Member(member.clone()))?;
 
-    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    let path = anchored("members", LinkTypes::CircleToMember)?;
     path.ensure()?;
     create_link(
         path.path_entry_hash()?,
@@ -374,7 +405,7 @@ fn oldest_first(records: &mut [Record]) {
 
 #[hdk_extern]
 pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
-    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    let path = anchored("members", LinkTypes::CircleToMember)?;
     let links = get_links(
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToMember)?,
         GetStrategy::Network,
@@ -1083,7 +1114,7 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
 const SUGGESTION_ANCHOR: &str = "suggestions";
 
 fn suggestion_path() -> ExternResult<TypedPath> {
-    Path::from(SUGGESTION_ANCHOR).typed(LinkTypes::CircleToSuggestion)
+    anchored(SUGGESTION_ANCHOR, LinkTypes::CircleToSuggestion)
 }
 
 #[hdk_extern]
@@ -1331,7 +1362,7 @@ pub fn who_holds_this(_: ()) -> ExternResult<Option<AgentPubKey>> {
 const PROPOSED_ANCHOR: &str = "proposed";
 
 fn proposed_path() -> ExternResult<TypedPath> {
-    Path::from(PROPOSED_ANCHOR).typed(LinkTypes::CircleToProposedMember)
+    anchored(PROPOSED_ANCHOR, LinkTypes::CircleToProposedMember)
 }
 
 /// Everything an invitation carries besides the signatures themselves.
@@ -1642,7 +1673,7 @@ pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
 const KNOCK_ANCHOR: &str = "knocks";
 
 fn knock_path() -> ExternResult<TypedPath> {
-    Path::from(KNOCK_ANCHOR).typed(LinkTypes::WaitingRoomToKnock)
+    anchored(KNOCK_ANCHOR, LinkTypes::WaitingRoomToKnock)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1991,7 +2022,7 @@ pub fn my_admission(_: ()) -> ExternResult<Option<String>> {
 const APPOINTMENT_ANCHOR: &str = "appointments";
 
 fn appointment_path() -> ExternResult<TypedPath> {
-    Path::from(APPOINTMENT_ANCHOR).typed(LinkTypes::CircleToAppointment)
+    anchored(APPOINTMENT_ANCHOR, LinkTypes::CircleToAppointment)
 }
 
 /// Ask somebody to agree to who joins, from now on.
