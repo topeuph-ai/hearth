@@ -1279,7 +1279,32 @@ const LOOK_AGAIN_EVERY = 20000;
 
 function watchForArrivals() {
   setInterval(async () => {
-    if (!circle || document.hidden) return;
+    if (document.hidden) return;
+
+    /*
+     * Waiting at somebody's door, with no circle to re-read yet.
+     *
+     * The screen says the circle will open on its own when they say yes, and
+     * that was resting entirely on a signal — sent the moment she answers,
+     * which is the moment two machines in a brand new empty network have only
+     * just found each other. The message most likely to be lost, carrying the
+     * one thing the person is waiting for.
+     *
+     * The comment below already says not to do this, about a different
+     * arrival, and I did it anyway. So the knock is looked at again on the
+     * same rhythm as everything else, and the signal goes back to being what
+     * it should have been: a way to find out sooner, not the only way.
+     */
+    if (!circle) {
+      try {
+        await lookForMyAdmission();
+      } catch {
+        // They have not answered, or nobody is reachable. Both are ordinary
+        // and neither is worth a screen.
+      }
+      return;
+    }
+
     try {
       /*
        * The whole circle, not only the people in it.
@@ -1329,6 +1354,20 @@ async function start() {
   $("my-identifier").textContent = asText(me);
 
   await loadCircles();
+
+  /*
+   * Anything already waiting at a door, collected before anything else.
+   *
+   * Somebody who knocked, closed the app, and was let in while it was shut
+   * should find the circle open when they come back — not a front page with
+   * no sign that anything happened.
+   */
+  try {
+    await lookForMyAdmission();
+  } catch (error) {
+    console.error("Could not look for an answer at a door.", error);
+  }
+
   watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
@@ -3472,14 +3511,57 @@ $("check-knock").addEventListener("click", async () => {
  * over this key and is a useless blob to anybody else. So there is nothing to
  * paste and nothing to be sent: it is collected.
  */
+/**
+ * Every waiting room this device is standing in.
+ *
+ * Which room somebody knocked at was held in a variable, so closing the app or
+ * the page reloading lost it — and with it the only thing looking for the
+ * answer. They would have been left waiting at a door that had already been
+ * opened, with no way back to it but knocking again.
+ *
+ * The conductor knows which rooms this device is in, and a knock is on their
+ * own chain, so nothing actually needed remembering. Asked rather than stored.
+ */
 async function lookForMyAdmission() {
-  if (!myRoomCell) return;
+  if (myRoomCell) {
+    await collectFrom(myRoomCell);
+    return;
+  }
 
-  const token = await orNothingYet(call("my_admission", null, myRoomCell), null);
+  for (const room of await waitingRoomCells()) {
+    if (circle) return;
+    await collectFrom(room.cellId);
+  }
+}
+
+async function collectFrom(roomCell) {
+  const token = await orNothingYet(call("my_admission", null, roomCell), null);
   if (!token) return;
+
+  /*
+   * What they said when they knocked, read back from the knock itself.
+   *
+   * It used to be read off the form they typed it into, which is empty the
+   * moment the page reloads — so somebody let in after a restart arrived
+   * nameless, in a circle that then asked them who they were. They had
+   * already said.
+   */
+  const knocks = await orNothingYet(call("get_knocks", null, roomCell), []);
+  const mine = knocks.filter((k) => k.who === asText(me)).pop();
 
   const bundle = tokenToInvitation(token);
   const label = bundle.about?.trim() || "Their circle";
+
+  /*
+   * Already in, and only looking again because nothing said so.
+   *
+   * The answer stays in the room for good, and this device stays in the room
+   * with it, so the same invitation is found again on every look. Without
+   * this, coming back to the list of circles and waiting twenty seconds
+   * produced "Tried to create a cell with an existing id" — a wasm error, in
+   * front of somebody whose circle was working perfectly.
+   */
+  if (await circleAlreadyHere(bundle)) return;
 
   const cell = await call("join_circle", {
     founder: bundle.founder,
@@ -3496,15 +3578,14 @@ async function lookForMyAdmission() {
   circles.push({ cellId: circle.cellId, name: label, madeWith: label });
 
   // Say who you are in the same breath as arriving, exactly as the invitation
-  // route does — they already typed it to knock, so do not ask again.
-  await call(
-    "introduce_myself",
-    {
-      name: $("knock-name").value.trim(),
-      relationship: $("knock-relationship").value.trim(),
-    },
-    circle.cellId,
-  );
+  // route does — they already said it when they knocked, so do not ask again.
+  const said = {
+    name: mine?.name?.trim() || $("knock-name").value.trim(),
+    relationship: mine?.relationship?.trim() || $("knock-relationship").value.trim(),
+  };
+  if (said.name) {
+    await call("introduce_myself", said, circle.cellId);
+  }
 
   alwaysAWayBack();
   show("circle");
