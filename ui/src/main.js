@@ -1292,7 +1292,11 @@ async function start() {
           ? `${who} has asked you to agree to who joins this circle.`
           : "You have been asked to agree to who joins this circle.",
       );
-      if (circle) await loadCircle();
+      if (circle) {
+        await loadCircle();
+        // The appointment itself is still on its way. See watchForTheAsking.
+        if (!whoAgrees) watchForTheAsking();
+      }
     }
 
     // And the answer, to the person who asked. A no she does not hear is the
@@ -1689,6 +1693,56 @@ function askTheQuestionIfItIsMine() {
   $("asked-by").textContent =
     members.get(holder)?.name?.trim() || "The person who holds this circle";
   $("asked-already-said-no").hidden = whoAgrees.willing !== false;
+}
+
+/*
+ * The signal outruns the appointment, and the screen used to wait for gossip.
+ *
+ * Found by walking it, and confirmed by asking both conductors rather than
+ * guessing: the person asked was told at once — the signal goes straight to
+ * them — and then had nothing to press. An appointment is an entry the holder
+ * wrote, so it reaches them by gossip, which is seconds or tens of seconds
+ * behind. Until it arrived, `who_agrees_here` answered "nobody", and the only
+ * thing that ever looked again was the twenty-second re-read.
+ *
+ * So: a notification saying you have been asked, above a screen with no way
+ * to answer. The same shape as the holder who let somebody in and was told by
+ * her own screen that she had not.
+ *
+ * This looks again, briefly and often, and stops the moment there is
+ * something to show. Deliberately not a guess from the signal's own payload:
+ * the button that panel offers writes an entry whose validation must read the
+ * appointment, so offering it before the appointment can be read would trade
+ * a missing button for a button that fails.
+ */
+let watchingForTheAsking = null;
+
+function watchForTheAsking() {
+  if (watchingForTheAsking) return;
+
+  const inThisCircle = asText(circle?.cellId?.[0]);
+  let looks = 0;
+
+  watchingForTheAsking = setInterval(async () => {
+    looks += 1;
+    const elsewhere = asText(circle?.cellId?.[0]) !== inThisCircle;
+
+    // Twenty looks is forty seconds, after which the ordinary re-read is as
+    // good as this and there is no reason to keep asking.
+    if (whoAgrees || elsewhere || looks > 20) {
+      clearInterval(watchingForTheAsking);
+      watchingForTheAsking = null;
+      return;
+    }
+
+    // A failed look is not a failure. The next one tries again, and the
+    // twenty-second re-read is still there underneath.
+    try {
+      await readWhoAgrees();
+    } catch (error) {
+      console.error(error);
+    }
+  }, 2000);
 }
 
 async function answerTheAsking(willing) {
@@ -2234,6 +2288,10 @@ function forgetTheCircle() {
   // circle these would be somebody else's answers on somebody else's screen.
   whoAgrees = null;
   seconderHere = null;
+  if (watchingForTheAsking) {
+    clearInterval(watchingForTheAsking);
+    watchingForTheAsking = null;
+  }
   suggestions = [];
   peopleLastSeen = new Set();
   showingSomething = false;
