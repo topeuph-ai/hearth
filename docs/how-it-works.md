@@ -123,6 +123,27 @@ it is also exactly what this project has always claimed the second yes to be.
 She could always have made a circle without one. What she cannot do is do it
 in secret.
 
+#### Being asked is a question, not an instruction
+
+Appointing somebody used to be entirely one-sided. The holder wrote their key
+into the circle and that was the whole of it: they might not know, might not
+want it, and the first they heard was strangers appearing on their screen for
+approval.
+
+So the person asked is told, and **answers**. The answer is an entry in the
+circle naming the appointment it answers, and only the person that appointment
+names may write one. Answering again changes your mind; nothing is erased,
+because the holder may have acted on what you said before.
+
+There are **three states, not two**. Nobody asked; asked and not yet answered;
+answered. "Has not got round to it" and "said no" are the same silence from
+outside, and the holder does completely different things about each — which is
+the whole reason the answer is written down rather than inferred.
+
+What this does **not** do is make anybody agree to an arrival. Nothing could:
+refusing has always been available by simply never endorsing anybody. What it
+adds is that refusing reaches her, so she can ask somebody else.
+
 #### How it stays checkable at all
 
 Everything that must be verified **names the appointment it relies on, by
@@ -213,6 +234,30 @@ answer to one.
 Where the circle asks two people, step 3 puts them forward instead, and the
 invitation is left once the second agreement arrives.
 
+### It is the only way in now
+
+The waiting room began as a convenience sitting on top of inviting somebody by
+their identifier. Both routes existed, which meant two long lines of characters
+went between people and looked identical — and pasting one into the other's box
+produced a raw error about a missing signature. Walking it, that happened
+immediately.
+
+So there is one route and one box. **Nobody sees an invitation.** It still
+exists, and it is still the thing that actually admits somebody, but it is made
+by the holder's app when she presses a name and collected by theirs; it is
+never shown, carried, or pasted anywhere by a person.
+
+What this costs is the thing to say plainly: **a circle's door lives on the
+holder's device.** Which room belongs to which circle is remembered there,
+because a circle cannot hold a reference to a network its members may not be
+in. A holder who moves to a new device keeps the circle and loses the door, and
+opens a new one. Before, inviting by identifier was a second way in that did
+not depend on her device at all.
+
+It buys the step that mattered more. Collecting an identifier from each person
+before you can invite them is the step that defeats an elderly holder, and it
+was the reason inviting anybody was a chore.
+
 **One message still leaves**, to the person joining, because they are outside
 the circle by definition. That is the door, and it is the whole point of there
 being one.
@@ -225,6 +270,37 @@ beginning, and this relies on it being true rather than hoping.
 
 So the answer does not have to be carried by hand to the one person it is for.
 It can be left where they will find it.
+
+### A knock is sealed, because the room is not private
+
+Anybody with a circle's address can read everything in its waiting room. While
+inviting by identifier existed alongside this, somebody could join without ever
+being announced at a door. Make the room the only way in and **every arrival
+becomes visible to everybody holding the address** — "Ronnie Smythe, her
+cousin", in the open. Who visits somebody is itself sensitive: a psychiatrist,
+a substance misuse worker, a domestic abuse advocate.
+
+So the words are boxed to the holder with
+`ed_25519_x_salsa20_poly1305_encrypt`, which is in the HDK and needs no key
+exchange — the holder's agent key is already in the room's own properties.
+
+Two copies are sealed, not one. Boxing is between two keys and opened with the
+**recipient's** secret, so a knock sealed only to the holder would be
+unreadable to the person who wrote it. That is not academic: somebody let in
+after a restart arrived nameless, in a circle that then asked them who they
+were when they had already said it. Their app reads it back from their own
+copy.
+
+**What cannot be hidden is the key that wrote the knock.** It is the action's
+author, and it is the whole reason nobody had to collect it by hand. So the
+room still shows that somebody knocked and which key it was; it no longer says
+who they say they are or what they say they are to the person.
+
+One rule had to move. "Say what you are called" used to be checked by every
+peer, and cannot be: a peer that cannot read a thing cannot have an opinion
+about it. The check is now in the app, where it is a courtesy rather than a
+rule. Nothing was lost by it — an empty name was never dangerous, only useless,
+and the person it inconveniences is the one who wrote it.
 
 ### The rules, all checked by every peer
 
@@ -245,18 +321,20 @@ It can be left where they will find it.
 
 It does not tell anybody who is really knocking. A name and a relationship are
 claims, exactly like every other name in this app, and the screen says so.
-What would actually help — a shared secret sent by a different channel — is
-written up in [`to-a-product.md`](to-a-product.md) and is not built.
+Sealing them changes who can read a claim, not whether it is true. What would
+actually help — a shared secret sent by a different channel — is written up in
+[`to-a-product.md`](to-a-product.md) and is not built.
 
 "Not now" writes nothing anywhere. A refusal recorded in an open room would be
 a public snub, readable by everybody with the address including the person
 refused. Nothing is owed to somebody who knocked uninvited, and silence is the
 kindest available answer as well as the safest.
 
-**One limit worth knowing.** Which room belongs to which circle is remembered
-on the holder's own device, because a circle cannot hold a reference to a
-network its members may not be in. A holder who moves to a new device keeps the
-circle and loses the door, and would have to open a new one.
+**That limit again, because it now matters more than it did.** Which room
+belongs to which circle is remembered on the holder's own device. A holder who
+moves to a new device keeps the circle and loses the door, and opens a new one.
+While inviting by identifier existed alongside this, that was an inconvenience;
+now it is the only way in, so it is the thing to fix next.
 
 ## Two boundaries, not one
 

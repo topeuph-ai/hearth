@@ -1277,6 +1277,36 @@ async function start() {
       announce("Agreed. They are being let in.");
       if (circle) await loadCircle();
     }
+
+    /*
+     * You have been asked to agree to who joins.
+     *
+     * Worth interrupting somebody for: it is a question addressed to them
+     * personally, and until it is answered nobody can join at all. The panel
+     * it puts on screen stays there until they answer, because a sentence
+     * that scrolls away is a sentence somebody did not read.
+     */
+    if (payload?.kind === "Appointed") {
+      const who = members.get(asText(payload.by))?.name?.trim();
+      announce(
+        who
+          ? `${who} has asked you to agree to who joins this circle.`
+          : "You have been asked to agree to who joins this circle.",
+      );
+      if (circle) await loadCircle();
+    }
+
+    // And the answer, to the person who asked. A no she does not hear is the
+    // same to her as no answer at all.
+    if (payload?.kind === "Answered") {
+      const who = members.get(asText(payload.by))?.name?.trim() || "They";
+      announce(
+        payload.willing
+          ? `${who} agreed. Nobody new can join unless you both say yes.`
+          : `${who} would rather not. Ask somebody else by pressing their name.`,
+      );
+      if (circle) await loadCircle();
+    }
   });
 }
 
@@ -1613,94 +1643,78 @@ function sayWhoIsNew() {
 }
 
 /*
- * Whether to offer a second yes, and who could be it.
+ * Who this circle asks to agree to who joins, and how far that has got.
  *
- * Only the holder, only where the circle does not already ask for one, and
- * only listing people who are actually here. Appointing somebody who has not
- * joined would mean a circle nobody can get into, including them.
+ * Three states, not two: nobody asked, asked and not yet answered, answered.
+ * "Has not got round to it" and "said no" are the same silence from outside,
+ * and telling them apart is the whole reason the answer is written down.
  */
-async function offerToAppointASecondYes() {
-  const panel = $("appoint-details");
-  const alreadyAsks = await call("who_seconds_here", null, circle.cellId);
+let whoAgrees = null;
 
-  seconderHere = alreadyAsks ? asText(alreadyAsks) : null;
+async function readWhoAgrees() {
+  whoAgrees = await call("who_agrees_here", null, circle.cellId);
+  seconderHere = whoAgrees?.agrees ?? null;
+
+  // The list was drawn before this read came back, from the last pass. It says
+  // who has been asked and how far it has got, so it is drawn again now that
+  // those are known rather than showing the previous circle’s answer.
+  renderPeople();
+
   await loadPending();
   await loadTheDoor();
-  // Anybody now agreed to has their invitation left at the door. She
-  // decided when she pressed "Let them in"; this is the consequence of
-  // that and the second agreement, and doing it here is what removes the
-  // errand of coming back to press something again.
+  // Anybody now agreed to has their invitation left at the door. She decided
+  // when she pressed "Let them in"; this is the consequence of that and the
+  // second agreement, and doing it here is what removes the errand of coming
+  // back to press something again.
   await deliverAnythingAgreed();
 
-  /*
-   * There used to be a route here for a second person who was not in the
-   * circle: half an invitation, sent out and pasted back. It is gone. Whoever
-   * agrees is picked from the people who are actually in the circle, and
-   * everybody arrives the same way — by knocking at the door.
-   */
+  askTheQuestionIfItIsMine();
+}
 
-  /*
-   * Shown to the holder whether or not the circle already asks somebody.
-   *
-   * It used to vanish once a second yes existed, so that it could not be
-   * switched off. That hid the route without removing the power — the holder
-   * can always make a fresh circle, and this panel is what makes one. What it
-   * actually removed was the only way out of the case nobody had considered:
-   * the second person dies, or loses the device their keys were on, and the
-   * circle can never admit anybody again.
-   */
-  panel.hidden = !isHolder();
+/*
+ * The question, put to the person it is about.
+ *
+ * Shown until it is answered with a yes, which includes after a no: somebody
+ * who declined can change their mind, and the alternative is a screen with no
+ * way back to a decision they have already made.
+ */
+function askTheQuestionIfItIsMine() {
+  const panel = $("asked-to-agree");
+  const mine = whoAgrees && whoAgrees.agrees === asText(me);
+
+  panel.hidden = !mine || whoAgrees.willing === true;
   if (panel.hidden) return;
 
-  const already = Boolean(alreadyAsks);
-  $("appoint-already").hidden = !already;
-  $("appoint-explains").hidden = already;
-
-  if (already) {
-    const who = members.get(asText(alreadyAsks))?.name?.trim();
-    // They may not have introduced themselves, and may no longer be here to.
-    $("appoint-current").textContent = who || "somebody";
-  }
-
-  panel.querySelector("summary").textContent = already
-    ? "Change who agrees to who joins"
-    : "Ask someone to agree to who joins";
-
-  const others = [...members].filter(([key]) => key !== asText(me));
-
-  const choose = $("appoint-who");
-  choose.replaceChildren();
-
-  /*
-   * "Nobody", but only when there is somebody to drop.
-   *
-   * Offered on a circle that has no second yes it would be an option to do
-   * nothing, dressed as a decision.
-   */
-  if (already) {
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "Nobody — go back to just me";
-    choose.append(none);
-  }
-
-  for (const [key, entry] of others) {
-    const option = document.createElement("option");
-    option.value = key;
-    option.textContent = entry.name?.trim() || "Somebody";
-    choose.append(option);
-  }
-
-  /*
-   * The form needs somewhere to go. With a second yes already set that is
-   * always true, because "nobody" is itself a destination; without one it
-   * needs a person, and there may be none here yet.
-   */
-  const canDoSomething = already || others.length > 0;
-  $("appoint-form").hidden = !canDoSomething;
-  $("appoint-explains").hidden = already || others.length === 0;
-  $("appoint-nobody").hidden = canDoSomething;
+  // The holder, by name where she has given one. She made the circle, so she
+  // usually has, but nothing here depends on it.
+  $("asked-by").textContent =
+    members.get(holder)?.name?.trim() || "The person who holds this circle";
+  $("asked-already-said-no").hidden = whoAgrees.willing !== false;
 }
+
+async function answerTheAsking(willing) {
+  const button = willing ? $("agree-to-agree") : $("decline-to-agree");
+  await whileWorking(button, willing ? "Agreeing…" : "Answering…", () =>
+    call(
+      "answer_appointment",
+      { appointment: whoAgrees.appointment, willing },
+      circle.cellId,
+    ),
+  );
+  announce(
+    willing
+      ? "Agreed. Nobody new can join unless you say so too."
+      : "Answered. They will see that you would rather not, and can ask somebody else.",
+  );
+  await loadCircle();
+}
+
+$("agree-to-agree").addEventListener("click", () =>
+  answerTheAsking(true).catch(problem),
+);
+$("decline-to-agree").addEventListener("click", () =>
+  answerTheAsking(false).catch(problem),
+);
 
 function renderPeople() {
   const list = $("people-list");
@@ -1717,17 +1731,91 @@ function renderPeople() {
   $("people").hidden = false;
   $("people-empty").hidden = members.size > 0;
 
+  // Only the holder appoints, and only where there is somebody to appoint.
+  const amHolder = isHolder();
+  $("appoint-hint").hidden = !amHolder || members.size < 2;
+
   for (const [key, entry] of members) {
     const li = document.createElement("li");
     const who = entry.name?.trim() || "Somebody";
     const said = entry.relationship?.trim();
 
+    const line = document.createElement("p");
     // Never "Dave Smythe, Nephew" as though the circle had checked. The
     // relationship is what he said about himself, and the sentence says so.
-    li.textContent = said ? `${who} — ${said}` : who;
-    if (key === asText(me)) li.textContent += " (you)";
+    line.textContent = said ? `${who} — ${said}` : who;
+    if (key === asText(me)) line.textContent += " (you)";
+    li.append(line);
+
+    const theirs = whoAgrees?.agrees === key;
+    if (theirs) li.append(howFarTheAskingHasGot(who));
+
+    // Asking somebody else replaces whoever is asked now, so the person
+    // already asked needs no button of their own — pressing another name is
+    // the whole of changing your mind.
+    if (amHolder && key !== asText(me) && !theirs) {
+      li.append(askThem(key, who));
+    }
+
     list.append(li);
   }
+}
+
+/**
+ * What the person asked has said, in a sentence rather than a state.
+ *
+ * "Asked" and "agreed" are different facts and the holder acts differently on
+ * each, so neither is allowed to stand in for the other.
+ */
+function howFarTheAskingHasGot(who) {
+  const said = document.createElement("p");
+  said.className = whoAgrees.willing === false ? "notice" : "hint";
+  said.textContent =
+    whoAgrees.willing === true
+      ? "Agrees to who joins, along with you."
+      : whoAgrees.willing === false
+        ? "Asked, and would rather not. Nobody new can join until somebody " +
+          "else is asked."
+        : `Asked. ${who} has not answered yet, and nobody new can join until ` +
+          `they do.`;
+  return said;
+}
+
+/**
+ * The act itself: press a name, and they are asked.
+ *
+ * It writes one line in the circle. It used to mean building a whole new
+ * circle and everybody joining it again, because the person was part of the
+ * circle's identity and identity cannot be edited. The circle now carries the
+ * rule and an entry carries the person, so changing who it is costs nothing
+ * and nobody is inconvenienced — which matters on the day it is needed, when
+ * somebody has died or lost the device their keys were on.
+ *
+ * Nothing is erased by it. Who was asked, and when, stays in the circle where
+ * everybody can see it, and that visibility is what the safeguard now rests
+ * on.
+ */
+function askThem(key, who) {
+  const actions = document.createElement("div");
+  actions.className = "actions";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "linky";
+  button.textContent = whoAgrees
+    ? `Ask ${who} instead`
+    : `Ask ${who} to agree to who joins`;
+
+  button.addEventListener("click", () =>
+    whileWorking(button, "Asking…", async () => {
+      await call("appoint", key, circle.cellId);
+      announce(`${who} has been asked. Nobody new can join until they agree.`);
+      await loadCircle();
+    }).catch(problem),
+  );
+
+  actions.append(button);
+  return actions;
 }
 
 // ---------------------------------------------------------------------------
@@ -1782,7 +1870,7 @@ async function loadMembers() {
   // Awaited. It makes a call of its own and writes to the screen, so left
   // unawaited a failure became an unhandled rejection with nothing shown, and
   // it could finish drawing after the screen had already moved somewhere else.
-  await offerToAppointASecondYes();
+  await readWhoAgrees();
 
   const mine = members.get(asText(me));
   $("introduce-section").hidden = Boolean(mine);
@@ -2146,6 +2234,10 @@ function forgetTheCircle() {
   holder = null;
   record = null;
   members = new Map();
+  // Who this circle asked, and who it asked to agree. Carried into the next
+  // circle these would be somebody else's answers on somebody else's screen.
+  whoAgrees = null;
+  seconderHere = null;
   suggestions = [];
   peopleLastSeen = new Set();
   showingSomething = false;
@@ -2161,7 +2253,8 @@ function forgetTheCircle() {
   circleMode = READING;
   $("record-form").hidden = true;
   $("acknowledge-form").hidden = true;
-
+  $("asked-to-agree").hidden = true;
+  $("appoint-hint").hidden = true;
 }
 
 $("leave-circle").addEventListener("click", async () => {
@@ -2214,45 +2307,6 @@ $("leave-circle").addEventListener("click", async () => {
  * the software deciding something on their behalf. She removes it herself when
  * everybody has moved.
  */
-$("appoint-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    /*
-     * Appointing somebody is now a sentence written in the circle.
-     *
-     * It used to be a new circle. The person's key was part of the circle's
-     * identity, and identity cannot be edited — so naming somebody, or
-     * changing who was named, meant building a fresh circle, copying the
-     * record across and every single member joining again.
-     *
-     * That was not a design so much as the only thing possible, and it made
-     * the one situation everybody will eventually meet — the second person
-     * dies, or loses the device their keys were on — cost the whole circle.
-     *
-     * The circle now carries the rule and an entry carries the person. So
-     * this writes one line, and nobody is inconvenienced.
-     */
-    const chosen = $("appoint-who").value || null;
-    if (!chosen) {
-      throw new Error("Choose somebody, or close this and leave it as it is.");
-    }
-
-    const theirName = members.get(chosen)?.name?.trim() || "They";
-
-    await whileWorking($("appoint-submit"), "Asking them…", () =>
-      call("appoint", chosen, circle.cellId),
-    );
-
-    $("appoint-details").open = false;
-    announce(
-      `${theirName} now has to agree to who joins. Nobody has to join again.`,
-    );
-    await loadCircle();
-  } catch (error) {
-    problem(error);
-  }
-});
-
 $("check-people").addEventListener("click", async () => {
   try {
     await whileWorking($("check-people"), "Looking…", () => loadMembers());

@@ -542,6 +542,42 @@
           </button>
         </div>
 
+        <!--
+          Being asked to agree to who joins.
+
+          This used to happen silently. The holder wrote somebody's key into
+          the circle and that was the whole of it — they might not know, might
+          not want it, and had never been asked. The first they heard was
+          strangers appearing on their screen for approval.
+
+          So it is a question now, and it sits here, under the name of the
+          circle, until it is answered. Saying no is a real answer that
+          reaches her, not a silence she has to interpret.
+        -->
+        <section id="asked-to-agree" class="notice" hidden>
+          <h3>You have been asked to agree to who joins</h3>
+          <p>
+            <strong id="asked-by">Somebody</strong> has asked you to be the
+            second person who says yes before anybody new can join this
+            circle.
+          </p>
+          <p class="hint">
+            It means they cannot let somebody in on their own, and neither
+            can you. It is for the day somebody talks one of you into it.
+          </p>
+          <p id="asked-already-said-no" class="hint" hidden>
+            You said no to this. You can change your mind.
+          </p>
+          <div class="actions">
+            <button type="button" id="agree-to-agree">
+              Yes, I will
+            </button>
+            <button type="button" id="decline-to-agree" class="secondary">
+              No, ask somebody else
+            </button>
+          </div>
+        </section>
+
         <form id="rename-form" hidden>
           <div class="field">
             <label for="circle-label">What you call them here</label>
@@ -818,6 +854,19 @@
           <p class="hint">
             How each person describes themselves. Nobody checks any of it.
           </p>
+          <!--
+            Only to the holder, and only where the thing it describes is.
+
+            Choosing the second person used to be a folded-away panel with a
+            dropdown in it, a long way from the list of the people it was
+            choosing between. Pressing a name is the same act with nothing in
+            front of it.
+          -->
+          <p id="appoint-hint" class="hint" hidden>
+            You can ask one of them to be the second person who agrees before
+            anybody new joins. Press their name. They will be asked whether
+            they are willing, and you can change who it is at any time.
+          </p>
           <ul id="people-list"></ul>
           <p id="people-empty" class="hint" hidden>
             Nobody has said who they are yet.
@@ -1039,90 +1088,6 @@
           <ul id="pending-list"></ul>
         </section>
 
-
-        <details id="appoint-details" hidden>
-          <summary>Ask someone to agree to who joins</summary>
-
-          <!--
-            When there is nobody to ask, say so first.
-
-            This used to explain the whole feature at length and then finish
-            with "there is nobody else in this circle yet". Somebody read three
-            paragraphs about a thing they could not do, and the sentence that
-            mattered was the last one on the page. What you cannot do yet, and
-            why, belongs at the top.
-          -->
-          <p id="appoint-nobody" class="notice" hidden>
-            <strong>Not yet — there is nobody to ask.</strong> Send the circle's
-            address to the person you want to ask, let them in, then come back
-            here.
-          </p>
-
-          <!--
-            When the circle already asks somebody.
-
-            This panel used to disappear entirely once a second yes existed,
-            on the reasoning that it must not be switchable off. But the
-            holder can always make a fresh circle — nothing prevents it, and
-            the appointing path here does exactly that. Hiding the panel did
-            not remove the power; it removed the only visible route to it.
-
-            Which mattered most in the case nobody had thought about: if the
-            second person dies, or loses the phone their keys were on, the
-            circle can never admit anybody again. The record still works and
-            the people in it stay in it, but the door is sealed. For an
-            eighty-year-old whose second yes may be a similar age, that is not
-            an edge case.
-          -->
-          <div id="appoint-already" hidden>
-            <p>
-              This circle asks <strong id="appoint-current">somebody</strong>
-              to agree before anybody new joins.
-            </p>
-            <p class="notice">
-              You cannot take that away from <em>this</em> circle — not by
-              choice, and not by mistake. What you can do is start a fresh one
-              and invite everybody again, which is deliberately something they
-              all see happen rather than something you can do quietly.
-            </p>
-            <p>
-              Worth doing if they have died, lost the device their Hearth was
-              on, or are no longer somebody you would ask.
-            </p>
-          </div>
-
-          <div id="appoint-explains">
-            <p>
-              Nobody would be able to join unless two people say yes: you, and
-              whoever you choose. It is meant for the situation where somebody
-              talks you into letting them in — so you will not be able to drop
-              them on your own. Starting again is always possible, and everyone
-              would have to join the new circle, so it cannot be done quietly.
-            </p>
-            <p class="notice">
-              This makes a fresh circle with them named in it and copies the
-              record across. Everyone who is in this one has to join the new
-              one, so it is easiest done now, while there are few people to ask
-              again.
-            </p>
-          </div>
-
-          <form id="appoint-form">
-            <div class="field">
-              <label for="appoint-who">Who has to agree</label>
-              <p id="appoint-who-hint" class="hint">
-                Somebody already in this circle. They will need to join the new
-                one too, like everybody else.
-              </p>
-              <select id="appoint-who" name="appoint-who"></select>
-            </div>
-            <div class="actions">
-              <button type="submit" id="appoint-submit">
-                Make the new circle
-              </button>
-            </div>
-          </form>
-        </details>
 
         <details id="leave-details">
           <summary>Take this off my device</summary>

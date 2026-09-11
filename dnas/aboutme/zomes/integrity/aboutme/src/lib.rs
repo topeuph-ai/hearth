@@ -143,6 +143,36 @@ pub struct Appointment {
     pub agrees: AgentPubKey,
 }
 
+/// An answer to being asked to agree to who joins.
+///
+/// Being appointed used to be something done *to* somebody. The holder wrote
+/// their key into the circle and that was that: they might not know, might
+/// not want it, and might never have been asked. The circle would then sit
+/// waiting on a person who had not agreed to anything, and nothing on any
+/// screen would say so.
+///
+/// Nobody can be made to agree to an arrival — refusing is always possible
+/// by simply never writing an endorsement. What this adds is that refusing
+/// can be *said*, out loud, where the holder sees it and can appoint
+/// somebody else. A silence and a no look identical until one of them is
+/// written down.
+///
+/// Write another to change your mind. The newest one is the answer, and the
+/// older ones stay where everybody can see them, like everything else here.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Consent {
+    /// The appointment being answered.
+    ///
+    /// Named rather than looked up, for the reason that runs through all of
+    /// this: who is appointed changes, and validation must reach the same
+    /// answer on every machine forever.
+    pub appointment: ActionHash,
+
+    /// Whether they are willing.
+    pub willing: bool,
+}
+
 /// Somebody asking to be let into a circle they cannot see.
 ///
 /// Written in a waiting room, which is an open network holding nothing but
@@ -155,9 +185,39 @@ pub struct Appointment {
 /// deciding have to go on, and the interface must present it as somebody's
 /// word rather than as a fact — the same rule as every other name in this
 /// app.
+///
+/// **And it is sealed, because the room is not private.** Anybody with a
+/// circle's address can read everything written in its waiting room. Once
+/// the room is the only way in, that means every arrival is announced in
+/// the open: "Ronnie Smythe, her cousin", readable by everybody who has
+/// ever been given the address. Who visits somebody is itself sensitive —
+/// a psychiatrist, a substance misuse worker, a domestic abuse advocate.
+///
+/// So the words are boxed to the holder. What stays in the open is the key
+/// that wrote the knock, which cannot be hidden: it is the action's author,
+/// and it is the whole reason nobody had to collect it by hand.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct Knock {
+    /// The words, readable by the holder of the circle this room serves.
+    pub for_the_holder: XSalsa20Poly1305EncryptedData,
+
+    /// The same words, readable by whoever wrote them.
+    ///
+    /// Boxing is between two keys and opened with the recipient's secret,
+    /// so sealing to the holder alone would leave the sender unable to read
+    /// their own knock. That matters: somebody let in after a restart used
+    /// to arrive nameless, in a circle that then asked them who they were
+    /// when they had already said. Their app reads it back from here.
+    pub for_me: XSalsa20Poly1305EncryptedData,
+}
+
+/// What is inside a sealed knock.
+///
+/// Not an entry: it never touches the DHT unencrypted. It is the shape both
+/// ends agree on, encoded, boxed, and unboxed again.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct WhoIsKnocking {
     /// What they call themselves.
     pub name: String,
     /// How they say they are connected. "Her cousin", "district nurse".
@@ -268,6 +328,7 @@ pub enum EntryTypes {
     Knock(Knock),
     Admission(Admission),
     Appointment(Appointment),
+    Consent(Consent),
 }
 
 #[hdk_link_types]
@@ -296,6 +357,9 @@ pub enum LinkTypes {
     /// Anchor -> Appointment, so the circle can see who has been asked
     /// to agree to who joins, and when.
     CircleToAppointment,
+    /// Appointment -> the answer to it, so the holder finds out whether the
+    /// person she asked is willing without having to go and ask them again.
+    AppointmentToConsent,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -909,6 +973,22 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Only the person asked answers, and only their own answer.
+        //
+        // The entry rule has already checked that the author is the one the
+        // appointment names. This ties the link to its own author too, so
+        // nobody can file somebody else's answer where the holder reads it.
+        LinkTypes::AppointmentToConsent => {
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("An answer link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only link your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Anybody may knock, and only about themselves.
         LinkTypes::WaitingRoomToKnock => {
             if who_this_room_serves()?.is_none() {
@@ -1006,12 +1086,20 @@ fn who_this_room_serves() -> ExternResult<Option<AgentPubKey>> {
 /// entries would be writable in the plain lobby every installation shares,
 /// which would put "somebody wants to join Margaret Smythe's circle" in front
 /// of every person who ever installs this app.
-fn validate_knock(knock: &Knock) -> ExternResult<ValidateCallbackResult> {
+/// What is left to check once a knock is sealed.
+///
+/// "Say what you are called" used to be enforced here, by every peer. It
+/// cannot be any more: the name is boxed to the holder, and a peer that
+/// cannot read a thing cannot have an opinion about it. That is not a
+/// weakness of this design so much as what encryption on a public DHT
+/// means, and the HDK says as much — encrypted data cannot be validated.
+///
+/// The check moved to the app, where it is a courtesy rather than a rule.
+/// Nothing was lost by that: an empty name was never dangerous, only
+/// useless, and the person it inconveniences is the one who wrote it.
+fn validate_knock(_knock: &Knock) -> ExternResult<ValidateCallbackResult> {
     if who_this_room_serves()?.is_none() {
         return invalid("Knocking only means something in a circle's waiting room");
-    }
-    if knock.name.trim().is_empty() {
-        return invalid("Say what you are called, so they know who is asking");
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -1078,6 +1166,21 @@ fn is_appointed_by(agent: &AgentPubKey, appointment: &ActionHash) -> ExternResul
     };
 
     Ok(&appointed.agrees == agent)
+}
+
+/// Only the person an appointment names may answer it.
+///
+/// Without this anybody in the circle could write "yes, she is willing" on
+/// somebody else's behalf, and the holder's screen would say the safeguard
+/// was in place when the person holding it had never heard of it.
+fn validate_consent(
+    consent: &Consent,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_appointed_by(author, &consent.appointment)? {
+        return invalid("Only the person who was asked may answer");
+    }
+    Ok(ValidateCallbackResult::Valid)
 }
 
 /// Only the holder may appoint somebody, and never herself.
@@ -1226,6 +1329,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Knock(k) => validate_knock(&k),
             EntryTypes::Admission(a) => validate_admission(&a, action.author()),
             EntryTypes::Appointment(a) => validate_appointment(&a, action.author()),
+            EntryTypes::Consent(c) => validate_consent(&c, action.author()),
         },
         FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
             EntryTypes::AboutMe(about_me) => {
@@ -1285,6 +1389,11 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             // on, which is that everybody can see it.
             EntryTypes::Appointment(_) => {
                 invalid("An appointment cannot be changed; appoint somebody else")
+            }
+            // Change your mind by answering again. What you said before stays
+            // said: the holder may have acted on it.
+            EntryTypes::Consent(_) => {
+                invalid("An answer cannot be changed; answer again")
             }
         },
 

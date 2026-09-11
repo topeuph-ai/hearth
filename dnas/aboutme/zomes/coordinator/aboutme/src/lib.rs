@@ -997,6 +997,16 @@ pub enum Signal {
     /// A knock has been answered, so there is an invitation to collect. Sent
     /// only to the person who knocked.
     Admitted { by: AgentPubKey },
+    /// The holder has asked somebody to agree to who joins. Sent only to
+    /// the person being asked, who until now found out by noticing that
+    /// strangers had started appearing on their screen for approval.
+    Appointed {
+        appointment: ActionHash,
+        by: AgentPubKey,
+    },
+    /// They have said whether they are willing. Sent only to the holder,
+    /// who is the one who has to appoint somebody else if they are not.
+    Answered { by: AgentPubKey, willing: bool },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -1050,7 +1060,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Proposed { by, .. }
         | Signal::Endorsed { by, .. }
         | Signal::Knocked { by, .. }
-        | Signal::Admitted { by } => by,
+        | Signal::Admitted { by }
+        | Signal::Appointed { by, .. }
+        | Signal::Answered { by, .. } => by,
     };
 
     if claimed != &caller {
@@ -1693,8 +1705,62 @@ pub fn enter_waiting_room(input: WaitingRoomInput) -> ExternResult<ClonedCell> {
 /// in order to ask is the closed door this exists to replace — and knocking
 /// admits nobody. Everything said here is a claim, and the people deciding are
 /// told so.
+/// Box some words so that one named person can read them.
+///
+/// Sender and recipient may be the same key, which is how somebody seals a
+/// copy to themselves.
+fn seal_for(
+    words: &WhoIsKnocking,
+    sender: AgentPubKey,
+    recipient: AgentPubKey,
+) -> ExternResult<XSalsa20Poly1305EncryptedData> {
+    let bytes = ExternIO::encode(words)
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .into_vec();
+    ed_25519_x_salsa20_poly1305_encrypt(sender, recipient, bytes.into())
+}
+
+/// Open a sealed knock, or give up quietly.
+///
+/// Quietly on purpose. Everybody in a room can read every knock in it, and
+/// almost none of them are theirs to open. Failing to open one is the
+/// ordinary case, not an error.
+fn unseal(
+    sealed: &XSalsa20Poly1305EncryptedData,
+    recipient: AgentPubKey,
+    sender: AgentPubKey,
+) -> Option<WhoIsKnocking> {
+    let opened = ed_25519_x_salsa20_poly1305_decrypt(recipient, sender, sealed.clone()).ok()?;
+    ExternIO::from(opened.as_ref().to_vec()).decode().ok()
+}
+
 #[hdk_extern]
-pub fn knock(knock: Knock) -> ExternResult<Record> {
+pub fn knock(words: WhoIsKnocking) -> ExternResult<Record> {
+    /*
+     * Asked for here rather than checked by every peer.
+     *
+     * It used to be a validation rule. It cannot be one now the words are
+     * sealed — a peer that cannot read a thing cannot have an opinion about
+     * it. Nothing was lost: an empty name was never dangerous, only useless.
+     */
+    if words.name.trim().is_empty() {
+        return Err(wasm_error!(
+            "Say what you are called, so they know who is asking"
+        ));
+    }
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::WaitingRoom(holder) = membrane()? else {
+        return Err(wasm_error!(
+            "Knocking only means something in a circle's waiting room"
+        ));
+    };
+
+    let knock = Knock {
+        for_the_holder: seal_for(&words, me.clone(), holder.clone())?,
+        for_me: seal_for(&words, me.clone(), me.clone())?,
+    };
+
     let action_hash = create_entry(EntryTypes::Knock(knock.clone()))?;
 
     let path = knock_path()?;
@@ -1706,20 +1772,24 @@ pub fn knock(knock: Knock) -> ExternResult<Record> {
         (),
     )?;
 
-    // Tell the holder somebody is at the door. Fire and forget, as ever: the
-    // knock is written either way and she will see it when she next looks.
-    if let Membrane::WaitingRoom(holder) = membrane()? {
-        let me = agent_info()?.agent_initial_pubkey;
-        if holder != me {
-            let _ = send_remote_signal(
-                Signal::Knocked {
-                    by: me,
-                    name: knock.name,
-                    relationship: knock.relationship,
-                },
-                vec![holder],
-            );
-        }
+    /*
+     * Tell the holder somebody is at the door. Fire and forget, as ever: the
+     * knock is written either way and she will see it when she next looks.
+     *
+     * The words travel in the clear here, and that is not the same as
+     * writing them in the open. A remote signal goes to one named agent over
+     * the encrypted transport; the entry sits in a room anybody with the
+     * address can read. Only the second one needed sealing.
+     */
+    if holder != me {
+        let _ = send_remote_signal(
+            Signal::Knocked {
+                by: me,
+                name: words.name,
+                relationship: words.relationship,
+            },
+            vec![holder],
+        );
     }
 
     get(action_hash, GetOptions::default())?
@@ -1735,6 +1805,9 @@ pub struct Knocking {
     /// the whole reason nobody had to collect it from them.
     pub who: String,
     /// What they call themselves. A claim.
+    ///
+    /// Empty where this device cannot open the knock, which is the ordinary
+    /// case for everybody but the holder and the person who wrote it.
     pub name: String,
     /// How they say they are connected. A claim.
     pub relationship: String,
@@ -1761,8 +1834,9 @@ pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
     and_my_own(&mut knocks, on_my_own_chain(UnitEntryTypes::Knock)?);
     oldest_first(&mut knocks);
 
-    // Read once, before the loop, because it does not change inside it.
+    // Read once, before the loop, because neither changes inside it.
     let my_answers = on_my_own_chain(UnitEntryTypes::Admission)?;
+    let me = agent_info()?.agent_initial_pubkey;
 
     let mut out = Vec::new();
     for record in knocks {
@@ -1799,11 +1873,28 @@ pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
                     .is_some_and(|a| a.knock == hash)
             });
 
+        /*
+         * Opened where this device is one of the two ends, and otherwise
+         * left shut.
+         *
+         * The holder opens the copy sealed to her. The person who knocked
+         * opens the copy they sealed to themselves, which is how their own
+         * app can tell them back what they said after a restart. To
+         * everybody else in the room these are two blobs, which is the
+         * entire point of them.
+         */
+        let author = record.action().author().clone();
+        let words = if author == me {
+            unseal(&knock.for_me, me.clone(), me.clone())
+        } else {
+            unseal(&knock.for_the_holder, me.clone(), author.clone())
+        };
+
         out.push(Knocking {
             knock: hash,
-            who: record.action().author().to_string(),
-            name: knock.name,
-            relationship: knock.relationship,
+            who: author.to_string(),
+            name: words.as_ref().map(|w| w.name.clone()).unwrap_or_default(),
+            relationship: words.map(|w| w.relationship).unwrap_or_default(),
             answered,
         });
     }
@@ -1908,12 +1999,20 @@ fn appointment_path() -> ExternResult<TypedPath> {
 /// Writing another one later replaces it. Nothing is erased: who was trusted
 /// with this, and when, stays in the circle where everybody can see it, which
 /// is what the safeguard now rests on.
+///
+/// It is an ask, not an instruction. They are told, and they answer -- see
+/// answer_appointment. Nothing here can compel anybody to agree to an
+/// arrival, and nothing tries to; what this makes possible is that saying no
+/// reaches the holder instead of looking exactly like not having got round
+/// to it yet.
 #[hdk_extern]
 pub fn appoint(agrees: String) -> ExternResult<Record> {
     let agrees = AgentPubKey::try_from(agrees.trim())
         .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
 
-    let action_hash = create_entry(EntryTypes::Appointment(Appointment { agrees }))?;
+    let action_hash = create_entry(EntryTypes::Appointment(Appointment {
+        agrees: agrees.clone(),
+    }))?;
 
     let path = appointment_path()?;
     path.ensure()?;
@@ -1924,8 +2023,122 @@ pub fn appoint(agrees: String) -> ExternResult<Record> {
         (),
     )?;
 
+    // Ask them, rather than leaving them to find out.
+    let me = agent_info()?.agent_initial_pubkey;
+    if agrees != me {
+        let _ = send_remote_signal(
+            Signal::Appointed {
+                appointment: action_hash.clone(),
+                by: me,
+            },
+            vec![agrees],
+        );
+    }
+
     get(action_hash, GetOptions::default())?
         .ok_or_else(|| wasm_error!("Could not read the appointment just written"))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AnswerInput {
+    pub appointment: ActionHash,
+    pub willing: bool,
+}
+
+/// Say whether you are willing to be the one who agrees to who joins.
+///
+/// Answering again changes your mind, and the newest answer is the one that
+/// counts. Nothing is erased -- the holder may have acted on what you said
+/// before.
+#[hdk_extern]
+pub fn answer_appointment(input: AnswerInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Consent(Consent {
+        appointment: input.appointment.clone(),
+        willing: input.willing,
+    }))?;
+
+    create_link(
+        input.appointment,
+        action_hash.clone(),
+        LinkTypes::AppointmentToConsent,
+        (),
+    )?;
+
+    // Tell the holder. A no she does not hear is the same to her as no answer
+    // at all, and this exists precisely to tell those two apart.
+    let me = agent_info()?.agent_initial_pubkey;
+    if let Membrane::Founder(founder, _) = membrane()? {
+        if founder != me {
+            let _ = send_remote_signal(
+                Signal::Answered {
+                    by: me,
+                    willing: input.willing,
+                },
+                vec![founder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the answer just written"))
+}
+
+/// Who has been asked to agree to who joins, and what they said.
+///
+/// One read for the whole state, because every screen that cares about any
+/// part of it cares about all of it: a name to show, whether to put the
+/// question in front of the person being asked, and whether to tell the
+/// holder she needs to ask somebody else.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WhoAgrees {
+    pub appointment: ActionHash,
+    /// The person asked, as text.
+    pub agrees: String,
+    /// What they said, and None while they have not answered.
+    ///
+    /// Three states, not two. "Not answered yet" and "said no" look the same
+    /// from outside and mean entirely different things to the holder.
+    pub willing: Option<bool>,
+}
+
+#[hdk_extern]
+pub fn who_agrees_here(_: ()) -> ExternResult<Option<WhoAgrees>> {
+    let Some((appointment, agrees)) = appointment_now()? else {
+        return Ok(None);
+    };
+    let willing = answer_to(&appointment)?;
+    Ok(Some(WhoAgrees {
+        appointment,
+        agrees: agrees.to_string(),
+        willing,
+    }))
+}
+
+/// The newest answer to one appointment, if it has been answered.
+fn answer_to(appointment: &ActionHash) -> ExternResult<Option<bool>> {
+    let links = get_links(
+        LinkQuery::try_new(appointment.clone(), LinkTypes::AppointmentToConsent)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    // Mine too, so somebody who has just answered sees their own answer
+    // without waiting for the network to hear about it. The same rule as
+    // everywhere else here, and the one whose absence once had a holder
+    // press "let them in" twice.
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::Consent)?);
+    oldest_first(&mut found);
+
+    Ok(found.into_iter().rev().find_map(|record| {
+        let consent = record.entry().to_app_option::<Consent>().ok().flatten()?;
+        (&consent.appointment == appointment).then_some(consent.willing)
+    }))
 }
 
 /// The appointment in force: the newest one the holder has written.

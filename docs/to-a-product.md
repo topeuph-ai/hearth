@@ -350,11 +350,17 @@ at a door. Make the room the only way in and **every arrival becomes visible to
 everyone holding that address** — including a psychiatrist, a substance misuse
 worker, a domestic abuse advocate. Who visits somebody is itself sensitive.
 
-**So encrypting knocks moves from a nice-to-have to a requirement**, and has to
-land in the same change rather than after it.
-`ed_25519_x_salsa20_poly1305_encrypt` is in the HDK, so a knock can be readable
-by the holder and noise to everybody else. Without it, this simplification
-quietly buys a privacy problem the route it replaces did not have.
+**So encrypting knocks moved from a nice-to-have to a requirement**, and
+landed in the same change rather than after it. The name and relationship are
+boxed to the holder with `ed_25519_x_salsa20_poly1305_encrypt`, and a second
+copy is boxed to the person knocking so their own app can read back what they
+said. What stays in the open is the key that wrote the knock, which cannot be
+hidden — it is the action's author, and it is the reason nobody has to collect
+it by hand.
+
+One validation rule had to move to the app to pay for it: "say what you are
+called" cannot be checked by peers who cannot read the words. See
+[`how-it-works.md`](how-it-works.md).
 
 ### Already true, and worth not rebuilding: she answers at leisure
 
@@ -375,15 +381,29 @@ present" into "Ronnie Smythe, her cousin, is asking" — which is why it cannot
 be skipped. Not for security; because a list of keys is not something a person
 can act on.
 
-### Decided: nominate by name, and ask the person
+### Built: nominate by name, and ask the person
 
 The holder picks the second person from the list of people in the circle, by
-their name rather than by pasting a key. The person is then asked whether they
-are willing, and can decline.
+pressing their name. There is no key to paste and no separate panel: the act
+is where the people are.
 
-At the moment she appoints unilaterally and they discover they have a job.
-Declining has to be recorded to mean anything, so this is one more entry type
-and its rules. Small.
+The person is then **asked**, and answers. Before this she appointed
+unilaterally and they discovered they had a job — the first they heard was
+strangers appearing on their screen for approval.
+
+The answer is an entry, `Consent`, naming the appointment it answers, and only
+the person that appointment names may write one. That is the whole of the new
+integrity-zome surface: one entry type, one link type, one rule.
+
+**Three states, not two.** Nobody asked; asked and not yet answered; answered.
+The holder does entirely different things about each, and "has not got round to
+it" and "said no" are the same silence from outside. That is the only reason
+the answer is written down rather than inferred.
+
+It cannot make anybody agree to an arrival, and does not try. Refusing has
+always been available by never endorsing anybody. What it adds is that refusing
+**reaches her**, so she can ask somebody else — which she does by pressing
+another name.
 
 ### Open: redundancy and a check are not the same thing
 
@@ -422,6 +442,26 @@ people; they may **not** write the record. "Only the person may write their own
 About Me" is load-bearing — the record keeps one voice, and everybody else's
 knowledge comes in as suggestions the holder accepts. A co-holder who can edit
 it breaks the thing the whole record is.
+
+**Where this stands after the four built items.** The co-holder is not built.
+Nothing above it required a decision about it, and it is the one piece of this
+that would change what a circle *is* rather than how it is used, so it is worth
+leaving until somebody outside this room has looked at it.
+
+Two things about it are now firmer than they were.
+
+The second yes is already **only a tripwire**, and the consent work above makes
+that plainer rather than changing it: who agrees is an entry the holder writes,
+so she can write another one naming anybody, including a second device of her
+own. The network cannot refuse an invitation that names no appointment, because
+"has she appointed anybody yet" is a question whose answer changes. What stops
+a quiet admission is that everybody can see who was asked and when. A co-holder
+would not weaken a wall; it would stand beside a tripwire.
+
+And **the door now lives on one device**. With inviting-by-identifier gone,
+a holder who loses her device keeps the circle and loses the only way into it.
+That is the incapacity problem arriving early, by a different route, and it
+makes the co-holder case stronger than it was when this section was written.
 
 **Claude's recommendation, not a decision taken:** if only one of the two gets
 built, build the co-holder. The pressure case is real but rarer; the protection

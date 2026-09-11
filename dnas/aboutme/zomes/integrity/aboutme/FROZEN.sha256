@@ -59,5 +59,32 @@
 # signatures at the door, because somebody who has not joined yet cannot read
 # anything inside. What changed is how those two signatures find each other.
 
-linux    474f461e0b8c82d5b15a6f65c8a48e5679be862faae664b522ffee66f68716a7
-windows  6ca5507c96f05c5b39d001117ee1c47386ea7cad33d27bc6e3a6c699c14a068b
+# ---------------------------------------------------------------------------
+# Rebased a third time, on the same migration.
+# ---------------------------------------------------------------------------
+#
+# Two changes, in one rebase, because the door and the second yes were both
+# being rebuilt at once.
+#
+# One entry type and one link type were added so that being asked to agree to
+# who joins is something a person answers rather than something done to them.
+# Before this the holder wrote somebody's key into the circle and that was the
+# whole of it: they might not know, might not want it, and the first they
+# heard was strangers appearing on their screen for approval.
+#
+# And a knock is now sealed to the holder. With the waiting room the only way
+# in, every arrival is announced at a door anybody with the address can read,
+# and who visits somebody is itself sensitive. The name and relationship are
+# boxed; the key that wrote the knock cannot be hidden and is not.
+#
+# Still the same migration as the one above -- neither hash has been in a
+# release -- so this costs nobody anything beyond what that already cost.
+#
+#   linux    474f461e0b8c82d5b15a6f65c8a48e5679be862faae664b522ffee66f68716a7
+#   windows  6ca5507c96f05c5b39d001117ee1c47386ea7cad33d27bc6e3a6c699c14a068b
+#
+# The membrane did not change again. What a joiner presents at the door is
+# exactly what it was.
+
+linux    UNKNOWN-until-the-first-CI-run
+windows  7700b2092c7691feacde26446807bc9fde791b81a731d6f867c8fe1e2cc1077b

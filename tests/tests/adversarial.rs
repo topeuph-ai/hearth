@@ -2307,8 +2307,13 @@ fn from_text(text: &str) -> Invitation {
         .expect("and unpacks again")
 }
 
-fn a_knock() -> aboutme_integrity::Knock {
-    aboutme_integrity::Knock {
+/// What somebody says when they knock.
+///
+/// The words, not the entry. A knock on the DHT is two sealed boxes; the zome
+/// makes them, because sealing needs the holder’s key and the keystore, and
+/// neither belongs in a test fixture.
+fn a_knock() -> aboutme_integrity::WhoIsKnocking {
+    aboutme_integrity::WhoIsKnocking {
         name: "Ronnie Smythe".to_string(),
         relationship: "her cousin".to_string(),
     }
@@ -2716,5 +2721,307 @@ async fn the_rule_is_part_of_what_makes_a_circle() {
         asking.cell_id.dna_hash(),
         not_asking.cell_id.dna_hash(),
         "same holder, same seed, different rule — and so a different circle"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Being asked is a question, not an instruction
+// ---------------------------------------------------------------------------
+//
+// The holder writes an appointment naming somebody. Nothing about that can
+// make them agree to an arrival — refusing is always available by simply never
+// endorsing anybody. What these cover is that refusing can be *said*, where
+// the holder sees it, and that nobody else can say it on their behalf.
+
+/// What one cell says about who agrees here, right now.
+async fn who_agrees(conductor: &SweetConductor, cell: &CellId) -> Option<aboutme::WhoAgrees> {
+    conductor.call(&zome(cell), "who_agrees_here", ()).await
+}
+
+/// Wait for an answer to reach a cell that did not write it.
+///
+/// Polled rather than assumed. These are two agents on one conductor, but they
+/// are still two agents: the answer is written on one chain and read from the
+/// other over the network, and expecting that to be instant is how a test
+/// comes to pass on the machine that wrote it and nowhere else.
+async fn wait_for_answer(
+    conductor: &SweetConductor,
+    cell: &CellId,
+    want: Option<bool>,
+) -> Option<bool> {
+    for _ in 0..60 {
+        let seen = who_agrees(conductor, cell).await.and_then(|w| w.willing);
+        if seen == want {
+            return seen;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    who_agrees(conductor, cell).await.and_then(|w| w.willing)
+}
+
+/// Nobody has answered, and that is not the same as having said no.
+#[tokio::test(flavor = "multi_thread")]
+async fn asked_and_not_yet_answered_is_its_own_state() {
+    let (conductor, alice_cell, _ruth_cell, _dave_cell, _ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let asked = who_agrees(&conductor, &alice_cell)
+        .await
+        .expect("somebody has been asked");
+
+    assert_eq!(
+        asked.willing, None,
+        "an unanswered asking must not read as a yes or as a no — the holder \
+         acts differently on each of the three"
+    );
+}
+
+/// The answer reaches the holder, which is the whole reason it is written down.
+#[tokio::test(flavor = "multi_thread")]
+async fn saying_no_is_something_the_holder_can_see() {
+    let (conductor, alice_cell, ruth_cell, _dave_cell, _ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let appointment = who_agrees(&conductor, &ruth_cell)
+        .await
+        .expect("Ruth was asked")
+        .appointment;
+
+    let _: Record = conductor
+        .call(
+            &zome(&ruth_cell),
+            "answer_appointment",
+            aboutme::AnswerInput {
+                appointment,
+                willing: false,
+            },
+        )
+        .await;
+
+    assert_eq!(
+        wait_for_answer(&conductor, &alice_cell, Some(false)).await,
+        Some(false),
+        "a no the holder cannot see is the same to her as no answer at all, \
+         and telling those two apart is what this exists for"
+    );
+}
+
+/// You may change your mind, and the newest answer is the one that counts.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_newest_answer_is_the_answer() {
+    let (conductor, alice_cell, ruth_cell, _dave_cell, _ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let appointment = who_agrees(&conductor, &ruth_cell)
+        .await
+        .expect("Ruth was asked")
+        .appointment;
+
+    for willing in [false, true] {
+        let _: Record = conductor
+            .call(
+                &zome(&ruth_cell),
+                "answer_appointment",
+                aboutme::AnswerInput {
+                    appointment: appointment.clone(),
+                    willing,
+                },
+            )
+            .await;
+    }
+
+    assert_eq!(
+        who_agrees(&conductor, &ruth_cell).await.unwrap().willing,
+        Some(true),
+        "the second answer replaces the first on her own screen without \
+         waiting for the network, which is the rule everywhere else here"
+    );
+
+    assert_eq!(
+        wait_for_answer(&conductor, &alice_cell, Some(true)).await,
+        Some(true),
+        "and it replaces it for the holder too; nothing is erased, but the \
+         newest answer is the one she is looking at"
+    );
+}
+
+/// Somebody else's willingness is not yours to declare.
+///
+/// Without this an ordinary member could write "yes, she is willing" and the
+/// holder's screen would say the safeguard was in place when the person
+/// holding it had never heard of it.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_person_asked_may_answer() {
+    let (conductor, alice_cell, ruth_cell, dave_cell, _ronnie) =
+        a_circle_with_both_people_in_it().await;
+
+    let appointment = who_agrees(&conductor, &ruth_cell)
+        .await
+        .expect("Ruth was asked")
+        .appointment;
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&dave_cell),
+            "answer_appointment",
+            aboutme::AnswerInput {
+                appointment,
+                willing: true,
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "only the person an appointment names may answer it"
+    );
+
+    assert_eq!(
+        who_agrees(&conductor, &alice_cell).await.unwrap().willing,
+        None,
+        "and the holder is still waiting, rather than looking at an answer \
+         Ruth never gave"
+    );
+}
+
+/// A room is public, so what is said in it is sealed.
+///
+/// Once the room is the only way into a circle, every arrival is announced at
+/// its door — and anybody who has ever been given the address can read that
+/// door. "Ronnie Smythe, her cousin" in the open is a fact about who visits
+/// somebody, which is itself sensitive: a psychiatrist, a substance misuse
+/// worker, a domestic abuse advocate.
+///
+/// So the words are boxed to the holder. What cannot be hidden is the key that
+/// wrote the knock — it is the action's author, and it is the whole reason
+/// nobody had to collect it by hand.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_knock_says_nothing_to_the_rest_of_the_room() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+    let mallory = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let alice_room = join(&conductor, "alice-room", &alice, &room, None)
+        .await
+        .expect("the holder stands at her own door");
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .unwrap();
+    let mallory_cell = join(&conductor, "mallory-room", &mallory, &room, None)
+        .await
+        .expect("the room is open to her too, which is the point of testing this");
+
+    let _: Record = conductor
+        .call(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+
+    // Somebody else in the same room. She can see that a knock happened and
+    // whose key wrote it, and that is all she can see.
+    let mut hers: Vec<aboutme::Knocking> = Vec::new();
+    for _ in 0..60 {
+        hers = conductor.call(&zome(&mallory_cell), "get_knocks", ()).await;
+        if !hers.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    assert_eq!(hers.len(), 1, "the knock itself is not hidden, and cannot be");
+    assert_eq!(
+        hers[0].who,
+        ronnie.to_string(),
+        "nor is the key that wrote it — that is the action's author"
+    );
+    assert_eq!(
+        hers[0].name, "",
+        "but the words are sealed to the holder, and she is not the holder"
+    );
+    assert_eq!(hers[0].relationship, "");
+
+    // The holder, who is the one person the words were sealed for.
+    let mut theirs: Vec<aboutme::Knocking> = Vec::new();
+    for _ in 0..60 {
+        theirs = conductor.call(&zome(&alice_room), "get_knocks", ()).await;
+        if theirs.first().is_some_and(|k| !k.name.is_empty()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    assert_eq!(
+        theirs.first().map(|k| k.name.as_str()),
+        Some("Ronnie Smythe"),
+        "the person deciding has to be able to read what she is deciding about"
+    );
+    assert_eq!(
+        theirs[0].relationship, "her cousin",
+        "and how they say they are connected, which is often the useful part"
+    );
+}
+
+/// You can read your own knock back, which is not as obvious as it sounds.
+///
+/// Boxing is between two keys and opened with the recipient's secret, so a
+/// knock sealed only to the holder would be unreadable to the person who wrote
+/// it. That is not academic: somebody let in after a restart arrived nameless,
+/// in a circle that then asked them who they were when they had already said.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_person_knocking_can_read_their_own_knock() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .unwrap();
+
+    let _: Record = conductor
+        .call(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+
+    let mine: Vec<aboutme::Knocking> =
+        conductor.call(&zome(&ronnie_cell), "get_knocks", ()).await;
+
+    assert_eq!(
+        mine.first().map(|k| k.name.as_str()),
+        Some("Ronnie Smythe"),
+        "his own app must be able to tell him back what he said"
+    );
+}
+
+/// An empty name is refused, and it is the app that refuses it.
+///
+/// It used to be a validation rule checked by every peer. It cannot be now the
+/// words are sealed — a peer that cannot read a thing cannot have an opinion
+/// about it. The check moved rather than disappearing, and this is where it
+/// went.
+#[tokio::test(flavor = "multi_thread")]
+async fn knocking_without_saying_who_you_are_is_refused() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .unwrap();
+
+    let result: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&ronnie_cell),
+            "knock",
+            aboutme_integrity::WhoIsKnocking {
+                name: "   ".to_string(),
+                relationship: "her cousin".to_string(),
+            },
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a knock with nobody's name on it tells the holder nothing she can act on"
     );
 }
