@@ -315,6 +315,66 @@ The forms underneath are the same anyway: both ask your name and how you are
 connected. Knocking uses them to tell the holder who is asking; an invitation
 uses them to introduce you to the circle. Same two questions.
 
+### Decided: an invitation stops being something anybody sees
+
+There is one way in — the address — and no second route to choose between.
+
+**The invitation does not disappear; it becomes invisible.** It cannot be
+removed: the membrane requires the holder's signature over the joiner's key,
+and that signature *is* the invitation. Without one the door refuses. But
+nobody has to see it, and in the waiting room flow nobody already does — her
+app makes it, leaves it at the door, his app collects it and uses it. Neither
+of them has ever looked at one.
+
+So the screens go and the machinery stays. The zome functions stay too; they
+are tested, and if this turns out to want a fallback the screens come back
+cheaply.
+
+**Two things this gives up. The second one has to be paid for.**
+
+**The fully asynchronous hand-off.** An invitation could be made on Tuesday,
+texted, and used on Friday. A knock needs the holder reachable when somebody
+knocks, and the knocker reachable when she answers. Both are stored — neither
+has to be live — but it is two meetings instead of one delivery.
+
+Judged acceptable, on the grounds that whoever is knocking can be told plainly
+that they are waiting, and **ringing the holder up to remind her is a perfectly
+good thing to do**. The app does not have to carry every message. It already
+says there is nothing else to do; it should also say that this may take a
+while, and that a phone call is allowed.
+
+**Everybody now arrives through a semi-public room, and this is the real
+cost.** A knock says "Ronnie Smythe, her cousin" in a network anybody with the
+address can read. An invitation let somebody join without ever being announced
+at a door. Make the room the only way in and **every arrival becomes visible to
+everyone holding that address** — including a psychiatrist, a substance misuse
+worker, a domestic abuse advocate. Who visits somebody is itself sensitive.
+
+**So encrypting knocks moves from a nice-to-have to a requirement**, and has to
+land in the same change rather than after it.
+`ed_25519_x_salsa20_poly1305_encrypt` is in the HDK, so a knock can be readable
+by the holder and noise to everybody else. Without it, this simplification
+quietly buys a privacy problem the route it replaces did not have.
+
+### Already true, and worth not rebuilding: she answers at leisure
+
+A knock is an entry in the room, not a message. It sits there. The holder does
+not have to be online when somebody knocks, does not have to catch a
+notification, and can look tomorrow morning and find three people waiting. The
+banner is a convenience; the list is the fact.
+
+That is the half of the waiting room that helps *her* rather than the joiner,
+and it is easy to miss. With invitations she had to **produce** something on
+demand — collect an identifier, make a token, send it. Now she **responds**,
+when she feels like it. The work moved off the person who is already exhausted.
+
+**What she cannot see is who is merely present in the room.** Peers announce
+themselves in order to find each other, so the keys are visible, but that is
+all: `uhCAkIspW47G89hwKm1…` and nothing else. The knock is what turns "a key is
+present" into "Ronnie Smythe, her cousin, is asking" — which is why it cannot
+be skipped. Not for security; because a list of keys is not something a person
+can act on.
+
 ### Decided: nominate by name, and ask the person
 
 The holder picks the second person from the list of people in the circle, by
