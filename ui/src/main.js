@@ -1160,7 +1160,6 @@ async function start() {
 
   const info = await client.appInfo();
   me = info.agent_pub_key;
-  $("my-identifier").textContent = asText(me);
 
   await loadCircles();
 
@@ -1949,8 +1948,7 @@ $("join-form").addEventListener("submit", async (event) => {
         await call("knock", { name, relationship }, myRoomCell);
       });
 
-      $("join-form").hidden = true;
-      $("knocked").hidden = false;
+      showJoining(true);
       announce("Asked. They will see your name when they next open Hearth.");
       await lookForMyAdmission();
       return;
@@ -2096,8 +2094,6 @@ function wireCopyButton(buttonId, getText, doneLabel = "Copied") {
     }, 2500);
   });
 }
-
-wireCopyButton("copy-identifier", () => asText(me), "Copied");
 
 
 // ---------------------------------------------------------------------------
@@ -2446,10 +2442,18 @@ $("choose-create").addEventListener("click", goToCreate);
  * correction, not a restart. Arriving fresh is a different thing from coming
  * back.
  */
+function showJoining(asked) {
+  $("join-form").hidden = asked;
+  $("join-steps").hidden = asked;
+  $("nothing-to-paste").hidden = asked;
+  $("knocked").hidden = !asked;
+}
+
 function aFreshJoin() {
   $("invitation-in").value = "";
   $("joiner-name").value = "";
   $("joiner-relationship").value = "";
+  showJoining(false);
   // Back to "them", until an invitation actually says otherwise.
   knownName = "";
   nameHer("");

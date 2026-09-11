@@ -69,27 +69,19 @@
       <p class="lead">What matters to me, and how to look after me.</p>
 
       <!--
-        Kept, but no longer needed to join anything.
+        There was an identifier here, and it is gone.
 
-        It was once step one of getting in: send this, wait for an invitation
-        made for it. Now you paste a circle's address and say who you are, and
-        this is only here for anybody who wants to see what their own key is.
+        It was step one of getting in: send this long line of characters to
+        somebody, wait for an invitation made for it. That step is what
+        defeated an elderly holder, and it no longer exists — you paste a
+        circle's address and say who you are, and your key arrives with you by
+        the fact of your having written anything at all.
+
+        Leaving it on the first screen with a note saying you do not need it
+        would be worse than not having it: a wall of base64 at the top of the
+        page, inviting somebody to copy it and send it to somebody who has
+        nowhere to put it.
       -->
-      <details id="identifier-details">
-        <summary>Your identifier</summary>
-        <p class="hint">
-          You do not need to send this to anybody — to join a circle you paste
-          its address and say who you are. It is here because it is yours: the
-          key that signs everything you write. It is safe to read out, it
-          identifies you and nothing more, and it is the same in every circle.
-        </p>
-        <output id="my-identifier"></output>
-        <div class="actions">
-          <button type="button" id="copy-identifier" class="secondary">
-            Copy it
-          </button>
-        </div>
-      </details>
     </header>
 
     <main id="main">
@@ -332,7 +324,7 @@
           the same address for everybody, so there is nothing to wait for
           before you can begin.
         -->
-        <ol class="steps">
+        <ol class="steps" id="join-steps">
           <li>
             Ask whoever holds the circle for its address, and paste it below
             with your name.
@@ -342,7 +334,7 @@
             away — you can close this and come back.
           </li>
         </ol>
-        <p class="notice">
+        <p class="notice" id="nothing-to-paste">
           Nothing to paste yet? Ask them for the circle's address. They will
           find it under <em>The address to give people</em> in their own Hearth.
         </p>
