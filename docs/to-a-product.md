@@ -278,6 +278,80 @@ Either way it should be a supported act with a button on it — *"start a new
 circle from this one"* — rather than something a family works out during a
 crisis.
 
+## 0d. The shape of joining, and the shape of holding
+
+From walking the waiting room on 2026-09-11. The first three are decided; the
+last is not, and is the one that matters most.
+
+### Decided: the waiting room is how you join
+
+Not an option beside the invitation route — **the** way in. The invitation
+route begins with "send me the long line of characters from your app", and that
+is the step where this stops being possible for somebody elderly or being
+helped. It becomes the fallback behind the door, not a thing anybody is offered.
+
+### Decided: two choices on the front page
+
+**Create a circle** and **Join a circle**, and nothing else. Everything else
+belongs inside a circle, where it has a context.
+
+"Agree to somebody joining" is already vestigial — nothing in the app produces
+the half-invitation it consumes. "Ask to join a circle" should simply *be*
+"Join a circle", because knocking is now what joining means.
+
+### Decided: nominate by name, and ask the person
+
+The holder picks the second person from the list of people in the circle, by
+their name rather than by pasting a key. The person is then asked whether they
+are willing, and can decline.
+
+At the moment she appoints unilaterally and they discover they have a job.
+Declining has to be recorded to mean anything, so this is one more entry type
+and its rules. Small.
+
+### Open: redundancy and a check are not the same thing
+
+The suggestion was to replace "two people must agree" with **two admins of
+equal rights**, on the grounds that it also answers what happens when one of
+them cannot be reached.
+
+**They are opposite mechanisms.**
+
+| | requires | protects against |
+|---|---|---|
+| Two must agree | **both** | the holder being **pressured** |
+| Two equal admins | **either** | the holder being **unavailable** |
+
+One raises the bar for admission. The other lowers it.
+
+**Equal admins make the pressure case worse.** The scenario the second yes
+exists for is somebody talking the holder into admitting a person. With two
+equal admins there are two people who can be leaned on and either one is
+enough — strictly weaker than one holder. Building that and calling it the same
+safeguard would be the most dangerous kind of mistake available here: a
+protection that reads as stronger and is not.
+
+**But the worry underneath it is right, and it is the real unsolved problem.**
+If the *second* person is incapacitated the holder appoints somebody else and
+the circle carries on. If the **holder** is incapacitated the circle freezes for
+good, and nothing in the design answers that. For a record about somebody in
+declining health, that is not a rare case.
+
+So these are **two features, not one**. Redundancy, so a circle survives the
+person holding it. A check, so admission cannot be done quietly. A circle could
+have either, both or neither.
+
+**One constraint on any co-holder, and it is not negotiable:** they may admit
+people; they may **not** write the record. "Only the person may write their own
+About Me" is load-bearing — the record keeps one voice, and everybody else's
+knowledge comes in as suggestions the holder accepts. A co-holder who can edit
+it breaks the thing the whole record is.
+
+**Claude's recommendation, not a decision taken:** if only one of the two gets
+built, build the co-holder. The pressure case is real but rarer; the protection
+against it is already only a tripwire; and "the person holding this died, and
+the circle died with them" is the thing that will actually happen.
+
 ## 0b. Windows and Linux builds are different networks
 
 **Found 2026-09-08, by the CI check written to enforce the freeze.** The check
