@@ -44,7 +44,7 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**41 tests, run in CI on every push**, in
+**66 tests, run in CI on every push**, in
 [`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
 on the ordering rule. They are written as attacks rather than as feature checks.
 Among them:
@@ -69,10 +69,24 @@ Among them:
 - **Correcting yourself is the version that shows** — a corrected introduction,
   and a changed decision about a suggestion, both come back as the latest rather
   than as whichever arrived first.
+- **Being asked to agree is a question somebody answers.** Only the person an
+  appointment names may answer it; an unanswered asking reads as neither a yes
+  nor a no; and answering again replaces the answer without erasing it.
+- **A knock says nothing to the rest of the room.** Somebody else standing in
+  the same waiting room sees that a knock happened and which key wrote it, and
+  cannot read the name or the relationship. The holder can, and so can the
+  person who wrote it.
 
 These run against a real conductor, not a mock. **What they prove is that the
 rules are enforced. What they cannot prove is that the rules are the right
 rules** — that is a question for a reviewer, not a test.
+
+And there is a second thing they cannot prove, which this week made plain.
+Every fault found by walking the demo — a button that did nothing, a screen
+that said nothing had happened when it had, a knock that had to be agreed to
+twice — passed every test in this file while it was happening. The rules were
+enforced correctly throughout. The tests are about the boundary; somebody
+sitting in front of it is about everything else.
 
 There is one honest limitation in how much of this can be tested at all.
 Everything is written through the app's own functions, and several of the link
