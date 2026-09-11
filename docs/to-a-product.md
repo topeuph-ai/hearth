@@ -178,6 +178,296 @@ an operator, and this project exists because nobody will be one. AD4M has no
 Holochain in the Language layer, which is a different architecture rather than a
 different answer to this question.
 
+## 0c. Who is actually at the door, and what happens when somebody cannot answer
+
+Two questions that came out of walking the waiting room. Neither is built.
+Both are written down here because the reasoning is the expensive part.
+
+### Being fairly sure the person knocking is who they say
+
+A knock carries a name and a relationship, and neither is checked by anything.
+The people deciding are being asked to judge a stranger from two lines of text.
+
+**The tempting answer is to ask for more: a full name, an address, a date of
+birth.** It should be resisted, and not because it is hard.
+
+Nobody can check any of it. There is no operator — that is the whole project —
+so the screen would show a home address with all the authority a home address
+carries, and behind it would be a text box anybody can type into. Every other
+name in this app says "claimed", or "in their own words", for exactly this
+reason. Collecting more unverified detail does not make identity more certain;
+it makes it *look* more certain, which is worse than saying nothing.
+
+It is also a real data protection escalation. A waiting room is an **open**
+network. A name and a relationship sitting in it is one thing; the home address
+of somebody connected to a vulnerable person is another, and it would need the
+[DPIA](DPIA.md) rewritten rather than amended.
+
+**The answer that does work is a shared secret, sent by a different channel.**
+
+> The holder tells the person a word, on the phone. They type it into their
+> knock. She sees it beside their name.
+
+This proves nothing to the world, and does not have to. It proves it **to her**,
+which is the only thing she needs in order to decide. It carries no personal
+data, it cannot pretend to be more than it is, and it costs one box.
+
+The same idea can be applied to the room itself — a password to get in at all,
+stored as a hash in the room's properties and presented as a membrane proof, so
+every peer checks it and no server is needed. Two things to be clear about if
+it is built:
+
+- The hash is readable by anybody who has the address, so a weak password can
+  be guessed offline. It wants a real secret, or a deliberately slow hash.
+- **The address already contains a random secret.** So a room password is not a
+  second lock so much as a second *channel* — address by message, password by
+  voice. That is a genuine improvement, and it is worth building for that
+  reason rather than the one it appears to offer.
+
+An app password is a separate matter and an ordinary one: it protects the keys
+on the device, and the desktop shell can do it.
+
+### When somebody cannot answer any more
+
+**If the second person is incapacitated, this is solved.** Who agrees is an
+entry the holder writes and can write again, so she appoints somebody else and
+nobody re-joins anything. That was the whole reason for moving the person out
+of the circle's identity.
+
+**If the holder is incapacitated, it is not solved.** Her key *is* the circle's
+identity and cannot be changed. Nobody can write the record, nobody can admit
+anybody, and the circle becomes read-only for good.
+
+One suggestion was to make the holder always be the person the record is about,
+so that the circle's purpose ends when they do. **It does not work, and the
+reason matters:** the population About Me exists for most is often exactly the
+people who cannot hold their own record — advanced dementia, learning
+disability, brain injury, a child. That is why holder and subject are separate
+in the first place.
+
+And death is not the failure case. **Capacity is lost gradually.** If the
+holder had to be the subject, a dementia circle would become unmanageable
+precisely as the dementia progressed — unusable at the moment it is most
+needed.
+
+What does survive from that suggestion, and is worth keeping: **when the
+subject dies, the circle's job is finished.** So succession only has to answer
+the narrower case of the *holder* becoming unable while the subject is still
+living. That is a much smaller problem than "what happens when somebody dies".
+
+**The way out that exists today is to re-form the circle**, and it works here
+for a specific reason: every member already holds a complete copy of the
+record. A daughter can make a new circle, seed it from the copy on her own
+machine, and bring everybody across. Nothing is lost except the old circle's
+identity.
+
+What is missing is that nothing distinguishes a rightful successor from
+somebody helping themselves. There is no authority to appoint one — inventing
+that authority means inventing an operator — so the members decide by which
+circle they join, and disagreement means two circles. That is uncomfortable and
+it is the honest consequence of having nobody in charge.
+
+There is a reading that makes it less uncomfortable, and it may be the right
+one. **An About Me is the person's own account of themselves.** Quietly
+transferring authorship of it to somebody else when they can no longer object
+is arguably the wrong thing to build. A successor circle, seeded from theirs,
+with `supported_to_write_this_by` naming whoever took over, says what actually
+happened.
+
+Either way it should be a supported act with a button on it — *"start a new
+circle from this one"* — rather than something a family works out during a
+crisis.
+
+## 0d. The shape of joining, and the shape of holding
+
+From walking the waiting room on 2026-09-11. The first three are decided; the
+last is not, and is the one that matters most.
+
+### Decided: the waiting room is how you join
+
+Not an option beside the invitation route — **the** way in. The invitation
+route begins with "send me the long line of characters from your app", and that
+is the step where this stops being possible for somebody elderly or being
+helped. It becomes the fallback behind the door, not a thing anybody is offered.
+
+### Decided: two choices on the front page, and one box behind them
+
+**Create a circle** and **Join a circle**, and nothing else. Everything else
+belongs inside a circle, where it has a context.
+
+"Agree to somebody joining" is already vestigial — nothing in the app produces
+the half-invitation it consumes.
+
+**And "Join a circle" is one box that takes whatever you were sent.** Not two
+routes with two screens. A waiting room address and an invitation are genuinely
+different things — one is public, reusable and lets you *ask*; the other is
+made for one person and lets you *in* — but that is a difference the app can
+work out for itself, and it is not a difference anybody should have to hold in
+their head before they can begin.
+
+The app already has both detectors. They were written on 2026-09-10 to catch
+people pasting into the wrong box, after a waiting room address went into the
+invitation field and came back as "Cannot read properties of undefined (reading
+'signature')". **With one box there is no wrong box**, and that whole class of
+mistake stops existing rather than being caught and explained.
+
+The forms underneath are the same anyway: both ask your name and how you are
+connected. Knocking uses them to tell the holder who is asking; an invitation
+uses them to introduce you to the circle. Same two questions.
+
+### Decided: an invitation stops being something anybody sees
+
+There is one way in — the address — and no second route to choose between.
+
+**The invitation does not disappear; it becomes invisible.** It cannot be
+removed: the membrane requires the holder's signature over the joiner's key,
+and that signature *is* the invitation. Without one the door refuses. But
+nobody has to see it, and in the waiting room flow nobody already does — her
+app makes it, leaves it at the door, his app collects it and uses it. Neither
+of them has ever looked at one.
+
+So the screens go and the machinery stays. The zome functions stay too; they
+are tested, and if this turns out to want a fallback the screens come back
+cheaply.
+
+**Two things this gives up. The second one has to be paid for.**
+
+**The fully asynchronous hand-off.** An invitation could be made on Tuesday,
+texted, and used on Friday. A knock needs the holder reachable when somebody
+knocks, and the knocker reachable when she answers. Both are stored — neither
+has to be live — but it is two meetings instead of one delivery.
+
+Judged acceptable, on the grounds that whoever is knocking can be told plainly
+that they are waiting, and **ringing the holder up to remind her is a perfectly
+good thing to do**. The app does not have to carry every message. It already
+says there is nothing else to do; it should also say that this may take a
+while, and that a phone call is allowed.
+
+**Everybody now arrives through a semi-public room, and this is the real
+cost.** A knock says "Ronnie Smythe, her cousin" in a network anybody with the
+address can read. An invitation let somebody join without ever being announced
+at a door. Make the room the only way in and **every arrival becomes visible to
+everyone holding that address** — including a psychiatrist, a substance misuse
+worker, a domestic abuse advocate. Who visits somebody is itself sensitive.
+
+**So encrypting knocks moved from a nice-to-have to a requirement**, and
+landed in the same change rather than after it. The name and relationship are
+boxed to the holder with `ed_25519_x_salsa20_poly1305_encrypt`, and a second
+copy is boxed to the person knocking so their own app can read back what they
+said. What stays in the open is the key that wrote the knock, which cannot be
+hidden — it is the action's author, and it is the reason nobody has to collect
+it by hand.
+
+One validation rule had to move to the app to pay for it: "say what you are
+called" cannot be checked by peers who cannot read the words. See
+[`how-it-works.md`](how-it-works.md).
+
+### Already true, and worth not rebuilding: she answers at leisure
+
+A knock is an entry in the room, not a message. It sits there. The holder does
+not have to be online when somebody knocks, does not have to catch a
+notification, and can look tomorrow morning and find three people waiting. The
+banner is a convenience; the list is the fact.
+
+That is the half of the waiting room that helps *her* rather than the joiner,
+and it is easy to miss. With invitations she had to **produce** something on
+demand — collect an identifier, make a token, send it. Now she **responds**,
+when she feels like it. The work moved off the person who is already exhausted.
+
+**What she cannot see is who is merely present in the room.** Peers announce
+themselves in order to find each other, so the keys are visible, but that is
+all: `uhCAkIspW47G89hwKm1…` and nothing else. The knock is what turns "a key is
+present" into "Ronnie Smythe, her cousin, is asking" — which is why it cannot
+be skipped. Not for security; because a list of keys is not something a person
+can act on.
+
+### Built: nominate by name, and ask the person
+
+The holder picks the second person from the list of people in the circle, by
+pressing their name. There is no key to paste and no separate panel: the act
+is where the people are.
+
+The person is then **asked**, and answers. Before this she appointed
+unilaterally and they discovered they had a job — the first they heard was
+strangers appearing on their screen for approval.
+
+The answer is an entry, `Consent`, naming the appointment it answers, and only
+the person that appointment names may write one. That is the whole of the new
+integrity-zome surface: one entry type, one link type, one rule.
+
+**Three states, not two.** Nobody asked; asked and not yet answered; answered.
+The holder does entirely different things about each, and "has not got round to
+it" and "said no" are the same silence from outside. That is the only reason
+the answer is written down rather than inferred.
+
+It cannot make anybody agree to an arrival, and does not try. Refusing has
+always been available by never endorsing anybody. What it adds is that refusing
+**reaches her**, so she can ask somebody else — which she does by pressing
+another name.
+
+### Open: redundancy and a check are not the same thing
+
+The suggestion was to replace "two people must agree" with **two admins of
+equal rights**, on the grounds that it also answers what happens when one of
+them cannot be reached.
+
+**They are opposite mechanisms.**
+
+| | requires | protects against |
+|---|---|---|
+| Two must agree | **both** | the holder being **pressured** |
+| Two equal admins | **either** | the holder being **unavailable** |
+
+One raises the bar for admission. The other lowers it.
+
+**Equal admins make the pressure case worse.** The scenario the second yes
+exists for is somebody talking the holder into admitting a person. With two
+equal admins there are two people who can be leaned on and either one is
+enough — strictly weaker than one holder. Building that and calling it the same
+safeguard would be the most dangerous kind of mistake available here: a
+protection that reads as stronger and is not.
+
+**But the worry underneath it is right, and it is the real unsolved problem.**
+If the *second* person is incapacitated the holder appoints somebody else and
+the circle carries on. If the **holder** is incapacitated the circle freezes for
+good, and nothing in the design answers that. For a record about somebody in
+declining health, that is not a rare case.
+
+So these are **two features, not one**. Redundancy, so a circle survives the
+person holding it. A check, so admission cannot be done quietly. A circle could
+have either, both or neither.
+
+**One constraint on any co-holder, and it is not negotiable:** they may admit
+people; they may **not** write the record. "Only the person may write their own
+About Me" is load-bearing — the record keeps one voice, and everybody else's
+knowledge comes in as suggestions the holder accepts. A co-holder who can edit
+it breaks the thing the whole record is.
+
+**Where this stands after the four built items.** The co-holder is not built.
+Nothing above it required a decision about it, and it is the one piece of this
+that would change what a circle *is* rather than how it is used, so it is worth
+leaving until somebody outside this room has looked at it.
+
+Two things about it are now firmer than they were.
+
+The second yes is already **only a tripwire**, and the consent work above makes
+that plainer rather than changing it: who agrees is an entry the holder writes,
+so she can write another one naming anybody, including a second device of her
+own. The network cannot refuse an invitation that names no appointment, because
+"has she appointed anybody yet" is a question whose answer changes. What stops
+a quiet admission is that everybody can see who was asked and when. A co-holder
+would not weaken a wall; it would stand beside a tripwire.
+
+And **the door now lives on one device**. With inviting-by-identifier gone,
+a holder who loses her device keeps the circle and loses the only way into it.
+That is the incapacity problem arriving early, by a different route, and it
+makes the co-holder case stronger than it was when this section was written.
+
+**Claude's recommendation, not a decision taken:** if only one of the two gets
+built, build the co-holder. The pressure case is real but rarer; the protection
+against it is already only a tripwire; and "the person holding this died, and
+the circle died with them" is the thing that will actually happen.
+
 ## 0b. Windows and Linux builds are different networks
 
 **Found 2026-09-08, by the CI check written to enforce the freeze.** The check

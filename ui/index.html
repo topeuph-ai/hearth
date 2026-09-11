@@ -69,24 +69,19 @@
       <p class="lead">What matters to me, and how to look after me.</p>
 
       <!--
-        Always reachable, not just before you join something. Somebody already
-        in one circle who gets invited to another needs this, and hiding it was
-        why the invitation flow could not be completed at all.
+        There was an identifier here, and it is gone.
+
+        It was step one of getting in: send this long line of characters to
+        somebody, wait for an invitation made for it. That step is what
+        defeated an elderly holder, and it no longer exists — you paste a
+        circle's address and say who you are, and your key arrives with you by
+        the fact of your having written anything at all.
+
+        Leaving it on the first screen with a note saying you do not need it
+        would be worse than not having it: a wall of base64 at the top of the
+        page, inviting somebody to copy it and send it to somebody who has
+        nowhere to put it.
       -->
-      <details id="identifier-details">
-        <summary>Your identifier</summary>
-        <p class="hint">
-          Send this to anyone inviting you. It is safe to text, email or read
-          out — it identifies you and nothing more. It is the same in every
-          circle, so you only ever need to share it once.
-        </p>
-        <output id="my-identifier"></output>
-        <div class="actions">
-          <button type="button" id="copy-identifier" class="secondary">
-            Copy it
-          </button>
-        </div>
-      </details>
     </header>
 
     <main id="main">
@@ -104,6 +99,18 @@
       -->
       <section id="choose" hidden>
         <h2>What would you like to do?</h2>
+        <!--
+          Two choices, and everything else inside a circle where it has a
+          context.
+
+          There were five. "Agree to somebody joining" consumed a thing
+          nothing produced any more. "Ask to join a circle" and "Join a
+          circle" were the same act with two different pieces of text, which
+          is a difference for the app to work out and not for a person to
+          hold in their head. And whether a circle asks two people to agree
+          is part of what that circle *is*, so it belongs on the form that
+          makes one, not on the menu that chooses which form to open.
+        -->
         <div class="choices">
           <button type="button" id="choose-create">
             <span class="choice-title">Create a circle</span>
@@ -114,50 +121,8 @@
           <button type="button" id="choose-join">
             <span class="choice-title">Join a circle</span>
             <span class="choice-detail">
-              Somebody has invited you, and sent you an invitation.
-            </span>
-          </button>
-          <!--
-            Third, and last, because most people want the first one.
-
-            This used to live folded away inside a circle that already
-            existed, which made it a repair job: naming somebody afterwards
-            means re-forming the circle and everybody joining again. Asked
-            here, at the start, it costs nothing — the circle is made once,
-            with both names already in it.
-
-            The old route stays where it was, for anybody who changes their
-            mind later, because that case genuinely does need a new circle.
-          -->
-          <button type="button" id="choose-create-two">
-            <span class="choice-title">
-              Create a circle where two people decide who joins
-            </span>
-            <span class="choice-detail">
-              The same, but nobody gets in unless you and one other person both
-              say yes. Best decided now — adding it later means starting the
-              circle again.
-            </span>
-          </button>
-          <!--
-            Fourth, and here rather than inside a circle.
-
-            This used to live on the circle screen, which meant the person who
-            has to agree could only agree once they had joined the circle and
-            could read somebody's record. That is exactly backwards: agreeing
-            to who joins is a job you do *for* a circle, not *in* one.
-
-            Signing is this key over that person's key. It has nothing to do
-            with the circle, so it does not need the circle — which is what
-            lets a solicitor, an advocate, or a sister two hundred miles away
-            hold this and never read a word about anybody.
-          -->
-          <button type="button" id="choose-second">
-            <span class="choice-title">Agree to somebody joining</span>
-            <span class="choice-detail">
-              Somebody has asked you to be the second yes on an invitation. You
-              do not have to be in the circle, and you will not see what is in
-              it.
+              Somebody has sent you the address of a circle. You will ask to
+              join, and they will let you in.
             </span>
           </button>
         </div>
@@ -169,7 +134,7 @@
         </div>
         <h2>Create a circle</h2>
         <p>
-          A circle is a private space about one person. Only people you invite
+          A circle is a private space about one person. Only people you let in
           can see it. It lives on the devices of the people in it — there is no
           company holding a copy.
         </p>
@@ -289,37 +254,57 @@
             />
           </div>
           <!--
-            Only on the two-people path, and last, because it is a question
-            about somebody who is not in the room.
+            Nobody is named here, and nothing is asked for.
 
-            It asks for an identifier rather than a name because there is no
-            directory anywhere that could turn one into the other. Getting it
-            wrong is safe: a circle whose second person cannot be read refuses
-            everybody, including the holder, so it fails here and now rather
-            than three days later when somebody tries to join.
+            This used to demand the second person's identifier before the
+            circle could be made — which meant the hardest step in the whole
+            app came first, and a circle could not be made at all until
+            somebody had sent you a long line of characters.
+
+            The circle now carries only the rule. Who agrees is written inside
+            it afterwards, from the people who are actually there, and can be
+            written again.
           -->
-          <div class="field" id="seconder-field" hidden>
-            <label for="create-seconder">Who has to agree to who joins</label>
-            <p id="create-seconder-hint" class="hint">
-              Their identifier — a long line of letters and numbers beginning
-              <code>uhCAk</code>, which they copy from “Your identifier” in
-              their own Hearth and send to you. Not their name.
+          <!--
+            Asked here because it cannot be asked later.
+
+            Whether a circle asks two people to agree is part of its identity,
+            and identity cannot be edited — so this is the one moment it can be
+            decided. *Who* the second person is is not part of the identity and
+            is chosen afterwards, from whoever is actually in the circle.
+
+            It was a separate front-page choice, which made it look like a
+            different kind of circle. It is not: it is one question about the
+            circle you are already making.
+          -->
+          <fieldset class="field" id="seconder-field">
+            <legend>Who decides who joins?</legend>
+            <label class="choice-row">
+              <input
+                type="radio"
+                name="who-decides"
+                id="decides-just-me"
+                value="just-me"
+                checked
+              />
+              Just me
+            </label>
+            <label class="choice-row">
+              <input
+                type="radio"
+                name="who-decides"
+                id="decides-two-of-us"
+                value="two-of-us"
+              />
+              Me and one other person, together
+            </label>
+            <p class="hint">
+              You choose the other person later, from whoever is in the circle,
+              so you need nothing from them now — and you can change who it is
+              at any time, which matters if they are ever out of reach.
+              Everybody in the circle sees who was asked and when.
             </p>
-            <input
-              id="create-seconder"
-              name="create-seconder"
-              type="text"
-              autocomplete="off"
-              aria-describedby="create-seconder-hint"
-            />
-            <p class="notice">
-              You will not be able to drop them from this circle on your own —
-              you would have to start a fresh circle and invite everybody
-              again, which they would all see happen. That is the point of it:
-              it is there for the day somebody talks you into letting them in,
-              and it works by being impossible to do quietly.
-            </p>
-          </div>
+          </fieldset>
 
           <button type="submit" id="create-circle-submit">Create the circle</button>
         </form>
@@ -331,35 +316,48 @@
         </div>
         <h2>Join a circle</h2>
         <!--
-          Two long strings pass between two people and they look the same to
-          anybody. Saying which machine each step happens on matters more than
-          listing the steps in order.
+          Two steps now, and only one thing travels.
+
+          This used to be three steps and two long lines going opposite ways:
+          your identifier out, an invitation back, and nothing on screen to
+          tell one from the other. The circle's address goes one way, and it is
+          the same address for everybody, so there is nothing to wait for
+          before you can begin.
         -->
-        <ol class="steps">
+        <ol class="steps" id="join-steps">
           <li>
-            <strong>Here:</strong> copy <em>Your identifier</em> from the top of
-            this page and send it to them — text, email, however you like.
+            Ask whoever holds the circle for its address, and paste it below
+            with your name.
           </li>
           <li>
-            <strong>On their machine:</strong> they paste it into
-            <em>Invite someone</em> in their circle, and send you back what it
-            produces.
-          </li>
-          <li>
-            <strong>Here:</strong> paste that reply below. It is a different,
-            much longer line than the one you sent.
+            They will see you waiting, and let you in. It may not be straight
+            away — you can close this and come back.
           </li>
         </ol>
-        <p class="notice">
-          Nothing to paste yet? Then you are on step 1 — send them your
-          identifier and wait for their reply.
+        <p class="notice" id="nothing-to-paste">
+          Nothing to paste yet? Ask them for the circle's address. They will
+          find it under <em>The address to give people</em> in their own Hearth.
         </p>
         <form id="join-form">
           <div class="field">
-            <label for="invitation-in">Paste the invitation they sent back</label>
+            <!--
+              One box, and so no wrong box.
+
+              There used to be two screens: one for a circle's address and one
+              for an invitation. They are genuinely different things — an
+              address is public, reusable, and lets you ask; an invitation is
+              made for one person and lets you in — but that is a difference
+              the app can work out, and not one anybody should have to hold in
+              their head before they can begin.
+
+              The detectors for both were written to catch people pasting into
+              the wrong box. With one box there is no wrong box, and the whole
+              class of mistake stops existing rather than being explained.
+            -->
+            <label for="invitation-in">Paste what they sent you</label>
             <p id="invitation-in-hint" class="hint">
-              One long line. Paste the whole of it, with nothing before or
-              after.
+              One long line: the address of the circle. Paste the whole of it,
+              with nothing before or after.
             </p>
             <textarea
               id="invitation-in"
@@ -420,7 +418,7 @@
             </label>
             <p id="join-label-hint" class="hint">
               Only on your own device, and only if you want to. Leave it blank
-              and it uses their full name, which comes with the invitation.
+              and it uses whatever the circle calls them.
             </p>
             <input
               id="join-label"
@@ -430,8 +428,38 @@
               aria-describedby="join-label-hint"
             />
           </div>
-          <button type="submit" id="join-circle-submit">Join their circle</button>
+          <button type="submit" id="join-circle-submit">Ask to join</button>
         </form>
+
+        <!--
+          What an address gets you: a wait, and nothing to do.
+
+          An invitation lets you straight in. An address lets you ask, and then
+          somebody has to say yes — which they may not do for hours, because a
+          knock is an entry that sits in the room rather than a message that
+          interrupts anybody.
+
+          So this says plainly that ringing them is allowed. The app does not
+          have to carry every message, and somebody staring at a screen
+          wondering whether it is broken is worse served by silence than by
+          being told to pick up the phone.
+        -->
+        <div id="knocked" hidden>
+          <p class="notice">
+            <strong>Asked.</strong> They will see your name when they next open
+            Hearth. There is nothing else for you to do — when they say yes,
+            this will open on its own.
+          </p>
+          <p class="hint">
+            It may not be today. If you need to be let in sooner, ring them and
+            ask — that is a perfectly ordinary thing to do.
+          </p>
+          <div class="actions">
+            <button type="button" id="check-knock" class="secondary">
+              Check again
+            </button>
+          </div>
+        </div>
       </section>
 
       <!--
@@ -445,68 +473,17 @@
         circle, so it is done on the ordinary cell every install already has,
         and whoever holds this power can stay outside every circle they guard.
       -->
-      <section id="second" hidden>
-        <div class="actions">
-          <button type="button" class="secondary back-to-choose">Back</button>
-        </div>
-        <h2>Agree to somebody joining</h2>
-        <p>
-          Somebody has asked you to be the second yes on an invitation. Nobody
-          gets into their circle unless you agree as well.
-        </p>
-        <p class="notice">
-          You are agreeing to <strong>one named person</strong>, and to nothing
-          else. It does not put you in the circle and it does not let you, or
-          them, see anything you could not see before.
-        </p>
 
-        <!--
-          What happens, before it happens.
+      <!--
+        Asking to be let in, from outside every circle.
 
-          The screen used to show a paste box, then a wall of base64, then a
-          copy button, and left somebody holding a finished invitation with
-          no idea whose it was or where to send it. Three steps, said in
-          advance, cost four lines.
-        -->
-        <ol class="steps">
-          <li>Somebody in the circle sends you half an invitation.</li>
-          <li>You check who it would let in, and agree.</li>
-          <li>You send the finished invitation back to them.</li>
-        </ol>
+        The one thing pasted here is a waiting room's address, which never
+        changes and is the same for everybody — so it can be read down a phone
+        or dropped in a family group, rather than made for one person at a
+        time. Nothing here is checked and nothing here is private: it is a
+        doorstep.
+      -->
 
-        <form id="second-form">
-          <div class="field">
-            <label for="half-invitation">Paste what they sent you</label>
-            <p id="half-invitation-hint" class="hint">
-              One long line. It is half an invitation until you agree to it.
-            </p>
-            <textarea
-              id="half-invitation"
-              name="half-invitation"
-              rows="3"
-              required
-              aria-describedby="half-invitation-hint"
-            ></textarea>
-          </div>
-          <div id="second-who" class="notice" hidden></div>
-          <button type="submit" id="second-submit">I agree to this</button>
-        </form>
-
-        <div id="seconded-done" hidden>
-          <p class="notice">
-            <strong>Agreed.</strong> Send this back to
-            <span id="seconded-back-to">whoever asked you</span>, who will
-            pass it on to the person joining. It is no use to anybody else:
-            it only lets in the one person it names.
-          </p>
-          <output id="seconded-output"></output>
-          <div class="actions">
-            <button type="button" id="copy-seconded" class="secondary">
-              Copy the finished invitation
-            </button>
-          </div>
-        </div>
-      </section>
 
       <!--
         A list of people, never an inbox.
@@ -557,6 +534,42 @@
           </button>
         </div>
 
+        <!--
+          Being asked to agree to who joins.
+
+          This used to happen silently. The holder wrote somebody's key into
+          the circle and that was the whole of it — they might not know, might
+          not want it, and had never been asked. The first they heard was
+          strangers appearing on their screen for approval.
+
+          So it is a question now, and it sits here, under the name of the
+          circle, until it is answered. Saying no is a real answer that
+          reaches her, not a silence she has to interpret.
+        -->
+        <section id="asked-to-agree" class="notice" hidden>
+          <h3>You have been asked to agree to who joins</h3>
+          <p>
+            <strong id="asked-by">Somebody</strong> has asked you to be the
+            second person who says yes before anybody new can join this
+            circle.
+          </p>
+          <p class="hint">
+            It means they cannot let somebody in on their own, and neither
+            can you. It is for the day somebody talks one of you into it.
+          </p>
+          <p id="asked-already-said-no" class="hint" hidden>
+            You said no to this. You can change your mind.
+          </p>
+          <div class="actions">
+            <button type="button" id="agree-to-agree">
+              Yes, I will
+            </button>
+            <button type="button" id="decline-to-agree" class="secondary">
+              No, ask somebody else
+            </button>
+          </div>
+        </section>
+
         <form id="rename-form" hidden>
           <div class="field">
             <label for="circle-label">What you call them here</label>
@@ -599,7 +612,7 @@
         <!-- Read view -->
         <p id="check-it-over" class="notice" hidden>
           Read this over. Change anything that is wrong, and when you are happy
-          with it, invite the people who look after them.
+          with it, give the circle’s address to the people who look after them.
         </p>
 
         <article id="record" hidden aria-labelledby="record-name">
@@ -796,11 +809,13 @@
         -->
         <form id="acknowledge-form" hidden>
           <div class="field">
-            <label for="ack-role">What should they know you are?</label>
+            <label for="ack-role">How this will be recorded</label>
             <p id="ack-role-hint" class="hint">
-              In your own words. “District nurse”, “her son”, “support worker,
-              Tuesdays”. Nobody checks this, and the circle will see it as
-              something you said about yourself, not as a credential.
+              Already filled in from what you told the circle you are. Change
+              it only if it is different this time — a nurse who is also a
+              neighbour, visiting as a neighbour. Nobody checks it, and the
+              circle shows it as something you said about yourself, not as a
+              credential.
             </p>
             <input
               id="ack-role"
@@ -832,6 +847,19 @@
           <h3>Who is in this circle</h3>
           <p class="hint">
             How each person describes themselves. Nobody checks any of it.
+          </p>
+          <!--
+            Only to the holder, and only where the thing it describes is.
+
+            Choosing the second person used to be a folded-away panel with a
+            dropdown in it, a long way from the list of the people it was
+            choosing between. Pressing a name is the same act with nothing in
+            front of it.
+          -->
+          <p id="appoint-hint" class="hint" hidden>
+            You can ask one of them to be the second person who agrees before
+            anybody new joins. Press their name. They will be asked whether
+            they are willing, and you can change who it is at any time.
           </p>
           <ul id="people-list"></ul>
           <p id="people-empty" class="hint" hidden>
@@ -948,156 +976,6 @@
         </section>
 
         <!--
-          The second person's own invitation, made for you.
-
-          This is the step nobody was told about. Naming somebody as the second
-          yes puts them into the circle's identity, but it does not put *them*
-          in the circle — and until they are in, nobody else can join either,
-          because no invitation can be finished without them.
-
-          So the circle sat there, apparently ready, quietly unable to admit
-          anybody, and the only clue was that nothing worked.
-
-          Their identifier was already given when the circle was made, so
-          everything needed to invite them is already here. It is made for you
-          and shown until they arrive, rather than asked for.
-
-          Deliberately not behind "write something first", which is the rule
-          for inviting readers. A name and four empty headings is a confusing
-          thing to be invited into — but this person is not being invited to
-          read. They are how the door works.
-        -->
-        <section id="seconder-invitation" hidden>
-          <h3>Send this to your second person first</h3>
-          <p>
-            <span id="seconder-who">The person you named</span> has to be in
-            the circle before anybody else can join, because every invitation
-            needs their agreement too. This is their invitation — they are the
-            one person who does not need a second yes of their own.
-          </p>
-          <output id="seconder-invitation-output"></output>
-          <div class="actions">
-            <button type="button" id="copy-seconder-invitation" class="secondary">
-              Copy their invitation
-            </button>
-          </div>
-        </section>
-
-        <section id="invite-section" hidden>
-          <h3>Invite someone</h3>
-          <p>
-            Give them this invitation. It only works for the person it was made
-            for, so it is safe to read out or send.
-          </p>
-          <form id="invite-form">
-            <div class="field">
-              <label for="invitee">Their identifier</label>
-              <p id="invitee-hint" class="hint">
-                Not their name. A long line of letters and numbers beginning
-                <code>uhCAk</code>, which they copy from “Your identifier” in
-                their own Hearth and send to you.
-              </p>
-              <input
-                id="invitee"
-                name="invitee"
-                type="text"
-                required
-                autocomplete="off"
-                aria-describedby="invitee-hint"
-              />
-            </div>
-            <!--
-              Asked because somebody else has to make a decision about it.
-
-              An identifier names nobody. The person who has to agree to a join
-              was being shown a line of base64 and asked to say yes, so the
-              only thing they could actually agree to was that they had been
-              asked — which protects no one.
-
-              This is what you call them. Nothing checks it, and the screen
-              that shows it says so.
-            -->
-            <div class="field" id="invitee-name-field" hidden>
-              <label for="invitee-name">Who is this?</label>
-              <p id="invitee-name-hint" class="hint">
-                Their name, as you would say it — “Ronnie Smythe, Margaret’s
-                cousin”. It is shown to the person who has to agree, so they
-                know who they are agreeing to. Nobody checks it.
-              </p>
-              <input
-                id="invitee-name"
-                name="invitee-name"
-                type="text"
-                autocomplete="off"
-                aria-describedby="invitee-name-hint"
-              />
-            </div>
-            <button type="submit">Make an invitation</button>
-          </form>
-          <!--
-            Said above the invitation, not below it, because somebody who has
-            read as far as a wall of base64 has already started copying.
-          -->
-          <p id="needs-seconding" class="notice" hidden>
-            This is only half of an invitation. Send it to the person who
-            agrees to who joins this circle, and they will send you back the
-            finished one.
-          </p>
-          <p id="invitation-finished" class="notice" hidden>
-            <strong>This one is finished.</strong> Both agreements are on it.
-            Send it to the person joining.
-          </p>
-          <output id="invitation-output" hidden></output>
-          <div class="actions">
-            <button type="button" id="copy-invitation" class="secondary" hidden>
-              Copy the invitation
-            </button>
-            <!--
-              Sending the invitation is the end of a job, and the end of a job
-              should say so. Without this the last thing on the page was a
-              wall of base64 and nowhere to go from it.
-            -->
-            <button type="button" id="done-inviting" class="secondary" hidden>
-              Back to <span class="about-whom">them</span>
-            </button>
-          </div>
-
-          <!--
-            Where the finished invitation comes back to.
-
-            The notice above promises that they will send you back the finished
-            one, and for a while there was nowhere on this page to put it when
-            they did. Worse, the half invitation stayed on screen with a copy
-            button under it, so the obvious next move was to send the person
-            joining the half that cannot let them in.
-
-            It is checked rather than just displayed, because by this point
-            three long lines of base64 have been through a messaging app and
-            they all look alike.
-          -->
-          <form id="finish-invitation" hidden>
-            <div class="field">
-              <label for="finished-invitation">
-                Paste the finished invitation when it comes back
-              </label>
-              <p id="finished-invitation-hint" class="hint">
-                The one they send back after agreeing. It replaces the half
-                above, and that is the one to send on.
-              </p>
-              <textarea
-                id="finished-invitation"
-                name="finished-invitation"
-                rows="3"
-                required
-                aria-describedby="finished-invitation-hint"
-              ></textarea>
-            </div>
-            <div id="finish-problem" class="notice" hidden></div>
-            <button type="submit" id="finish-submit">Check it</button>
-          </form>
-        </section>
-
-        <!--
           Folded away on purpose, and this is not the same call as the name
           field above. A name is something you edit most times you come back
           here; this is something you do once, if ever, and it should not sit
@@ -1145,101 +1023,65 @@
           not require being in it. This is only here so somebody who is both a
           member and the second yes can find it from where they already are.
         -->
-        <section id="second-here" hidden>
-          <h3>You are the second yes here</h3>
-          <p>
-            Nobody joins this circle unless you agree as well. When somebody
-            sends you half an invitation, this is where you finish it.
+        <!--
+          People put forward, waiting on the second agreement.
+
+          One list, read by two people from opposite ends. The holder sees how
+          far each one has got and, once it is finished, the invitation to
+          send. The person who has to agree sees a name and a button.
+
+          It replaces five copy-and-pastes between two devices that were
+          already members of the same circle and perfectly able to talk to each
+          other. The only message that still has to leave is the last one, to
+          the person joining, who is by definition outside.
+        -->
+        <!--
+          The door, and who is standing at it.
+
+          One address, shared once, that works for everybody and never
+          changes. It replaces collecting an identifier from each person
+          before you can invite them — which is the step that defeats an
+          elderly holder, and the reason inviting anybody was a chore.
+        -->
+        <section id="at-the-door" hidden>
+          <h3>People asking to join</h3>
+          <ul id="knock-list"></ul>
+          <p id="nobody-knocking" class="hint" hidden>
+            Nobody is waiting. Give somebody the address below and they can ask
+            from their own Hearth.
           </p>
-          <div class="actions">
-            <button type="button" id="go-and-second">
-              Agree to an invitation
-            </button>
-          </div>
         </section>
 
-        <details id="appoint-details" hidden>
-          <summary>Ask someone to agree to who joins</summary>
-
-          <!--
-            When there is nobody to ask, say so first.
-
-            This used to explain the whole feature at length and then finish
-            with "there is nobody else in this circle yet". Somebody read three
-            paragraphs about a thing they could not do, and the sentence that
-            mattered was the last one on the page. What you cannot do yet, and
-            why, belongs at the top.
-          -->
-          <p id="appoint-nobody" class="notice" hidden>
-            <strong>Not yet — there is nobody to ask.</strong> Invite the person
-            you want to ask, wait for them to join, then come back here.
+        <details id="door-address" hidden>
+          <summary>The address to give people</summary>
+          <p class="hint">
+            Send this to anybody you might want in the circle — one at a time
+            or all at once, by text, email or read down the phone. It is the
+            same for everybody and it never changes, so you only send it once.
+            Having it lets somebody <strong>ask</strong>; it does not let them
+            in, and it shows them nothing.
           </p>
-
-          <!--
-            When the circle already asks somebody.
-
-            This panel used to disappear entirely once a second yes existed,
-            on the reasoning that it must not be switchable off. But the
-            holder can always make a fresh circle — nothing prevents it, and
-            the appointing path here does exactly that. Hiding the panel did
-            not remove the power; it removed the only visible route to it.
-
-            Which mattered most in the case nobody had thought about: if the
-            second person dies, or loses the phone their keys were on, the
-            circle can never admit anybody again. The record still works and
-            the people in it stay in it, but the door is sealed. For an
-            eighty-year-old whose second yes may be a similar age, that is not
-            an edge case.
-          -->
-          <div id="appoint-already" hidden>
-            <p>
-              This circle asks <strong id="appoint-current">somebody</strong>
-              to agree before anybody new joins.
-            </p>
-            <p class="notice">
-              You cannot take that away from <em>this</em> circle — not by
-              choice, and not by mistake. What you can do is start a fresh one
-              and invite everybody again, which is deliberately something they
-              all see happen rather than something you can do quietly.
-            </p>
-            <p>
-              Worth doing if they have died, lost the device their Hearth was
-              on, or are no longer somebody you would ask.
-            </p>
+          <output id="door-address-output"></output>
+          <div class="actions">
+            <button type="button" id="copy-door-address" class="secondary">
+              Copy the address
+            </button>
           </div>
-
-          <div id="appoint-explains">
-            <p>
-              Nobody would be able to join unless two people say yes: you, and
-              whoever you choose. It is meant for the situation where somebody
-              talks you into letting them in — so you will not be able to drop
-              them on your own. Starting again is always possible, and everyone
-              would have to join the new circle, so it cannot be done quietly.
-            </p>
-            <p class="notice">
-              This makes a fresh circle with them named in it and copies the
-              record across. Everyone who is in this one has to join the new
-              one, so it is easiest done now, while there are few people to ask
-              again.
-            </p>
-          </div>
-
-          <form id="appoint-form">
-            <div class="field">
-              <label for="appoint-who">Who has to agree</label>
-              <p id="appoint-who-hint" class="hint">
-                Somebody already in this circle. They will need to join the new
-                one too, like everybody else.
-              </p>
-              <select id="appoint-who" name="appoint-who"></select>
-            </div>
-            <div class="actions">
-              <button type="submit" id="appoint-submit">
-                Make the new circle
-              </button>
-            </div>
-          </form>
         </details>
+
+        <section id="pending-members" hidden>
+          <h3 id="pending-heading">Waiting to be let in</h3>
+          <p id="pending-explains-holder" class="hint" hidden>
+            <span id="pending-seconder-name">The second person</span> has to
+            agree before any of these can join.
+          </p>
+          <p id="pending-explains-seconder" class="hint" hidden>
+            Nobody joins this circle unless you agree as well. Nothing here has
+            been checked — the names are what the holder calls them.
+          </p>
+          <ul id="pending-list"></ul>
+        </section>
+
 
         <details id="leave-details">
           <summary>Take this off my device</summary>

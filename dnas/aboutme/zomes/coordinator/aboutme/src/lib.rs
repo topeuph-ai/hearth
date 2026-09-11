@@ -11,8 +11,39 @@ use std::collections::BTreeSet;
 
 const CIRCLE_ANCHOR: &str = "circle";
 
+/*
+ * Anchors are asked about locally, never over the network.
+ *
+ * `TypedPath::ensure` writes the anchor link if it is not there already, and
+ * the "already" is a `get_links`, which by default asks the network. On a
+ * cell seconds old that is a question with nobody to answer it: the call
+ * blocks and then fails with
+ *
+ *     get_links response channel dropped: likely response timeout
+ *
+ * and everything the function had written is rolled back with it.
+ *
+ * Which is exactly what happened to the third person to arrive. They pasted
+ * the address, their app made the room cell, they knocked — and the knock
+ * died inside `ensure` before it was ever written, in front of a wasm error
+ * naming a host function. Their conductor could read that room perfectly
+ * well a minute later. It simply had no peers yet at the moment it asked.
+ *
+ * The network was never needed for this. The anchor is a fixed hash; a link
+ * from it is found by `get_links` whether or not anybody else has written
+ * one, and the duplicates this can leave are the same path-to-path links
+ * every reader here already ignores. So each agent answers "is it there?"
+ * about their own chain, which is the rule the rest of this file already
+ * follows: never ask the network what you can know yourself.
+ */
+fn anchored(name: &str, link_type: LinkTypes) -> ExternResult<TypedPath> {
+    Ok(Path::from(name)
+        .typed(link_type)?
+        .with_strategy(GetStrategy::Local))
+}
+
 fn circle_path() -> ExternResult<TypedPath> {
-    Path::from(CIRCLE_ANCHOR).typed(LinkTypes::CircleToAboutMe)
+    anchored(CIRCLE_ANCHOR, LinkTypes::CircleToAboutMe)
 }
 
 /// Issue an invitation to join this circle.
@@ -91,6 +122,23 @@ pub struct InvitationBundle {
     /// joiner computes a different circle and lands nowhere.
     #[serde(default)]
     pub seconder: Option<String>,
+
+    /// Whether this circle asks two people to agree before anybody joins.
+    ///
+    /// **This is the part that is in the DNA hash**, and it has to travel or
+    /// the person joining computes a different circle and lands in a network
+    /// of one — with no error anywhere, because nothing is wrong except that
+    /// they are somewhere else.
+    ///
+    /// `seconder` above used to do this job, back when the person was in the
+    /// identity and therefore always present. Once the person moved into the
+    /// circle, an invitation made before anybody had been appointed carried
+    /// nobody — and the joiner quite correctly built a circle that asks
+    /// nobody. Two circles, one name, both working perfectly, invisible to
+    /// each other for ten minutes until somebody thought to check.
+    #[serde(default)]
+    pub requires_second_yes: bool,
+
     pub network_seed: String,
     /// Whose circle this is, so the recipient knows what they are accepting
     /// before they accept it. A label, not a claim.
@@ -135,10 +183,12 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         None => String::new(),
     };
 
-    let seconder = match membrane()? {
-        Membrane::Founder(_, seconder) => seconder.map(|k| k.to_string()),
-        _ => None,
-    };
+    let appointed = appointment_now()?;
+    let seconder = appointed.as_ref().map(|(_, key)| key.to_string());
+
+    // The rule this circle was made with. It is in the DNA hash, so it has to
+    // travel with the invitation or the joiner builds a different circle.
+    let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
 
     // My own introduction, off my own chain: what I told this circle I am
     // called. Read locally because it is mine, and empty if I never said.
@@ -154,13 +204,15 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         invitee: invitee.to_string(),
         invitee_name: input.name.trim().to_string(),
         seconder,
+        requires_second_yes: asks_two,
         network_seed: dna_info()?.modifiers.network_seed,
         about,
         invitation: Invitation {
             signature,
-            // Not yet. Where the circle names a seconder, this invitation is
-            // incomplete until they add theirs: see second_an_invitation.
+            // Not yet. Where somebody has been asked to agree, this
+            // invitation is incomplete until they do.
             seconded: None,
+            appointment: appointed.map(|(hash, _)| hash),
         },
     })
 }
@@ -197,10 +249,7 @@ pub fn second_an_invitation(invitee: String) -> ExternResult<Signature> {
 /// has just made is finished or half-made.
 #[hdk_extern]
 pub fn who_seconds_here(_: ()) -> ExternResult<Option<AgentPubKey>> {
-    Ok(match membrane()? {
-        Membrane::Founder(_, seconder) => seconder,
-        _ => None,
-    })
+    Ok(appointment_now()?.map(|(_, key)| key))
 }
 
 /// Who you are in this circle, in your own words.
@@ -215,7 +264,7 @@ pub fn introduce_myself(member: Member) -> ExternResult<Record> {
 
     let action_hash = create_entry(EntryTypes::Member(member.clone()))?;
 
-    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    let path = anchored("members", LinkTypes::CircleToMember)?;
     path.ensure()?;
     create_link(
         path.path_entry_hash()?,
@@ -356,7 +405,7 @@ fn oldest_first(records: &mut [Record]) {
 
 #[hdk_extern]
 pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
-    let path = Path::from("members").typed(LinkTypes::CircleToMember)?;
+    let path = anchored("members", LinkTypes::CircleToMember)?;
     let links = get_links(
         LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToMember)?,
         GetStrategy::Network,
@@ -662,9 +711,21 @@ pub fn delete_about_me(action_hash: ActionHash) -> ExternResult<ActionHash> {
 // Creating and joining are the same operation. The only difference is that a
 // joiner presents an invitation.
 
+/// The circle's identity, which every member must compute identically.
+///
+/// **Everything here is in the DNA hash.** Two people who build these
+/// differently are in two different networks that can never see each
+/// other — and it fails in the worst way there is: invitations are made
+/// and accepted, nothing errors, and nobody ever arrives.
+///
+/// It takes the *rule* and not the person, because that is what the
+/// identity carries now. Passing the person instead was exactly the fault
+/// above: the holder made a circle that asks two people, the invitation
+/// carried nobody because nobody had been appointed yet, and the joiner
+/// computed a circle that asks nobody. Two circles, one name, no error.
 fn circle_modifiers(
     founder: &AgentPubKey,
-    seconder: Option<String>,
+    requires_second_yes: bool,
     network_seed: String,
 ) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
     // Part of the DNA hash, exactly like the founder. Naming somebody who must
@@ -674,9 +735,14 @@ fn circle_modifiers(
     let properties = CircleProperties {
         founder: Some(founder.to_string()),
         lobby: false,
-        seconder: seconder
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        // Never named here any more. A circle made this way asks two
+        // people to agree; who the second is, is written in the circle and
+        // can be written again.
+        seconder: None,
+        requires_second_yes,
+        // A circle is not a waiting room. Its own room is a separate cell,
+        // and it is the only thing anybody outside can reach.
+        waiting_for: None,
     };
 
     // Clone modifiers arrive as YAML, which is why the founder is carried as a
@@ -708,9 +774,12 @@ pub struct CreateCircleInput {
     pub name: String,
     /// Makes this circle distinct from any other for the same person.
     pub network_seed: String,
-    /// Optionally, somebody who must also agree before anybody may join.
+    /// Whether this circle asks two people to agree before anybody joins.
+    ///
+    /// The rule, not the person — who agrees is written inside the circle
+    /// afterwards. This forms part of the identity and the person does not.
     #[serde(default)]
-    pub seconder: Option<String>,
+    pub requires_second_yes: bool,
 }
 
 /// Bring a new circle into being.
@@ -721,7 +790,7 @@ pub fn create_circle(input: CreateCircleInput) -> ExternResult<ClonedCell> {
 
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.requires_second_yes, input.network_seed)?,
         membrane_proof: None,
         name: Some(input.name),
     })
@@ -737,11 +806,28 @@ pub struct JoinCircleInput {
     pub network_seed: String,
     /// From the founder's `invite`, signed over the joiner's own key.
     pub invitation: Invitation,
-    /// Whoever this circle asks to agree as well, if it asks anybody.
+    /// Whether the circle asks two people to agree before anybody joins.
     ///
-    /// Part of the DNA hash, so a joiner who leaves it out computes a
-    /// different circle and lands nowhere. It travels in the invitation for
-    /// exactly that reason.
+    /// Part of the DNA hash, so a joiner who gets it wrong computes a
+    /// different circle and lands nowhere — silently, which is why it
+    /// travels in the invitation rather than being guessed at.
+    ///
+    /// It used to be the second person's key doing this job, back when the
+    /// person was in the identity. They are separate things now, and an
+    /// invitation carrying only the person left the joiner computing a
+    /// circle that asks nobody.
+    #[serde(default)]
+    pub requires_second_yes: bool,
+
+    /// Who the circle had appointed when this invitation was made.
+    ///
+    /// **Not part of the identity, and must never be passed to
+    /// `circle_modifiers`.** It is here only so that a plainly wrong
+    /// invitation can be refused before a cell is built from it — see the note
+    /// in `join_circle` about the dead circle called "Auntie Marge".
+    ///
+    /// Keeping it beside the flag is uncomfortable, because confusing the two
+    /// is exactly the fault this commit fixes. The comment is the guard.
     #[serde(default)]
     pub seconder: Option<String>,
 }
@@ -800,7 +886,11 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
 
             return create_clone_cell(CreateCloneCellInput {
                 cell_id: this_cell()?,
-                modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+                modifiers: circle_modifiers(
+                    &founder,
+                    input.requires_second_yes,
+                    input.network_seed,
+                )?,
                 membrane_proof: Some(proof),
                 name: Some(input.name),
             });
@@ -828,7 +918,7 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
 
     create_clone_cell(CreateCloneCellInput {
         cell_id: this_cell()?,
-        modifiers: circle_modifiers(&founder, input.seconder, input.network_seed)?,
+        modifiers: circle_modifiers(&founder, input.requires_second_yes, input.network_seed)?,
         membrane_proof: Some(proof),
         name: Some(input.name),
     })
@@ -911,6 +1001,43 @@ pub enum Signal {
         by: AgentPubKey,
         text: String,
     },
+    /// The holder has put somebody forward and is waiting on the second
+    /// agreement. Sent only to the person who has to give it.
+    Proposed {
+        proposed: ActionHash,
+        by: AgentPubKey,
+        /// What the holder called them. A claim, never checked.
+        name: String,
+    },
+    /// The second agreement has been given. Sent only to the holder, who is
+    /// the one waiting on it, and whose screen can now show a finished
+    /// invitation instead of a job half done.
+    Endorsed {
+        proposed: ActionHash,
+        by: AgentPubKey,
+    },
+    /// Somebody is at the door of a waiting room. Sent only to the holder of
+    /// the circle it serves, who is the only person who can answer.
+    Knocked {
+        by: AgentPubKey,
+        /// What they call themselves. A claim.
+        name: String,
+        /// How they say they are connected. A claim.
+        relationship: String,
+    },
+    /// A knock has been answered, so there is an invitation to collect. Sent
+    /// only to the person who knocked.
+    Admitted { by: AgentPubKey },
+    /// The holder has asked somebody to agree to who joins. Sent only to
+    /// the person being asked, who until now found out by noticing that
+    /// strangers had started appearing on their screen for approval.
+    Appointed {
+        appointment: ActionHash,
+        by: AgentPubKey,
+    },
+    /// They have said whether they are willing. Sent only to the holder,
+    /// who is the one who has to appoint somebody else if they are not.
+    Answered { by: AgentPubKey, willing: bool },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -960,7 +1087,13 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
     let claimed = match &signal {
         Signal::Acknowledged { by, .. }
         | Signal::Introduced { by, .. }
-        | Signal::Suggested { by, .. } => by,
+        | Signal::Suggested { by, .. }
+        | Signal::Proposed { by, .. }
+        | Signal::Endorsed { by, .. }
+        | Signal::Knocked { by, .. }
+        | Signal::Admitted { by }
+        | Signal::Appointed { by, .. }
+        | Signal::Answered { by, .. } => by,
     };
 
     if claimed != &caller {
@@ -981,7 +1114,7 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
 const SUGGESTION_ANCHOR: &str = "suggestions";
 
 fn suggestion_path() -> ExternResult<TypedPath> {
-    Path::from(SUGGESTION_ANCHOR).typed(LinkTypes::CircleToSuggestion)
+    anchored(SUGGESTION_ANCHOR, LinkTypes::CircleToSuggestion)
 }
 
 #[hdk_extern]
@@ -1205,4 +1338,870 @@ pub fn who_holds_this(_: ()) -> ExternResult<Option<AgentPubKey>> {
         Membrane::Founder(key, _) => Some(key),
         _ => None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Two agreements, without the post
+// ---------------------------------------------------------------------------
+//
+// Where a circle asks two people to agree, both agreements are signatures, and
+// they used to reach each other by hand: the holder sent half an invitation to
+// the second person, who sent it back finished, who sent it on. Five
+// copy-and-pastes of near-identical text between two devices that were already
+// members of the same circle.
+//
+// They are members of the same circle, so they can simply tell each other. The
+// holder writes down who she wants to let in; the second person sees it and
+// agrees; the finished invitation appears on the holder's screen. One thing to
+// send, to the person joining, which is the one place a message genuinely has
+// to leave the circle.
+//
+// The membrane is untouched. Whoever joins still presents both signatures at
+// the door, because somebody who has not joined cannot read any of this.
+
+const PROPOSED_ANCHOR: &str = "proposed";
+
+fn proposed_path() -> ExternResult<TypedPath> {
+    anchored(PROPOSED_ANCHOR, LinkTypes::CircleToProposedMember)
+}
+
+/// Everything an invitation carries besides the signatures themselves.
+///
+/// Pulled out because it is now needed twice: once when an invitation is made
+/// directly, and once when one is assembled from two agreements that arrived
+/// separately. Two copies of this drifting apart would produce invitations
+/// that differ in ways nobody would notice until somebody could not join.
+fn bundle_around(
+    invitee: &AgentPubKey,
+    invitee_name: String,
+    invitation: Invitation,
+) -> ExternResult<InvitationBundle> {
+    let me = agent_info()?.agent_initial_pubkey;
+
+    let about = match get_circle_about_me(())?.first() {
+        Some(original) => get_current_about_me(original.clone())?
+            .record
+            .and_then(|r| r.entry().as_option().cloned())
+            .and_then(|e| AboutMe::try_from(e).ok())
+            .map(|a| a.display_name)
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+
+    let seconder = appointment_now()?.map(|(_, key)| key.to_string());
+    let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
+
+    // My own introduction, off my own chain: what I told this circle I am
+    // called. Read locally because it is mine, and empty if I never said.
+    let inviter = on_my_own_chain(UnitEntryTypes::Member)?
+        .last()
+        .and_then(|record| record.entry().to_app_option::<Member>().ok().flatten())
+        .map(|m| m.name)
+        .unwrap_or_default();
+
+    Ok(InvitationBundle {
+        founder: match membrane()? {
+            Membrane::Founder(founder, _) => founder.to_string(),
+            _ => me.to_string(),
+        },
+        inviter,
+        invitee: invitee.to_string(),
+        invitee_name,
+        seconder,
+        requires_second_yes: asks_two,
+        network_seed: dna_info()?.modifiers.network_seed,
+        about,
+        invitation,
+    })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProposeInput {
+    pub invitee: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Put somebody forward, where the person who has to agree will see it.
+///
+/// Only meaningful from the holder — validation refuses it from anybody else,
+/// on every peer independently, so there is no permission check to forget
+/// here.
+#[hdk_extern]
+pub fn propose_member(input: ProposeInput) -> ExternResult<Record> {
+    let invitee = AgentPubKey::try_from(input.invitee.trim()).map_err(|_| {
+        wasm_error!(
+            "That does not look like somebody's identifier. It is a long line of \
+             letters and numbers beginning uhCAk, which they can copy from their \
+             own copy of Hearth. It is not their name."
+        )
+    })?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let signature = sign(me.clone(), invitee.clone())?;
+    let name = input.name.trim().to_string();
+
+    let action_hash = create_entry(EntryTypes::ProposedMember(ProposedMember {
+        invitee: invitee.clone(),
+        name: name.clone(),
+        signature,
+    }))?;
+
+    let path = proposed_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToProposedMember,
+        (),
+    )?;
+
+    // Tell the person who has to agree, so they do not have to be watching.
+    // Fire and forget, like every other signal here: the proposal is on the
+    // chain either way, and they will see it whenever they next look.
+    if let Some((_, seconder)) = appointment_now()? {
+        if seconder != me {
+            let _ = send_remote_signal(
+                Signal::Proposed {
+                    proposed: action_hash.clone(),
+                    by: me,
+                    name,
+                },
+                vec![seconder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the proposal just written"))
+}
+
+/// Give the second agreement to somebody the holder has put forward.
+///
+/// Called by whoever the circle names, on their own machine, having read who
+/// it is. Validation refuses it from anybody else — that check is the whole
+/// safeguard, and it is made by every peer rather than here.
+#[hdk_extern]
+pub fn endorse(proposed: ActionHash) -> ExternResult<Record> {
+    let record = get(proposed.clone(), GetOptions::default())?
+        .ok_or_else(|| wasm_error!("That proposal could not be found"))?;
+
+    let entry = record
+        .entry()
+        .to_app_option::<ProposedMember>()
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .ok_or_else(|| wasm_error!("That is not somebody put forward to join"))?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let signature = sign(me.clone(), entry.invitee.clone())?;
+
+    let (appointment, _) = appointment_now()?
+        .ok_or_else(|| wasm_error!("This circle has not asked anybody to agree to who joins"))?;
+
+    let action_hash = create_entry(EntryTypes::Endorsement(Endorsement {
+        proposed: proposed.clone(),
+        appointment,
+        signature,
+    }))?;
+
+    create_link(
+        proposed.clone(),
+        action_hash.clone(),
+        LinkTypes::ProposedMemberToEndorsement,
+        (),
+    )?;
+
+    // Tell the holder, so the finished invitation appears in front of her
+    // rather than being waited for.
+    if let Membrane::Founder(founder, _) = membrane()? {
+        if founder != me {
+            let _ = send_remote_signal(Signal::Endorsed { proposed, by: me }, vec![founder]);
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the agreement just written"))
+}
+
+/// Somebody put forward, and how far they have got.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PendingMember {
+    pub proposed: ActionHash,
+    /// The key that would be admitted, as text.
+    pub invitee: String,
+    /// What the holder called them. A claim, never checked.
+    pub name: String,
+    /// Whether the second person has agreed yet.
+    pub agreed: bool,
+    /// The finished invitation, once both agreements exist.
+    ///
+    /// `None` until then, and that is the whole state anybody needs: nothing
+    /// to assemble by hand, and nothing to send too early.
+    pub invitation: Option<InvitationBundle>,
+}
+
+/// Everybody currently put forward, oldest first.
+#[hdk_extern]
+pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
+    let path = proposed_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToProposedMember)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut proposals = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    // Mine too, so the holder sees what she just put forward without waiting
+    // for the network to hear about it.
+    and_my_own(
+        &mut proposals,
+        on_my_own_chain(UnitEntryTypes::ProposedMember)?,
+    );
+    oldest_first(&mut proposals);
+
+    // My own agreements, for the same reason on the other side.
+    let mine = on_my_own_chain(UnitEntryTypes::Endorsement)?;
+
+    let mut out = Vec::new();
+    for record in proposals {
+        let hash = record.action_address().clone();
+        let Some(proposed) = record
+            .entry()
+            .to_app_option::<ProposedMember>()
+            .ok()
+            .flatten()
+        else {
+            continue;
+        };
+
+        let mut endorsements = get_links(
+            LinkQuery::try_new(hash.clone(), LinkTypes::ProposedMemberToEndorsement)?,
+            GetStrategy::Network,
+        )?;
+        endorsements.sort_by(|a, b| {
+            a.timestamp
+                .cmp(&b.timestamp)
+                .then_with(|| a.target.cmp(&b.target))
+        });
+
+        let mut endorsement = match endorsements
+            .last()
+            .and_then(|l| l.target.clone().into_action_hash())
+        {
+            Some(h) => get(h, GetOptions::default())?,
+            None => None,
+        };
+
+        if endorsement.is_none() {
+            endorsement = mine
+                .iter()
+                .rev()
+                .find(|r| {
+                    r.entry()
+                        .to_app_option::<Endorsement>()
+                        .ok()
+                        .flatten()
+                        .is_some_and(|e| e.proposed == hash)
+                })
+                .cloned();
+        }
+
+        // Both halves of the agreement: the signature, and the appointment it
+        // was given under. The second matters because appointments change, and
+        // the door checks against the one that was in force at the time rather
+        // than whoever is appointed by the time somebody joins.
+        let given =
+            endorsement.and_then(|r| r.entry().to_app_option::<Endorsement>().ok().flatten());
+        let under = given.as_ref().map(|e| e.appointment.clone());
+        let seconded = given.map(|e| e.signature);
+
+        // Assembled only when both halves are here. An invitation with one
+        // agreement on it is not a weaker invitation; it is not one yet, and
+        // handing it over would send somebody to a door that will not open.
+        let invitation = match &seconded {
+            Some(_) => Some(bundle_around(
+                &proposed.invitee,
+                proposed.name.clone(),
+                Invitation {
+                    signature: proposed.signature.clone(),
+                    seconded: seconded.clone(),
+                    // The one the agreement was actually given under, not
+                    // whichever is in force now. They can differ, and the
+                    // door checks against the first.
+                    appointment: under.clone(),
+                },
+            )?),
+            None => None,
+        };
+
+        out.push(PendingMember {
+            proposed: hash,
+            invitee: proposed.invitee.to_string(),
+            name: proposed.name,
+            agreed: seconded.is_some(),
+            invitation,
+        });
+    }
+
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// The waiting room
+// ---------------------------------------------------------------------------
+//
+// Joining used to begin with "send me the long line of characters from your
+// app". That is the step where this stopped being possible for somebody
+// elderly, or somebody being helped: an invitation is signed over a key, so
+// the key had to be collected first, one person at a time, by hand.
+//
+// A waiting room turns it round. The holder shares one address that never
+// changes and can go to anybody — a family group, a phone call, a note on the
+// fridge. Whoever has it can knock: say who they are and ask. They bring their
+// own key with them by arriving.
+//
+// It is a separate network on purpose. A circle is closed, so somebody outside
+// cannot write to it — that is the membrane doing its job, and no amount of
+// interface removes it. So the room is somewhere they *can* write, holding
+// nothing but questions and the answers to them.
+
+const KNOCK_ANCHOR: &str = "knocks";
+
+fn knock_path() -> ExternResult<TypedPath> {
+    anchored(KNOCK_ANCHOR, LinkTypes::WaitingRoomToKnock)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WaitingRoomInput {
+    /// Whoever holds the circle this room serves, as base64 text.
+    pub holder: String,
+    /// Makes this room distinct from any other. Part of its address.
+    pub network_seed: String,
+    /// What this device calls it. Not part of the address.
+    pub name: String,
+}
+
+fn waiting_room_modifiers(
+    holder: &AgentPubKey,
+    network_seed: String,
+) -> ExternResult<DnaModifiersOpt<YamlProperties>> {
+    let properties = CircleProperties {
+        founder: None,
+        lobby: false,
+        seconder: None,
+        // A waiting room decides nothing. It carries a question in and an
+        // answer out; what happens between is settled in the circle.
+        requires_second_yes: false,
+        waiting_for: Some(holder.to_string()),
+    };
+
+    let yaml = yaml_serde::to_value(&properties).map_err(|e| {
+        wasm_error!(format!(
+            "Could not express the waiting room's properties as YAML: {e}"
+        ))
+    })?;
+
+    Ok(DnaModifiersOpt::none()
+        .with_network_seed(network_seed)
+        .with_properties(YamlProperties::new(yaml)))
+}
+
+/// Open a waiting room, or step into somebody else's.
+///
+/// The same call for both, because they are the same act: a waiting room is
+/// open, so there is nothing to present and nobody to ask. The holder makes
+/// one for her circle; whoever she gives the address to arrives in the same
+/// room by computing the same one.
+#[hdk_extern]
+pub fn enter_waiting_room(input: WaitingRoomInput) -> ExternResult<ClonedCell> {
+    let holder = AgentPubKey::try_from(input.holder.trim())
+        .map_err(|_| wasm_error!("That waiting room names nobody this app can read"))?;
+
+    create_clone_cell(CreateCloneCellInput {
+        cell_id: this_cell()?,
+        modifiers: waiting_room_modifiers(&holder, input.network_seed)?,
+        membrane_proof: None,
+        name: Some(input.name),
+    })
+}
+
+/// Ask to be let in.
+///
+/// No permission check, deliberately. A room where you must already be known
+/// in order to ask is the closed door this exists to replace — and knocking
+/// admits nobody. Everything said here is a claim, and the people deciding are
+/// told so.
+/// Box some words so that one named person can read them.
+///
+/// Sender and recipient may be the same key, which is how somebody seals a
+/// copy to themselves.
+fn seal_for(
+    words: &WhoIsKnocking,
+    sender: AgentPubKey,
+    recipient: AgentPubKey,
+) -> ExternResult<XSalsa20Poly1305EncryptedData> {
+    let bytes = ExternIO::encode(words)
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .into_vec();
+    ed_25519_x_salsa20_poly1305_encrypt(sender, recipient, bytes.into())
+}
+
+/// Open a sealed knock, or give up quietly.
+///
+/// Quietly on purpose. Everybody in a room can read every knock in it, and
+/// almost none of them are theirs to open. Failing to open one is the
+/// ordinary case, not an error.
+fn unseal(
+    sealed: &XSalsa20Poly1305EncryptedData,
+    recipient: AgentPubKey,
+    sender: AgentPubKey,
+) -> Option<WhoIsKnocking> {
+    let opened = ed_25519_x_salsa20_poly1305_decrypt(recipient, sender, sealed.clone()).ok()?;
+    ExternIO::from(opened.as_ref().to_vec()).decode().ok()
+}
+
+#[hdk_extern]
+pub fn knock(words: WhoIsKnocking) -> ExternResult<Record> {
+    /*
+     * Asked for here rather than checked by every peer.
+     *
+     * It used to be a validation rule. It cannot be one now the words are
+     * sealed — a peer that cannot read a thing cannot have an opinion about
+     * it. Nothing was lost: an empty name was never dangerous, only useless.
+     */
+    if words.name.trim().is_empty() {
+        return Err(wasm_error!(
+            "Say what you are called, so they know who is asking"
+        ));
+    }
+
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::WaitingRoom(holder) = membrane()? else {
+        return Err(wasm_error!(
+            "Knocking only means something in a circle's waiting room"
+        ));
+    };
+
+    let knock = Knock {
+        for_the_holder: seal_for(&words, me.clone(), holder.clone())?,
+        for_me: seal_for(&words, me.clone(), me.clone())?,
+    };
+
+    let action_hash = create_entry(EntryTypes::Knock(knock.clone()))?;
+
+    let path = knock_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::WaitingRoomToKnock,
+        (),
+    )?;
+
+    /*
+     * Tell the holder somebody is at the door. Fire and forget, as ever: the
+     * knock is written either way and she will see it when she next looks.
+     *
+     * The words travel in the clear here, and that is not the same as
+     * writing them in the open. A remote signal goes to one named agent over
+     * the encrypted transport; the entry sits in a room anybody with the
+     * address can read. Only the second one needed sealing.
+     */
+    if holder != me {
+        let _ = send_remote_signal(
+            Signal::Knocked {
+                by: me,
+                name: words.name,
+                relationship: words.relationship,
+            },
+            vec![holder],
+        );
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the knock just written"))
+}
+
+/// Somebody at the door, and what has become of them.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Knocking {
+    pub knock: ActionHash,
+    /// Whoever knocked. This is the key an invitation would be made for, and
+    /// it is theirs by the fact of their having written the knock — which is
+    /// the whole reason nobody had to collect it from them.
+    pub who: String,
+    /// What they call themselves. A claim.
+    ///
+    /// Empty where this device cannot open the knock, which is the ordinary
+    /// case for everybody but the holder and the person who wrote it.
+    pub name: String,
+    /// How they say they are connected. A claim.
+    pub relationship: String,
+    /// True once they have been answered.
+    pub answered: bool,
+}
+
+/// Everybody at the door, oldest first.
+#[hdk_extern]
+pub fn get_knocks(_: ()) -> ExternResult<Vec<Knocking>> {
+    let path = knock_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::WaitingRoomToKnock)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut knocks = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    and_my_own(&mut knocks, on_my_own_chain(UnitEntryTypes::Knock)?);
+    oldest_first(&mut knocks);
+
+    // Read once, before the loop, because neither changes inside it.
+    let my_answers = on_my_own_chain(UnitEntryTypes::Admission)?;
+    let me = agent_info()?.agent_initial_pubkey;
+
+    let mut out = Vec::new();
+    for record in knocks {
+        let hash = record.action_address().clone();
+        let Some(knock) = record.entry().to_app_option::<Knock>().ok().flatten() else {
+            continue;
+        };
+
+        let answers = get_links(
+            LinkQuery::try_new(hash.clone(), LinkTypes::KnockToAdmission)?,
+            GetStrategy::Network,
+        )?;
+
+        /*
+         * And my own answers, which the network has not heard about yet.
+         *
+         * The rule at the top of this file, broken here and found by walking
+         * it: what I wrote myself is never a question for the network. She
+         * pressed "Let them in", the answer was written, the person was
+         * admitted and arrived in the circle — and her own screen went on
+         * asking the network whether she had done it, was told no, and left
+         * them sitting at the door with the button still under them.
+         *
+         * The worst kind of wrong, too: pressing it again would have made a
+         * second invitation for somebody already inside.
+         */
+        let answered = !answers.is_empty()
+            || my_answers.iter().any(|record| {
+                record
+                    .entry()
+                    .to_app_option::<Admission>()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|a| a.knock == hash)
+            });
+
+        /*
+         * Opened where this device is one of the two ends, and otherwise
+         * left shut.
+         *
+         * The holder opens the copy sealed to her. The person who knocked
+         * opens the copy they sealed to themselves, which is how their own
+         * app can tell them back what they said after a restart. To
+         * everybody else in the room these are two blobs, which is the
+         * entire point of them.
+         */
+        let author = record.action().author().clone();
+        let words = if author == me {
+            unseal(&knock.for_me, me.clone(), me.clone())
+        } else {
+            unseal(&knock.for_the_holder, me.clone(), author.clone())
+        };
+
+        out.push(Knocking {
+            knock: hash,
+            who: author.to_string(),
+            name: words.as_ref().map(|w| w.name.clone()).unwrap_or_default(),
+            relationship: words.map(|w| w.relationship).unwrap_or_default(),
+            answered,
+        });
+    }
+
+    Ok(out)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AdmitInput {
+    pub knock: ActionHash,
+    /// The finished invitation, as the one line of text the app passes about.
+    pub invitation: String,
+}
+
+/// Answer a knock by leaving the invitation where they will find it.
+///
+/// Safe in the open: an invitation is signed over one person's own key, so it
+/// admits nobody else and is a useless blob to anyone who picks it up. That is
+/// what lets the answer be left in a room anybody may enter rather than
+/// carried by hand to the one person it is for.
+#[hdk_extern]
+pub fn admit(input: AdmitInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Admission(Admission {
+        knock: input.knock.clone(),
+        invitation: input.invitation,
+    }))?;
+
+    create_link(
+        input.knock.clone(),
+        action_hash.clone(),
+        LinkTypes::KnockToAdmission,
+        (),
+    )?;
+
+    // Tell them the door is open, so they are not left refreshing.
+    if let Some(record) = get(input.knock, GetOptions::default())? {
+        let waiting = record.action().author().clone();
+        let me = agent_info()?.agent_initial_pubkey;
+        if waiting != me {
+            let _ = send_remote_signal(Signal::Admitted { by: me }, vec![waiting]);
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the answer just written"))
+}
+
+/// The invitation waiting for me here, if there is one.
+///
+/// Read from my own knocks outwards rather than from the whole room, so this
+/// answers "have I been let in" and never "who else has".
+#[hdk_extern]
+pub fn my_admission(_: ()) -> ExternResult<Option<String>> {
+    let mine: Vec<ActionHash> = on_my_own_chain(UnitEntryTypes::Knock)?
+        .into_iter()
+        .map(|r| r.action_address().clone())
+        .collect();
+
+    for knock in mine.into_iter().rev() {
+        let answers = get_links(
+            LinkQuery::try_new(knock, LinkTypes::KnockToAdmission)?,
+            GetStrategy::Network,
+        )?;
+
+        for link in answers {
+            let Some(hash) = link.target.into_action_hash() else {
+                continue;
+            };
+            let Some(record) = get(hash, GetOptions::default())? else {
+                continue;
+            };
+            if let Some(admission) = record.entry().to_app_option::<Admission>().ok().flatten() {
+                return Ok(Some(admission.invitation));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+// ---------------------------------------------------------------------------
+// Who has been asked to agree to who joins
+// ---------------------------------------------------------------------------
+//
+// The person used to be written into the circle's identity, which made them
+// permanent: if they died, lost the device their keys were on, or simply had
+// to be replaced, the only way out was a new circle with everybody
+// re-invited. For a record about somebody in declining health, one of the two
+// people becoming unable to answer is not an edge case. It is the expected
+// course of events.
+//
+// So the identity carries the rule and the circle carries the person.
+
+const APPOINTMENT_ANCHOR: &str = "appointments";
+
+fn appointment_path() -> ExternResult<TypedPath> {
+    anchored(APPOINTMENT_ANCHOR, LinkTypes::CircleToAppointment)
+}
+
+/// Ask somebody to agree to who joins, from now on.
+///
+/// Writing another one later replaces it. Nothing is erased: who was trusted
+/// with this, and when, stays in the circle where everybody can see it, which
+/// is what the safeguard now rests on.
+///
+/// It is an ask, not an instruction. They are told, and they answer -- see
+/// answer_appointment. Nothing here can compel anybody to agree to an
+/// arrival, and nothing tries to; what this makes possible is that saying no
+/// reaches the holder instead of looking exactly like not having got round
+/// to it yet.
+#[hdk_extern]
+pub fn appoint(agrees: String) -> ExternResult<Record> {
+    let agrees = AgentPubKey::try_from(agrees.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+
+    let action_hash = create_entry(EntryTypes::Appointment(Appointment {
+        agrees: agrees.clone(),
+    }))?;
+
+    let path = appointment_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToAppointment,
+        (),
+    )?;
+
+    // Ask them, rather than leaving them to find out.
+    let me = agent_info()?.agent_initial_pubkey;
+    if agrees != me {
+        let _ = send_remote_signal(
+            Signal::Appointed {
+                appointment: action_hash.clone(),
+                by: me,
+            },
+            vec![agrees],
+        );
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the appointment just written"))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AnswerInput {
+    pub appointment: ActionHash,
+    pub willing: bool,
+}
+
+/// Say whether you are willing to be the one who agrees to who joins.
+///
+/// Answering again changes your mind, and the newest answer is the one that
+/// counts. Nothing is erased -- the holder may have acted on what you said
+/// before.
+#[hdk_extern]
+pub fn answer_appointment(input: AnswerInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Consent(Consent {
+        appointment: input.appointment.clone(),
+        willing: input.willing,
+    }))?;
+
+    create_link(
+        input.appointment,
+        action_hash.clone(),
+        LinkTypes::AppointmentToConsent,
+        (),
+    )?;
+
+    // Tell the holder. A no she does not hear is the same to her as no answer
+    // at all, and this exists precisely to tell those two apart.
+    let me = agent_info()?.agent_initial_pubkey;
+    if let Membrane::Founder(founder, _) = membrane()? {
+        if founder != me {
+            let _ = send_remote_signal(
+                Signal::Answered {
+                    by: me,
+                    willing: input.willing,
+                },
+                vec![founder],
+            );
+        }
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the answer just written"))
+}
+
+/// Who has been asked to agree to who joins, and what they said.
+///
+/// One read for the whole state, because every screen that cares about any
+/// part of it cares about all of it: a name to show, whether to put the
+/// question in front of the person being asked, and whether to tell the
+/// holder she needs to ask somebody else.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WhoAgrees {
+    pub appointment: ActionHash,
+    /// The person asked, as text.
+    pub agrees: String,
+    /// What they said, and None while they have not answered.
+    ///
+    /// Three states, not two. "Not answered yet" and "said no" look the same
+    /// from outside and mean entirely different things to the holder.
+    pub willing: Option<bool>,
+}
+
+#[hdk_extern]
+pub fn who_agrees_here(_: ()) -> ExternResult<Option<WhoAgrees>> {
+    let Some((appointment, agrees)) = appointment_now()? else {
+        return Ok(None);
+    };
+    let willing = answer_to(&appointment)?;
+    Ok(Some(WhoAgrees {
+        appointment,
+        agrees: agrees.to_string(),
+        willing,
+    }))
+}
+
+/// The newest answer to one appointment, if it has been answered.
+fn answer_to(appointment: &ActionHash) -> ExternResult<Option<bool>> {
+    let links = get_links(
+        LinkQuery::try_new(appointment.clone(), LinkTypes::AppointmentToConsent)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    // Mine too, so somebody who has just answered sees their own answer
+    // without waiting for the network to hear about it. The same rule as
+    // everywhere else here, and the one whose absence once had a holder
+    // press "let them in" twice.
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::Consent)?);
+    oldest_first(&mut found);
+
+    Ok(found.into_iter().rev().find_map(|record| {
+        let consent = record.entry().to_app_option::<Consent>().ok().flatten()?;
+        (&consent.appointment == appointment).then_some(consent.willing)
+    }))
+}
+
+/// The appointment in force: the newest one the holder has written.
+///
+/// A coordinator read, where "newest" is a perfectly good question. Validation
+/// could never ask it — the answer changes — which is why everything that has
+/// to be checked names the appointment it relies on instead.
+fn appointment_now() -> ExternResult<Option<(ActionHash, AgentPubKey)>> {
+    let path = appointment_path()?;
+    let links = get_links(
+        LinkQuery::try_new(path.path_entry_hash()?, LinkTypes::CircleToAppointment)?,
+        GetStrategy::Network,
+    )?;
+
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    // Mine too: the holder should see who she just appointed without waiting
+    // for the network to hear about it.
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::Appointment)?);
+    oldest_first(&mut found);
+
+    Ok(found.into_iter().rev().find_map(|record| {
+        let appointment = record
+            .entry()
+            .to_app_option::<Appointment>()
+            .ok()
+            .flatten()?;
+        Some((record.action_address().clone(), appointment.agrees))
+    }))
 }

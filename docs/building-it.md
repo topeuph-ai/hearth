@@ -114,6 +114,44 @@ Chrome.** So the ceiling here is the browser, not the peer-to-peer part — whic
 is the opposite of what people assume, and worth saying out loud when somebody
 asks whether it would scale.
 
+Three agents on this laptop is about 700 MB across 13 processes, against 7 GB
+free. It was once believed that three was too many here, because a run of three
+stalled for ten minutes at a time and dropping to two fixed it instantly. That
+was an inference, and it was wrong: measured properly, three runs clean with no
+`database is locked` and no `VirtualLock` failures at all. Whatever the stall
+was, it was not the agent count.
+
+---
+
+## Asking the running conductors instead of guessing
+
+When a screen looks wrong, the cheapest way to find out what is actually true
+is to ask every conductor the same question and compare. This found three
+faults in one evening that reading the code had not.
+
+hc-spin prints an admin port per conductor into its own output:
+
+```bash
+grep -oE 'admin_port":[0-9]+' demo.log | sort -u
+```
+
+From there, `@holochain/client` will talk to them — it is already in
+`ui/node_modules`, so a script run from `ui/` can import it by name. Two
+things are easy to lose an hour to:
+
+- **Every call needs signing credentials**, per cell, or it fails with *"no
+  signing credentials have been authorized for cell ..."* — which looks like a
+  permissions bug in the app and is not. Call
+  `admin.authorizeSigningCredentials(cellId)` first.
+- **The app websocket needs an origin of `hc-spin`** (`wsClientOptions: {
+  origin: "hc-spin" }`), because that is what the conductor was told to allow.
+
+What it is worth asking: `who_holds_this` distinguishes a circle from a room
+in one call, and after that `get_members`, `get_knocks`,
+`get_pending_members` and `who_agrees_here` say what each device believes.
+**Comparing devices is the whole point** — "Agent 3 can read the room but has
+no knock of its own" is a diagnosis; "the knock did not appear" is a symptom.
+
 ---
 
 ## Getting two machines to talk

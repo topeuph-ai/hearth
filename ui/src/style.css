@@ -129,6 +129,25 @@ button.secondary {
   border-color: var(--accent);
 }
 
+/*
+ * hidden means hidden, whatever else a class says.
+ *
+ * Found by walking it: a "Write it" button sat under Save and Cancel on an
+ * open form, doing nothing when pressed. The element holding it had the
+ * hidden attribute set correctly and was on screen anyway, because the
+ * browser's own rule for [hidden] is display:none and any author rule with a
+ * display of its own beats it. .actions below is display:flex, so every
+ * "actions" row in this app ignored being hidden.
+ *
+ * !important is the right tool here and one of the few places it is: this is
+ * not a preference competing with other rules, it is the meaning of an
+ * attribute, and the JS that sets it has no way to know what class the
+ * element happens to carry.
+ */
+[hidden] {
+  display: none !important;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
