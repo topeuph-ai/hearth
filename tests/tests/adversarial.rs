@@ -2561,7 +2561,7 @@ async fn a_joiner_lands_in_the_same_circle_when_nobody_is_appointed_yet() {
 
     let bundle: aboutme::InvitationBundle = conductor
         .call(
-            &zome(hers.cell_id()),
+            &zome(&hers.cell_id),
             "invite",
             aboutme::InviteInput {
                 invitee: bob.to_string(),
@@ -2602,8 +2602,8 @@ async fn a_joiner_lands_in_the_same_circle_when_nobody_is_appointed_yet() {
     // The whole assertion. Anything else being equal is not enough: if these
     // differ they are two networks, and nothing will ever tell either of them.
     assert_eq!(
-        hers.cell_id().dna_hash(),
-        his.cell_id().dna_hash(),
+        hers.cell_id.dna_hash(),
+        his.cell_id.dna_hash(),
         "the holder and the joiner must compute the same circle"
     );
 }
@@ -2635,7 +2635,7 @@ async fn a_joiner_lands_in_the_same_circle_when_it_asks_nobody() {
 
     let bundle: aboutme::InvitationBundle = conductor
         .call(
-            &zome(hers.cell_id()),
+            &zome(&hers.cell_id),
             "invite",
             aboutme::InviteInput {
                 invitee: bob.to_string(),
@@ -2666,8 +2666,8 @@ async fn a_joiner_lands_in_the_same_circle_when_it_asks_nobody() {
         .await;
 
     assert_eq!(
-        hers.cell_id().dna_hash(),
-        his.cell_id().dna_hash(),
+        hers.cell_id.dna_hash(),
+        his.cell_id.dna_hash(),
         "a circle that asks nobody must also be the same circle on both sides"
     );
 }
@@ -2713,8 +2713,8 @@ async fn the_rule_is_part_of_what_makes_a_circle() {
         .await;
 
     assert_ne!(
-        asking.cell_id().dna_hash(),
-        not_asking.cell_id().dna_hash(),
+        asking.cell_id.dna_hash(),
+        not_asking.cell_id.dna_hash(),
         "same holder, same seed, different rule — and so a different circle"
     );
 }
