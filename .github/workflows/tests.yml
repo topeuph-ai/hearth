@@ -130,6 +130,15 @@ jobs:
             node --check "$f"
           done
 
+      # A button that does nothing is worse than no button: it gets pressed,
+      # and then pressed again. One went dead in a refactor — the line wiring
+      # it found the buttons by class, so it had no id in it, and every check
+      # here looked straight past it while somebody sat on a screen with no
+      # way back.
+      - name: Every button does something
+        working-directory: ui
+        run: node scripts/every-button-does-something.mjs
+
       # The frozen integrity zome must not move.
       #
       # A circle is the hash of this wasm, so any change to it strands every

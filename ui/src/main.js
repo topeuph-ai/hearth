@@ -2406,6 +2406,24 @@ $("rename-form").addEventListener("submit", (event) => {
   announce(`Called ${now} on this device.`);
 });
 
+/*
+ * Every form has a way out. Getting somewhere by accident should cost one
+ * press to undo, not a restart.
+ *
+ * This was here, and was deleted by accident: it sat between two lines that
+ * were being cut out together, and went with them. Nothing caught it. It has
+ * no id, so the check for "a name in the code with no element on the page"
+ * could not see it, and neither could the one for functions nobody calls —
+ * the buttons were still on the page, still looked like buttons, and did
+ * nothing at all when pressed.
+ *
+ * Which left somebody on the create screen with the wrong option chosen and
+ * no way back to the two buttons they started from.
+ */
+for (const button of document.querySelectorAll(".back-to-choose")) {
+  button.addEventListener("click", () => show("choose"));
+}
+
 $("back-to-circles").addEventListener("click", () => {
   renderCircles();
   show("circles");
