@@ -267,7 +267,8 @@ deliberately making a separate network.
 ```bash
 git clone --depth 1 https://github.com/holochain/kangaroo-electron.git hearth-desktop
 cd hearth-desktop
-# In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth'.
+# In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth',
+# and version — bump it every release, or the installer keeps the old name.
 gh release download --repo topeuph-ai/hearth --pattern 'hearth.webhapp' --dir pouch/
 npx yarn@1 install
 npx yarn@1 setup       # fetches and checksums the Holochain binaries
