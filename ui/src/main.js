@@ -2945,6 +2945,35 @@ function knockCard(item, roomCell) {
     return li;
   }
 
+  /*
+   * Already put forward, and still sitting in the queue.
+   *
+   * Where a circle asks two people, "Let them in" does not let anybody in: it
+   * writes a proposal and waits on the second agreement. Nothing marked the
+   * knock as dealt with, so the person stayed in "People asking to join" with
+   * a button under them — and pressing it again wrote a second proposal, for
+   * the same person, which had to be agreed to all over again.
+   *
+   * Walked, and then confirmed by asking all three conductors: two proposals,
+   * both agreed, both ready, for one arrival.
+   *
+   * So the card says where they have got to instead of offering the press
+   * again. Nothing is refused here — she can still put them aside — but there
+   * is no longer a button whose only effect is to make more work.
+   */
+  const putForward = pending.find((p) => p.invitee === item.who);
+  if (putForward) {
+    const where = document.createElement("p");
+    where.className = "outcome";
+    const second =
+      members.get(seconderHere)?.name?.trim() || "the second person";
+    where.textContent = putForward.agreed
+      ? `Agreed by both of you. ${item.name} is being let in now.`
+      : `Put forward. Waiting for ${second} to agree.`;
+    li.append(where);
+    return li;
+  }
+
   const key = document.createElement("p");
   key.className = "hint";
   key.textContent = item.who;
@@ -3025,6 +3054,15 @@ let currentRoomCell = null;
  */
 async function letThemIn(item, roomCell) {
   if (seconderHere) {
+    // Drawn from a list that was read a moment ago, so check again here. A
+    // second proposal for one person is a second agreement for somebody to
+    // give, for nothing.
+    if (pending.some((p) => p.invitee === item.who)) {
+      announce("Already put forward. Nothing more to do until they agree.");
+      await loadCircle();
+      return;
+    }
+
     await call(
       "propose_member",
       { invitee: item.who, name: item.name },
@@ -3068,10 +3106,16 @@ async function deliverAnythingAgreed() {
   const roomCell = currentRoomCell;
   if (!roomCell) return;
 
+  // One answer per knock, whatever the list holds. Two proposals naming the
+  // same person would otherwise leave two invitations at one door.
+  const answered = new Set();
+
   for (const person of pending) {
     if (!person.agreed || !person.invitation) continue;
     const theirKnock = knocking.find((k) => k.who === person.invitee && !k.answered);
     if (!theirKnock) continue;
+    if (answered.has(asText(theirKnock.knock))) continue;
+    answered.add(asText(theirKnock.knock));
 
     try {
       await call(
