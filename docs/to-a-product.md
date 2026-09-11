@@ -290,14 +290,30 @@ route begins with "send me the long line of characters from your app", and that
 is the step where this stops being possible for somebody elderly or being
 helped. It becomes the fallback behind the door, not a thing anybody is offered.
 
-### Decided: two choices on the front page
+### Decided: two choices on the front page, and one box behind them
 
 **Create a circle** and **Join a circle**, and nothing else. Everything else
 belongs inside a circle, where it has a context.
 
 "Agree to somebody joining" is already vestigial — nothing in the app produces
-the half-invitation it consumes. "Ask to join a circle" should simply *be*
-"Join a circle", because knocking is now what joining means.
+the half-invitation it consumes.
+
+**And "Join a circle" is one box that takes whatever you were sent.** Not two
+routes with two screens. A waiting room address and an invitation are genuinely
+different things — one is public, reusable and lets you *ask*; the other is
+made for one person and lets you *in* — but that is a difference the app can
+work out for itself, and it is not a difference anybody should have to hold in
+their head before they can begin.
+
+The app already has both detectors. They were written on 2026-09-10 to catch
+people pasting into the wrong box, after a waiting room address went into the
+invitation field and came back as "Cannot read properties of undefined (reading
+'signature')". **With one box there is no wrong box**, and that whole class of
+mistake stops existing rather than being caught and explained.
+
+The forms underneath are the same anyway: both ask your name and how you are
+connected. Knocking uses them to tell the holder who is asking; an invitation
+uses them to introduce you to the circle. Same two questions.
 
 ### Decided: nominate by name, and ask the person
 
