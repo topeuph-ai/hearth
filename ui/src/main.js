@@ -1801,7 +1801,7 @@ function renderPeople() {
     li.append(line);
 
     const theirs = whoAgrees?.agrees === key;
-    if (theirs) li.append(howFarTheAskingHasGot(who));
+    if (theirs) li.append(howFarTheAskingHasGot(who, key));
 
     // Asking somebody else replaces whoever is asked now, so the person
     // already asked needs no button of their own — pressing another name is
@@ -1819,18 +1819,51 @@ function renderPeople() {
  *
  * "Asked" and "agreed" are different facts and the holder acts differently on
  * each, so neither is allowed to stand in for the other.
+ *
+ * Written three times over, because the same fact is a different sentence
+ * depending on who is reading it. "Agrees to who joins, along with you" was
+ * written for the holder and shown to everybody — so an ordinary member read
+ * that they were one of the two deciding, which they are not. That is not a
+ * clumsy sentence; it is the screen telling somebody they have a power they
+ * do not have.
+ *
+ * Everybody does see this, deliberately. Who was asked, and when, is what the
+ * safeguard now rests on, and a safeguard nobody can see is not one. It just
+ * has to say the true thing to each of them.
  */
-function howFarTheAskingHasGot(who) {
+function howFarTheAskingHasGot(who, theirKey) {
   const said = document.createElement("p");
   said.className = whoAgrees.willing === false ? "notice" : "hint";
-  said.textContent =
-    whoAgrees.willing === true
+
+  const amHolder = isHolder();
+  const aboutMe = theirKey === asText(me);
+  // The holder by name where she has given one, for the people who are
+  // neither of the two.
+  const theHolder = members.get(holder)?.name?.trim() || "the person who holds it";
+
+  if (whoAgrees.willing === true) {
+    said.textContent = amHolder
       ? "Agrees to who joins, along with you."
-      : whoAgrees.willing === false
-        ? "Asked, and would rather not. Nobody new can join until somebody " +
-          "else is asked."
-        : `Asked. ${who} has not answered yet, and nobody new can join until ` +
-          `they do.`;
+      : aboutMe
+        ? `You agree to who joins, along with ${theHolder}.`
+        : `Agrees to who joins, along with ${theHolder}.`;
+    return said;
+  }
+
+  if (whoAgrees.willing === false) {
+    said.textContent = aboutMe
+      ? "You said you would rather not. Nobody new can join until somebody " +
+        "else is asked."
+      : "Asked, and would rather not. Nobody new can join until somebody " +
+        "else is asked.";
+    return said;
+  }
+
+  said.textContent = aboutMe
+    ? "You have been asked, and have not answered yet. Nobody new can join " +
+      "until you do."
+    : `Asked. ${who} has not answered yet, and nobody new can join until ` +
+      `they do.`;
   return said;
 }
 
