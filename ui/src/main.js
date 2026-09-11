@@ -181,12 +181,9 @@ function show(...ids) {
     "starting",
     "choose",
     "create",
+    // Asking to be let in is part of joining now, not a screen of its own:
+    // one box takes the address, and what it produces is a place in the queue.
     "join",
-    // Asking to be let in, from outside every circle.
-    "knock",
-    // Agreeing to who joins is its own screen, because it belongs to nobody's
-    // circle. See the note on it in index.html.
-    "second",
     "circles",
     "circle",
     "problem",
@@ -726,9 +723,6 @@ async function drawTheCircle() {
 
   // Only offer this while there is actually something to wait for.
   $("check-again").hidden = amHolder || written;
-  // Nothing to invite anybody to until something has been written. A name and
-  // four empty headings is a confusing thing to be invited into.
-  $("invite-section").hidden = !amHolder || !written;
 
 
   renderReaders(
@@ -821,7 +815,7 @@ $("create-circle-form").addEventListener("submit", async (event) => {
      * only the rule, and she picks somebody from the people in it whenever she
      * has somebody to pick.
      */
-    const wantsASecondYes = !$("seconder-field").hidden;
+    const wantsASecondYes = $("decides-two-of-us").checked;
 
     const cell = await whileWorking(
       $("create-circle-submit"),
@@ -982,7 +976,7 @@ $("record-form").addEventListener("submit", async (event) => {
 
     if (isHolder() && somethingToRead) {
       $("check-it-over").hidden = false;
-      announce("Saved. Read it over, then invite people.");
+      announce("Saved. Read it over, then give people the address.");
     } else if (isHolder()) {
       announce(`Saved. Nothing has been written about ${aboutMe.display_name.trim() || "them"} yet.`);
     } else {
@@ -1038,193 +1032,6 @@ $("acknowledge-form").addEventListener("submit", async (event) => {
   } catch (error) {
     problem(error);
   }
-});
-
-$("invite-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    const invitee = $("invitee").value.trim();
-
-    if (looksLikeAnInvitation(invitee)) {
-      throw new Error(
-        "That is an invitation, not an identifier. This box wants the long " +
-          "line beginning uhCAk that they copied from their own Hearth.",
-      );
-    }
-    if (!looksLikeAnIdentifier(invitee)) {
-      throw new Error(
-        "That does not look like an identifier. It is one long line beginning " +
-          "uhCAk, which they copy from “Your identifier” at the top of their " +
-          "own Hearth. It is not their name.",
-      );
-    }
-
-    const name = $("invitee-name").value.trim();
-
-    /*
-     * Where somebody has to agree, this puts the person forward rather than
-     * making half an invitation to carry about.
-     *
-     * The half invitation is not gone — it is what the person joining
-     * eventually receives — but the holder no longer has to be the postal
-     * service for it. She writes down who she wants to let in, the second
-     * person sees it in their own copy of the circle and agrees, and the
-     * finished invitation appears in the list below. Nothing is copied
-     * between the two of them, because they are both already here.
-     */
-    if (seconderHere) {
-      await call("propose_member", { invitee, name }, circle.cellId);
-      $("invitee").value = "";
-      $("invitee-name").value = "";
-      forgetTheInvitation();
-      announce(
-        `Put forward. ${
-          members.get(seconderHere)?.name?.trim() || "The second person"
-        } has to agree before they can join.`,
-      );
-      await loadCircle();
-      $("pending-members").scrollIntoView({ block: "nearest" });
-      return;
-    }
-
-    const invitation = await call("invite", { invitee, name }, circle.cellId);
-    const output = $("invitation-output");
-    output.hidden = false;
-    output.textContent = invitationToToken(invitation);
-
-    /*
-     * A circle that asks nobody else. One invitation, finished, send it.
-     *
-     * The half-invitation apparatus that used to live here has moved: where a
-     * circle does ask somebody, the branch above puts the person forward and
-     * the two agreements find each other inside the circle.
-     */
-    $("needs-seconding").hidden = true;
-    $("invitation-finished").hidden = true;
-    awaitingSecondYes = null;
-    $("copy-invitation").textContent = "Copy the invitation";
-    $("copy-invitation").hidden = false;
-    $("done-inviting").hidden = false;
-    $("invitee").value = "";
-    $("invitee-name").value = "";
-    announce("Invitation ready. Send it to them however you like.");
-  } catch (error) {
-    problem(error);
-  }
-});
-
-/*
- * Who the half invitation currently on screen was made for.
- *
- * Kept so the finished one coming back can be checked against it. By this
- * point three long lines of base64 have been round a messaging app — the
- * identifier, the half, and the finished one — and to anybody looking at them
- * they are the same thing.
- */
-let awaitingSecondYes = null;
-
-/**
- * Why a pasted-back invitation is not the one to send on, or null if it is.
- *
- * A plain function of its arguments so it can be reasoned about and exercised
- * without a circle, a conductor or a screen. None of this is the real gate —
- * the membrane is, and every peer checks it — but a mistake caught here costs
- * a sentence, and the same mistake caught there costs somebody sitting in
- * front of a screen that says nothing is wrong while nobody ever arrives.
- *
- * `expectedInvitee` and `expectedFounder` are skipped when not known rather
- * than compared against nothing. Getting that wrong told somebody an
- * invitation was for a different circle when the real trouble was that it was
- * for a different person — a true-sounding sentence pointing the wrong way,
- * which is worse than no sentence.
- */
-function whyThisFinishedInvitationWillNotDo(
-  text,
-  expectedInvitee,
-  expectedFounder,
-) {
-  let bundle;
-  try {
-    bundle = tokenToInvitation(text);
-  } catch {
-    return (
-      "That is not an invitation this circle can read. It should be one long " +
-      "line, pasted whole — it is easy to catch only part of it."
-    );
-  }
-
-  // The commonest slip: pasting back the half that was just sent out.
-  if (!bundle?.invitation?.seconded) {
-    return (
-      "This one has not been agreed to yet — it is still half an invitation. " +
-      "It may be the same one you sent out. Ask them to paste it into " +
-      "“Agree to somebody joining” and send back what comes out."
-    );
-  }
-
-  // The right shape, for the wrong person. Sending it on would admit nobody,
-  // with nothing on anybody's screen to say why.
-  if (expectedInvitee && bundle.invitee !== expectedInvitee) {
-    return (
-      "This is finished, but it is for somebody else. It only lets in the one " +
-      "person it names, so it is no use to the person you just invited."
-    );
-  }
-
-  // A finished invitation to a different circle. Same shape, wrong door.
-  if (expectedFounder && bundle.founder !== expectedFounder) {
-    return "This invitation is for a different circle.";
-  }
-
-  return null;
-}
-
-/**
- * The finished invitation, come back from the person who agreed.
- */
-$("finish-invitation").addEventListener("submit", (event) => {
-  event.preventDefault();
-
-  const complain = (message) => {
-    const box = $("finish-problem");
-    box.textContent = message;
-    box.hidden = false;
-  };
-
-  const wrong = whyThisFinishedInvitationWillNotDo(
-    $("finished-invitation").value,
-    awaitingSecondYes,
-    holder,
-  );
-  if (wrong) return complain(wrong);
-
-  /*
-   * Shown, not merely filled in.
-   *
-   * Setting the text without unhiding the box put the finished invitation on
-   * a screen nobody could see, with no copy button — so the answer arrived
-   * and there was still nothing to send the person joining. It only ever
-   * looked right because the half invitation had usually just been made in
-   * the same visit, which left the box open.
-   *
-   * That is the whole of what she came here for, so it is unhidden outright
-   * rather than assumed to be showing already.
-   */
-  $("invitation-output").hidden = false;
-  $("invitation-output").textContent = $("finished-invitation").value.trim();
-  $("copy-invitation").hidden = false;
-  $("copy-invitation").textContent = "Copy the invitation";
-
-  $("needs-seconding").hidden = true;
-  $("invitation-finished").hidden = false;
-  // This job is done. The box that asks for one goes away with it.
-  $("finish-invitation").hidden = true;
-  $("done-inviting").hidden = false;
-  $("finished-invitation").value = "";
-  awaitingSecondYes = null;
-
-  announce("That invitation is finished. Send it to the person joining.");
-  $("copy-invitation").focus();
 });
 
 // ---------------------------------------------------------------------------
@@ -1467,7 +1274,7 @@ async function start() {
       if (circle) await loadCircle();
     }
     if (payload?.kind === "Endorsed") {
-      announce("Agreed. Their invitation is ready to send.");
+      announce("Agreed. They are being let in.");
       if (circle) await loadCircle();
     }
   });
@@ -1812,77 +1619,10 @@ function sayWhoIsNew() {
  * only listing people who are actually here. Appointing somebody who has not
  * joined would mean a circle nobody can get into, including them.
  */
-/*
- * The invitation for the second person, made without being asked for.
- *
- * Naming somebody as the second yes puts them in the circle's identity. It
- * does not put them in the circle — and until they are in, nobody else can
- * join either, because no invitation can be completed without their
- * agreement. So a circle made this way looks finished and can admit nobody,
- * with nothing on screen saying why.
- *
- * Their identifier was given when the circle was made, so there is nothing
- * left to ask. It is made here and shown until they arrive.
- *
- * Kept per circle rather than remade on every re-read: `invite` reads the
- * record to put her name in the invitation, and this runs every twenty
- * seconds.
- */
-const seconderInvitations = new Map(); // cell -> the invitation, as text
-
-async function offerTheSeconderTheirInvitation(seconder) {
-  const section = $("seconder-invitation");
-  const key = asText(circle?.cellId?.[0]);
-
-  // Only the holder can invite, only where there is a second person, and only
-  // until they have actually arrived — at which point the job is done and the
-  // panel should stop taking up the top of the screen.
-  const stillOutside =
-    isHolder() && seconder && !members.has(asText(seconder));
-
-  section.hidden = !stillOutside;
-  if (!stillOutside) return;
-
-  if (!seconderInvitations.has(key)) {
-    /*
-     * A failure here must not take the circle down with it.
-     *
-     * This runs inside the ordinary re-read of the circle, which happens every
-     * twenty seconds. Left to throw, one unlucky call would put the whole
-     * screen into the error page — the record, the people, the suggestions,
-     * all of it — over a convenience.
-     *
-     * Same reasoning as the signals in the zome: this saves her a job, it is
-     * not the job. She can still invite them by hand from the section below,
-     * which is the route that existed before this panel.
-     */
-    $("seconder-invitation-output").textContent = "Making their invitation…";
-    try {
-      // No name for them: she named them by identifier when the circle was
-      // made, and nobody has asked her what they are called.
-      const bundle = await call(
-        "invite",
-        { invitee: asText(seconder), name: "" },
-        circle.cellId,
-      );
-      seconderInvitations.set(key, invitationToToken(bundle));
-    } catch (error) {
-      console.error(error);
-      section.hidden = true;
-      return;
-    }
-  }
-
-  $("seconder-invitation-output").textContent = seconderInvitations.get(key);
-}
-
 async function offerToAppointASecondYes() {
   const panel = $("appoint-details");
   const alreadyAsks = await call("who_seconds_here", null, circle.cellId);
 
-  // And the other side of the same fact: if the circle asks somebody, and it
-  // is me, this is where I agree to who joins.
-  const asksMe = alreadyAsks && asText(alreadyAsks) === asText(me);
   seconderHere = alreadyAsks ? asText(alreadyAsks) : null;
   await loadPending();
   await loadTheDoor();
@@ -1893,59 +1633,11 @@ async function offerToAppointASecondYes() {
   await deliverAnythingAgreed();
 
   /*
-   * The route for a second person who is not in the circle.
-   *
-   * Offered to the holder as well as to them, because she is the one who
-   * has to send the half invitation for it, and tucked below the list
-   * because it is the exception. Somebody who can be reached inside the
-   * circle should be, and then none of it is needed.
+   * There used to be a route here for a second person who was not in the
+   * circle: half an invitation, sent out and pasted back. It is gone. Whoever
+   * agrees is picked from the people who are actually in the circle, and
+   * everybody arrives the same way — by knocking at the door.
    */
-  $("second-here").hidden = !(isHolder() || asksMe);
-
-  /*
-   * Somewhere to bring a finished invitation back to, always — not only in
-   * the minutes after making one.
-   *
-   * This waits on another person. She sends them half an invitation and it
-   * comes back when they get to it: an hour later, or tomorrow. It used to
-   * appear only in the same visit that made the half, so closing the app,
-   * stepping into another circle, or the page simply reloading took away the
-   * only place the answer could go, and she had no way to get it back short
-   * of inviting the same person again.
-   *
-   * There is nothing to remember, so there is no reason for it to be
-   * conditional on a moment. If this circle asks two people, the holder has
-   * somewhere to finish an invitation.
-   */
-  const holderOfATwoPersonCircle = Boolean(isHolder() && alreadyAsks);
-
-  /*
-   * Nothing left to finish once something finished is on screen.
-   *
-   * Making this always available fixed one fault and caused another: a
-   * completed invitation sat above a box still asking for one to be pasted
-   * back. Two boxes wanting a long line of base64, one of them pointless, and
-   * the finished invitation went into the wrong one.
-   */
-  /*
-   * The by-hand route, kept but no longer the way in.
-   *
-   * Both agreements now travel inside the circle, so the holder never makes
-   * half an invitation and there is never one to paste back. This stays
-   * hidden while that works, rather than being deleted, until the new path
-   * has been walked by somebody who is not me.
-   */
-  $("finish-invitation").hidden = true;
-
-  /*
-   * Only asked where somebody will actually read it.
-   *
-   * In a circle with no second person the name would travel to nobody and be
-   * shown to no one, so asking for it would be a box that does nothing.
-   */
-  $("invitee-name-field").hidden = !holderOfATwoPersonCircle;
-
-  await offerTheSeconderTheirInvitation(alreadyAsks);
 
   /*
    * Shown to the holder whether or not the circle already asks somebody.
@@ -2141,25 +1833,44 @@ $("join-form").addEventListener("submit", async (event) => {
 
     if (looksLikeAnIdentifier(pasted)) {
       throw new Error(
-        "That is somebody's identifier, not an invitation. An identifier only " +
-          "says who a person is. Send yours to whoever holds the circle, and " +
-          "they will send back an invitation.",
+        "That is somebody's identifier, not a way in. An identifier only says " +
+          "who a person is. Ask whoever holds the circle to send you its " +
+          "address, and paste that here instead.",
       );
     }
 
-    // The likeliest wrong paste now that a circle has a door as well as
-    // invitations. Both are one long line and neither looks like anything.
+    /*
+     * An address, so knock and wait.
+     *
+     * This is the ordinary way in now. It used to be a separate screen with a
+     * separate box, which meant somebody had to know which of two long lines
+     * of characters they had been sent before they could begin — and pasting
+     * one into the other's box produced a raw error about a missing
+     * signature.
+     *
+     * The app can tell them apart. There is no reason a person should have
+     * to.
+     */
     if (looksLikeARoomAddress(pasted)) {
-      throw new Error(
-        "That is a circle's waiting room address, not an invitation. Go back " +
-          "and choose “Ask to join a circle” instead — you paste it there, say " +
-          "who you are, and they let you in. Nothing else is needed.",
-      );
+      const room = addressToRoom(pasted);
+      const name = $("joiner-name").value.trim();
+      const relationship = $("joiner-relationship").value.trim();
+
+      await whileWorking($("join-circle-submit"), "Asking…", async () => {
+        myRoomCell = await cellForRoom(room, room.about || "A circle");
+        await call("knock", { name, relationship }, myRoomCell);
+      });
+
+      $("join-form").hidden = true;
+      $("knocked").hidden = false;
+      announce("Asked. They will see your name when they next open Hearth.");
+      await lookForMyAdmission();
+      return;
     }
 
     if (!looksLikeAnInvitation(pasted)) {
       throw new Error(
-        "That is not an invitation this app can read. It should be one long " +
+        "That is not something this app can read. It should be one long " +
           "line, pasted whole — it is easy to catch only part of it.",
       );
     }
@@ -2394,17 +2105,6 @@ function renderCircles() {
 async function openCircle(item) {
   circle = { cellId: item.cellId };
 
-  /*
-   * An invitation is made for one person to join one circle. Left on screen
-   * it would still be showing after switching to somebody else's circle,
-   * which is how one gets sent to the wrong person.
-   *
-   * Here rather than in loadCircle, which runs again every time a signal
-   * arrives: clearing there would take the invitation off the screen while
-   * she was still copying it.
-   */
-  forgetTheInvitation();
-
   // A different circle has different people in it, and none of them is "new".
   peopleLastSeen = new Set();
 
@@ -2462,12 +2162,6 @@ function forgetTheCircle() {
   $("record-form").hidden = true;
   $("acknowledge-form").hidden = true;
 
-  // An invitation names the person the circle is about, so it should not be
-  // left sitting on a screen belonging to somebody else.
-  $("seconder-invitation").hidden = true;
-  $("seconder-invitation-output").textContent = "";
-
-  forgetTheInvitation();
 }
 
 $("leave-circle").addEventListener("click", async () => {
@@ -2507,34 +2201,6 @@ $("leave-circle").addEventListener("click", async () => {
  * they want next is the page they were on before it — not a list of people
  * and not a wall of base64 with nowhere to go.
  */
-function forgetTheInvitation() {
-  $("invitation-output").hidden = true;
-  $("invitation-output").textContent = "";
-  $("copy-invitation").hidden = true;
-  $("done-inviting").hidden = true;
-
-  /*
-   * And everything about finishing it, which names the person it was for.
-   *
-   * Deliberately not the paste box itself. Whether that is on screen is a
-   * fact about the circle — does it ask two people — and not about whether an
-   * invitation was made a moment ago. `offerToAppointASecondYes` owns it, and
-   * runs on every re-read; hiding it here as well is how it came to vanish
-   * for twenty seconds every time somebody pressed "done".
-   */
-  awaitingSecondYes = null;
-  $("needs-seconding").hidden = true;
-  $("invitation-finished").hidden = true;
-  $("finished-invitation").value = "";
-  $("finish-problem").hidden = true;
-}
-
-$("done-inviting").addEventListener("click", () => {
-  forgetTheInvitation();
-  $("circle-heading").scrollIntoView({ block: "start" });
-  $("edit-record").focus();
-});
-
 /*
  * Appoint a second yes by re-forming the circle around them.
  *
@@ -2642,24 +2308,6 @@ $("add-circle").addEventListener("click", () => {
 });
 
 wireCopyButton(
-  "copy-invitation",
-  () => $("invitation-output").textContent,
-  "Invitation copied",
-);
-
-wireCopyButton(
-  "copy-seconded",
-  () => $("seconded-output").textContent,
-  "Copied",
-);
-
-wireCopyButton(
-  "copy-seconder-invitation",
-  () => $("seconder-invitation-output").textContent,
-  "Their invitation copied",
-);
-
-wireCopyButton(
   "copy-door-address",
   () => $("door-address-output").textContent,
   "Address copied",
@@ -2697,130 +2345,6 @@ $("invitation-in").addEventListener("input", () => {
   $("join-label-whom").textContent = about || "the person this circle is about";
 });
 
-function forgetTheSeconding() {
-  $("half-invitation").value = "";
-  $("second-who").hidden = true;
-  $("seconded-done").hidden = true;
-  $("seconded-output").textContent = "";
-}
-
-/*
- * Say who is being let in, before agreeing to let them in.
- *
- * The whole value of a second yes is that somebody reads it who is not the
- * person being leaned on. Agreeing to an opaque line of base64 would be
- * worthless, so the moment it parses, this says whose circle it is.
- */
-$("half-invitation").addEventListener("input", () => {
-  const note = $("second-who");
-  try {
-    const bundle = tokenToInvitation($("half-invitation").value);
-    const about = bundle?.about?.trim();
-    const asking = bundle?.inviter?.trim();
-    const who = bundle?.invitee?.trim();
-    const named = bundle?.invitee_name?.trim();
-
-    /*
-     * A decision somebody can actually make.
-     *
-     * This said "This would let uhCAki9XAT… into Margaret Smythe's circle",
-     * which is not something anybody can agree to. It named the circle and a
-     * string of characters, and the only thing a person could honestly agree
-     * to was that they had been asked.
-     *
-     * The name now travels, because the holder types it when she invites. It
-     * is her claim and nothing checks it — but her claim is precisely what
-     * the second person is here to judge. The whole case this exists for is
-     * her being talked into admitting a stranger, and "she says this is
-     * Ronnie, her cousin" is answerable: yes I know Ronnie, or who?
-     *
-     * So the name is said plainly and its standing is said just as plainly,
-     * in the next breath rather than in a footnote.
-     */
-    note.replaceChildren();
-    note.hidden = false;
-
-    const sentence = document.createElement("p");
-    const whose = about ? `${about}'s` : "their";
-    sentence.textContent = asking
-      ? `${asking} is asking you to let ${named || "somebody"} into ${whose} circle.`
-      : `Somebody is asking you to let ${named || "another person"} into ${about ? `${about}'s` : "a"} circle.`;
-    note.append(sentence);
-
-    if (named) {
-      const claimed = document.createElement("p");
-      claimed.className = "hint";
-      // Said immediately, not left to be inferred. A name on a screen looks
-      // established, and this one is somebody's word.
-      // "Pam Smythe calls them", but "they call them" — the verb has to follow
-      // whether there is a name to put in front of it.
-      claimed.textContent = asking
-        ? `“${named}” is what ${asking} calls them. Nothing has checked it.`
-        : `“${named}” is what the person asking calls them. Nothing has checked it.`;
-      note.append(claimed);
-    }
-
-    const whoLine = document.createElement("p");
-    whoLine.className = "hint";
-    whoLine.textContent = `The person who would get in: ${who}`;
-    note.append(whoLine);
-
-    const check = document.createElement("p");
-    check.className = "hint";
-    // Nothing here can tell you it is the right person. Say that, rather than
-    // letting a confident-looking screen do the deciding.
-    check.textContent = named
-      ? "If you were expecting this, compare the identifier with the one you " +
-        "were told before you agree."
-      : "Nobody has checked that this is who they say it is. Compare it with " +
-        "the identifier you were told to expect before you agree.";
-    note.append(check);
-  } catch {
-    // Half a paste is unfinished, not wrong.
-    note.hidden = true;
-  }
-});
-
-$("second-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    const bundle = tokenToInvitation($("half-invitation").value);
-
-    /*
-     * Signed on the lobby cell, not on any circle's.
-     *
-     * Signing does not depend on the circle at all — it is this key over that
-     * person's key — so doing it here means whoever gives the second yes never
-     * has to be in the circle. A solicitor, an advocate, a sister two hundred
-     * miles away can hold this power and never read a word of somebody's
-     * record.
-     *
-     * It said all that before and then passed the circle's cell anyway, which
-     * quietly made every one of those people join the circle first. Note the
-     * missing third argument: that is the whole of the fix.
-     *
-     * The key is the same either way — clones of an app share their agent key
-     * — so the signature this produces is identical to the one the circle's
-     * own cell would have produced.
-     */
-    const seconded = await whileWorking($("second-submit"), "Agreeing…", () =>
-      call("second_an_invitation", bundle.invitee),
-    );
-
-    const finished = invitationToToken({
-      ...bundle,
-      invitation: { ...bundle.invitation, seconded },
-    });
-
-    $("seconded-output").textContent = finished;
-    $("seconded-back-to").textContent = bundle?.inviter?.trim() || "whoever asked you";
-    $("seconded-done").hidden = false;
-    announce("Agreed. Send it back to whoever asked you.");
-  } catch (error) {
-    problem(error);
-  }
-});
-
 $("go-back").addEventListener("click", () => {
   // Back to where they were, with whatever they typed still in the fields.
   // A mistyped character should cost a correction, not a restart.
@@ -2838,17 +2362,16 @@ $("go-back").addEventListener("click", () => {
  * field. The alternative — a second form — would be two places to fix every
  * time the questions change, and they have changed a lot.
  */
-function goToCreate(withASecondYes) {
-  // Nothing to clear and nothing required: the panel this shows explains what
-  // will happen and asks for nothing, because the second person is chosen
-  // later from the people who are actually in the circle.
-  $("seconder-field").hidden = !withASecondYes;
+function goToCreate() {
+  // Always shown. Whether a circle asks two people to agree is one question
+  // about the circle being made, not a different kind of circle reached by a
+  // different button.
+  $("decides-just-me").checked = true;
   show("create");
   $("person-name").focus();
 }
 
-$("choose-create").addEventListener("click", () => goToCreate(false));
-$("choose-create-two").addEventListener("click", () => goToCreate(true));
+$("choose-create").addEventListener("click", goToCreate);
 
 /*
  * A second join starts empty, and does not know her name yet.
@@ -2892,21 +2415,6 @@ $("choose-join").addEventListener("click", () => {
  * circle they are not in gets there from the front page, and somebody who is
  * both a member and the second yes gets there from where they were standing.
  */
-function goAndSecond() {
-  forgetTheSeconding();
-  show("second");
-  $("half-invitation").focus();
-}
-
-$("choose-second").addEventListener("click", goAndSecond);
-$("go-and-second").addEventListener("click", goAndSecond);
-
-// Every form has a way out. Getting somewhere by accident should cost one
-// press to undo, not a restart.
-for (const button of document.querySelectorAll(".back-to-choose")) {
-  button.addEventListener("click", () => show("choose"));
-}
-
 $("check-again").addEventListener("click", async () => {
   const button = $("check-again");
   const original = button.textContent;
@@ -3066,42 +2574,8 @@ function pendingCard(item, amSeconder) {
   agreed.className = "outcome";
   agreed.textContent = amSeconder
     ? "You agreed to this."
-    : "Agreed. This is their invitation — send it to them.";
+    : "Agreed. They are being let in — nothing for you to send.";
   li.append(agreed);
-
-  // The holder is the one who sends it on, so only she needs it in hand.
-  if (!amSeconder && item.invitation) {
-    const token = invitationToToken(item.invitation);
-
-    const out = document.createElement("output");
-    out.textContent = token;
-    li.append(out);
-
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "secondary";
-    copy.textContent = "Copy their invitation";
-    copy.addEventListener("click", async () => {
-      const wasLabel = copy.textContent;
-      try {
-        await navigator.clipboard.writeText(token);
-        copy.textContent = "Copied";
-        announce("Invitation copied. Send it to them however you like.");
-        setTimeout(() => {
-          copy.textContent = wasLabel;
-        }, 3000);
-      } catch {
-        // Some browsers refuse without a gesture they recognise. The text is
-        // on screen and can be selected, so this is a convenience failing.
-        announce("Could not copy it. Select the text and copy it yourself.");
-      }
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    actions.append(copy);
-    li.append(actions);
-  }
 
   return li;
 }
@@ -3237,6 +2711,7 @@ async function loadTheDoor() {
   if (!room) {
     door.hidden = true;
     address.hidden = true;
+    currentRoomCell = null;
     knocking = [];
     $("knock-list").replaceChildren();
     return;
@@ -3249,12 +2724,30 @@ async function loadTheDoor() {
   try {
     roomCell = await cellForRoom(room, `${labelFor(circle.cellId, "Circle")} — door`);
   } catch (error) {
-    // The room is a convenience on top of inviting by identifier. Losing it
-    // must not take the circle screen with it.
+    /*
+     * This was once a convenience sitting on top of inviting by identifier, so
+     * losing it quietly was the right thing to do. It is now the only door
+     * there is: if it cannot be opened, nobody can be let in and the holder
+     * has to be told, not left looking at a screen that says nothing.
+     */
     console.error(error);
-    door.hidden = true;
+    currentRoomCell = null;
+    door.hidden = false;
+    $("knock-list").replaceChildren();
+    $("nobody-knocking").hidden = false;
+    $("nobody-knocking").textContent =
+      "The door could not be opened just now, so nobody waiting at it can be " +
+      "seen. Nothing is lost — try again in a moment, or reopen the circle.";
     return;
   }
+
+  /*
+   * Held for anything later in this re-read that needs the door: delivering an
+   * invitation somebody has just agreed to, and rebuilding the list after a
+   * knock is put aside. Set here, where the room is actually opened, so it
+   * survives a reload instead of depending on a button pressed earlier.
+   */
+  currentRoomCell = roomCell;
 
   knocking = await orNothingYet(call("get_knocks", null, roomCell), []);
 
@@ -3263,6 +2756,9 @@ async function loadTheDoor() {
 
   door.hidden = false;
   $("nobody-knocking").hidden = waiting.length > 0;
+  $("nobody-knocking").textContent =
+    "Nobody is waiting. Give somebody the address below and they can ask from " +
+    "their own Hearth.";
 
   const list = $("knock-list");
   list.replaceChildren();
@@ -3394,8 +2890,6 @@ let currentRoomCell = null;
  * nobody to agree, the invitation is made and left at the door immediately.
  */
 async function letThemIn(item, roomCell) {
-  currentRoomCell = roomCell;
-
   if (seconderHere) {
     await call(
       "propose_member",
@@ -3468,68 +2962,6 @@ async function deliverAnythingAgreed() {
 // ---------------------------------------------------------------------------
 
 let myRoomCell = null;
-
-function goAndKnock() {
-  $("room-address").value = "";
-  $("knock-name").value = "";
-  $("knock-relationship").value = "";
-  $("knocked").hidden = true;
-  $("knock-form").hidden = false;
-  myRoomCell = null;
-  show("knock");
-  $("room-address").focus();
-}
-
-$("choose-knock").addEventListener("click", goAndKnock);
-
-$("knock-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    const pasted = $("room-address").value.trim();
-
-    // The other half of the same confusion. An invitation is a way *in*; this
-    // box wants the address of the doorstep.
-    if (looksLikeAnInvitation(pasted)) {
-      throw new Error(
-        "That is an invitation, not a waiting room address — and it is better " +
-          "than one, because it lets you straight in. Go back and choose " +
-          "“Join a circle” instead.",
-      );
-    }
-    if (looksLikeAnIdentifier(pasted)) {
-      throw new Error(
-        "That is somebody's identifier, not a waiting room address. The " +
-          "address is a long line sent to you by whoever holds the circle.",
-      );
-    }
-
-    let room;
-    try {
-      room = addressToRoom(pasted);
-    } catch {
-      throw new Error(
-        "That is not a waiting room address. It is one long line, sent to " +
-          "you by whoever holds the circle — not an invitation and not an " +
-          "identifier.",
-      );
-    }
-
-    const name = $("knock-name").value.trim();
-    const relationship = $("knock-relationship").value.trim();
-
-    await whileWorking($("knock-submit"), "Asking…", async () => {
-      myRoomCell = await cellForRoom(room, room.about || "A circle");
-      await call("knock", { name, relationship }, myRoomCell);
-    });
-
-    $("knock-form").hidden = true;
-    $("knocked").hidden = false;
-    announce("Asked. They will see your name when they next open Hearth.");
-    await lookForMyAdmission();
-  } catch (error) {
-    problem(error);
-  }
-});
 
 $("check-knock").addEventListener("click", async () => {
   try {
@@ -3617,8 +3049,8 @@ async function collectFrom(roomCell) {
   // Say who you are in the same breath as arriving, exactly as the invitation
   // route does — they already said it when they knocked, so do not ask again.
   const said = {
-    name: mine?.name?.trim() || $("knock-name").value.trim(),
-    relationship: mine?.relationship?.trim() || $("knock-relationship").value.trim(),
+    name: mine?.name?.trim() || $("joiner-name").value.trim(),
+    relationship: mine?.relationship?.trim() || $("joiner-relationship").value.trim(),
   };
   if (said.name) {
     await call("introduce_myself", said, circle.cellId);
