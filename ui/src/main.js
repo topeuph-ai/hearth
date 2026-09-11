@@ -3284,6 +3284,37 @@ function knockCard(item, roomCell) {
     : item.name;
   li.append(who);
 
+  /*
+   * Somebody already in the circle, knocking again.
+   *
+   * One installation is one person, so knocking a second time under a
+   * different name changes the label and not who they are. Offering "Let them
+   * in" here offers a button that cannot do anything: their app declines to
+   * join a circle it is already in, silently, and she is left pressing
+   * something that does nothing.
+   *
+   * Found by walking it, and mistaken at first for a safeguard refusing a
+   * second identity. It is not — nothing here refuses anybody, and a second
+   * *installation* could knock under any name it liked. There was simply
+   * nothing left to do, and the screen did not say so.
+   */
+  if (members.has(item.who)) {
+    const already = document.createElement("p");
+    already.className = "outcome";
+    const known = members.get(item.who)?.name?.trim();
+    already.textContent = known
+      ? `${known} is already in this circle.`
+      : "This person is already in this circle.";
+    li.append(already);
+
+    const sameKey = document.createElement("p");
+    sameKey.className = "hint";
+    sameKey.textContent =
+      "One Hearth is one person, whatever name it asks under. Nothing to do.";
+    li.append(sameKey);
+    return li;
+  }
+
   const key = document.createElement("p");
   key.className = "hint";
   key.textContent = item.who;
