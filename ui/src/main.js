@@ -912,16 +912,75 @@ $("create-circle-form").addEventListener("submit", async (event) => {
     nameHer(fullName);
     fillForm();
     showCircleMode(WRITING);
-    $("what-matters").focus();
+    showRecordPage(0);
   } catch (error) {
     problem(error);
   }
 });
 
+/*
+ * Writing the record, one section to a page.
+ *
+ * It was seven boxes in a column, and the bottom of it was below the fold.
+ * Worse, nothing said what any of them wanted — so the honest thing to do was
+ * leave them empty, and an empty About Me helps nobody. Each page now has one
+ * section, what that section is for, and the standard's own prompts for it.
+ *
+ * Nothing is submitted between pages. This is one form; the pages are only
+ * what is on screen, so moving about costs nothing and nothing is written
+ * until Save.
+ */
+const recordPages = () => [...document.querySelectorAll(".record-page")];
+let recordPage = 0;
+
+function showRecordPage(which) {
+  const pages = recordPages();
+  recordPage = Math.max(0, Math.min(which, pages.length - 1));
+
+  pages.forEach((page, i) => {
+    page.hidden = i !== recordPage;
+    // Nowhere to go back to from the first one, and nothing to start again
+    // from either.
+    for (const button of page.querySelectorAll(".record-back, .record-restart")) {
+      button.hidden = recordPage === 0;
+    }
+  });
+
+  // Where you are, in words. A form with no end in sight is a form people
+  // abandon, and eight pages with nothing to say how many is worse than one
+  // long one.
+  $("record-progress").textContent = `Page ${recordPage + 1} of ${pages.length}`;
+
+  const box = pages[recordPage]?.querySelector("textarea, input");
+  if (box) box.focus();
+  window.scrollTo({ top: 0 });
+}
+
+for (const button of document.querySelectorAll(".record-next")) {
+  button.addEventListener("click", () => showRecordPage(recordPage + 1));
+}
+for (const button of document.querySelectorAll(".record-back")) {
+  button.addEventListener("click", () => showRecordPage(recordPage - 1));
+}
+for (const button of document.querySelectorAll(".record-restart")) {
+  button.addEventListener("click", () => showRecordPage(0));
+}
+
+/*
+ * Every way out of this form is the same way out.
+ *
+ * There is one on the last page with an id, because that is the one the rest
+ * of the app already talks to; the others are the same button repeated on
+ * every page, so that leaving never means walking to the end first.
+ */
+for (const button of document.querySelectorAll(".record-cancel")) {
+  button.addEventListener("click", () => $("cancel-edit").click());
+}
+
 $("edit-record").addEventListener("click", () => {
   fillForm();
   showCircleMode(WRITING);
-  $("what-matters").focus();
+  showRecordPage(0);
 });
 
 $("cancel-edit").addEventListener("click", () => {

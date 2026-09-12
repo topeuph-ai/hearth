@@ -211,6 +211,52 @@ button.secondary {
 }
 
 /* A quiet, once-ever control sitting beside something used every visit. */
+/*
+ * Writing a section of the record.
+ *
+ * A box to write in should look like somewhere you could write a paragraph,
+ * because a paragraph is what is wanted. A three-line box asks for three
+ * lines, and gets fewer.
+ */
+.record-page textarea {
+  min-height: 11rem;
+  line-height: 1.5;
+}
+
+/*
+ * The standard's own prompts, which this app did not have.
+ *
+ * Set as a quiet list rather than a wall of hint text: somebody stuck on
+ * "what am I meant to put here" can find the one line that unsticks them
+ * without reading a paragraph first.
+ */
+.prompts {
+  color: var(--muted);
+  font-size: 1rem;
+  margin: 0 0 0.8rem;
+  padding-left: 1.2rem;
+}
+
+.prompts li {
+  margin: 0.35rem 0;
+}
+
+/* Where you are, and how far there is to go. */
+#record-progress {
+  margin-bottom: 0.2rem;
+}
+
+/*
+ * The way out, and the way back to the beginning.
+ *
+ * Quieter than Continue and Back, and below them, because they are the two
+ * things somebody presses by accident when they meant to move on.
+ */
+.actions.quiet {
+  margin-top: 0.6rem;
+  gap: 1.25rem;
+}
+
 .linky {
   background: none;
   border: none;

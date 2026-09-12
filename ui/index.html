@@ -657,158 +657,276 @@
           <h3 id="record-form-heading">What people should know</h3>
 
           <!--
-            No name field here, and this is the third shape it has had.
+            One section to a page, and every page says what the section is
+            for.
 
-            It was a fold-away "Change their name", which made correcting a
-            name a special act. Then it was a plain field, on the reasoning
-            that it would arrive filled in and she could fix it in passing. It
-            did not arrive filled in: the labels below are named directly, but
-            the box was filled from the record, which has not come back from
-            the network yet. So the screen asked for a name it had just been
-            given, in an empty box, directly above four labels already using
-            it.
+            It was seven boxes in a column with a one-line hint on three of
+            them, and the bottom of it was below the fold. Nothing said what
+            any of them wanted, so the honest thing for somebody to do was
+            leave them empty — and an empty About Me helps nobody.
 
-            Asking is the mistake, whether the box is full or empty. The name
-            was given when the circle was made and every label on this form
-            proves the app knows it.
+            The prompts are the useful part and this app did not have them.
+            They come from the PRSB's own About Me Implementation Guidance
+            (v1.0, October 2020), rewritten into plain English and into the
+            third person, because whoever is typing is usually not the
+            person the record is about. Every section is optional, in the
+            standard and here: an empty answer is a real answer.
           -->
-          <!--
-            The seven sections of About Me, in the order the standard lists
-            them. Every one is optional, in the standard and here: an empty
-            answer is a real answer, and a form that insists on all seven is a
-            form nobody finishes.
+          <p class="hint" id="record-progress"></p>
 
-            Headings are the standard's, put into the second person for a form.
-            The read view keeps her voice — "My wellness" — because that is her
-            record; the form asks whoever is typing, and they are usually not
-            her.
-          -->
-          <div class="field">
-            <label for="what-matters">
-              What matters most to <span class="about-whom">them</span>
-            </label>
-            <textarea id="what-matters" name="what-matters" rows="3"></textarea>
+          <div class="record-page" id="record-page-0">
+            <div class="field">
+              <label for="what-matters">What matters most to <span class="about-whom">them</span></label>
+              <p id="what-matters-hint" class="hint">The things that matter most, in their own words — and the things anybody looking after them should know whatever else is happening.</p>
+              <ul class="prompts" id="what-matters-prompts">
+              <li>What would somebody caring for them need to know in an emergency? Being seen somewhere quiet or dark, needing a translator, a food allergy, a risk of choking.</li>
+              <li>What matters to them as a person — their faith, their culture, their pets, the things they enjoy and the places they like to go.</li>
+              <li>What are they hoping for? People have goals at every age.</li>
+              <li>If anything is already written down elsewhere — an advance decision, a power of attorney, a hospital passport — say so here.</li>
+              </ul>
+              <textarea
+                id="what-matters"
+                name="what-matters"
+                rows="10"
+                aria-describedby="what-matters-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <label for="people-who-matter">
-              People who matter to <span class="about-whom">them</span>
-            </label>
-            <textarea
-              id="people-who-matter"
-              name="people-who-matter"
-              rows="3"
-            ></textarea>
+          <div class="record-page" id="record-page-1" hidden>
+            <div class="field">
+              <label for="people-who-matter">People who matter to <span class="about-whom">them</span></label>
+              <p id="people-who-matter-hint" class="hint">Who is important to them, and why. Family, friends, neighbours, staff — and how they want those people involved.</p>
+              <ul class="prompts" id="people-who-matter-prompts">
+              <li>Who are the important people, and what are they to them?</li>
+              <li>Who should be rung in an emergency?</li>
+              <li>Who should be asked about their care, day to day as well as in a crisis?</li>
+              <li>Is there anybody who should <em>not</em> be contacted? Only if they want to say. This is read by everybody in the circle.</li>
+              </ul>
+              <textarea
+                id="people-who-matter"
+                name="people-who-matter"
+                rows="10"
+                aria-describedby="people-who-matter-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <label for="how-to-communicate">
-              How to talk with <span class="about-whom">them</span>
-            </label>
-            <p id="communicate-hint" class="hint">
-              For example: “Speak to my left side, I am deaf on the right.”
-            </p>
-            <textarea
-              id="how-to-communicate"
-              name="how-to-communicate"
-              rows="3"
-              aria-describedby="communicate-hint"
-            ></textarea>
+          <div class="record-page" id="record-page-2" hidden>
+            <div class="field">
+              <label for="how-to-communicate">How to talk with <span class="about-whom">them</span></label>
+              <p id="how-to-communicate-hint" class="hint">How they communicate, and how they would like people to communicate with them.</p>
+              <ul class="prompts" id="how-to-communicate-prompts">
+              <li>What do people need to know? Speaking slowly, speaking to one side, a hearing aid, signing, symbols, a preferred language.</li>
+              <li>How do they like to be addressed? First name, full name, something else.</li>
+              <li>How do they let somebody know they are in pain, anxious or upset? It is often not in words.</li>
+              <li>How do they say yes and no, and how do they make a choice?</li>
+              <li>How would they raise a worry, or say they are unhappy with something?</li>
+              </ul>
+              <textarea
+                id="how-to-communicate"
+                name="how-to-communicate"
+                rows="10"
+                aria-describedby="how-to-communicate-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <!--
-              Its own span, not the shared one: every other label puts the name
-              after a preposition ("support Margaret Smythe"), and this one
-              puts it in front of a noun, where it needs an apostrophe.
-            -->
-            <label for="my-wellness">
-              <span id="wellness-whom">Their</span> wellness
-            </label>
-            <p id="wellness-hint" class="hint">
-              What keeps them well, and what it looks like when they are not.
-            </p>
-            <textarea
-              id="my-wellness"
-              name="my-wellness"
-              rows="3"
-              aria-describedby="wellness-hint"
-            ></textarea>
+          <div class="record-page" id="record-page-3" hidden>
+            <div class="field">
+              <label for="my-wellness"><span id="wellness-whom">Their</span> wellness</label>
+              <p id="my-wellness-hint" class="hint">What a good day looks like, what a bad day looks like, and what makes the difference.</p>
+              <ul class="prompts" id="my-wellness-prompts">
+              <li>On an ordinary day — what can they do, how do they feel, how are they with people?</li>
+              <li>On a bad day, what is different?</li>
+              <li>What tends to make them unwell, and what heads it off? Not drinking enough, too much noise, a missed routine.</li>
+              <li>What are the early signs that something is wrong?</li>
+              <li>Anything they live with day to day, and how they manage it.</li>
+              </ul>
+              <textarea
+                id="my-wellness"
+                name="my-wellness"
+                rows="10"
+                aria-describedby="my-wellness-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <label for="please-do">Please do, and please do not</label>
-            <p id="please-do-hint" class="hint">
-              The things that help, and the things that make it worse. This one
-              is written to whoever is reading it, so it stays in those words.
-            </p>
-            <textarea
-              id="please-do"
-              name="please-do"
-              rows="3"
-              aria-describedby="please-do-hint"
-            ></textarea>
+          <div class="record-page" id="record-page-4" hidden>
+            <div class="field">
+              <label for="please-do">Please do, and please do not</label>
+              <p id="please-do-hint" class="hint">Written straight to whoever is reading it. The standard keeps this one in those words, and so does this.</p>
+              <ul class="prompts" id="please-do-prompts">
+              <li>Please do — “Talk to me, not to my daughter.” “Remind me to take my tablets.” “Tell me what is happening and why.”</li>
+              <li>Please do not — a subject to leave alone, an assumption people keep making, help given when it was not wanted.</li>
+              </ul>
+              <textarea
+                id="please-do"
+                name="please-do"
+                rows="10"
+                aria-describedby="please-do-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <label for="how-to-support">
-              How and when to support <span class="about-whom">them</span>
-            </label>
-            <p id="support-hint" class="hint">
-              Including what helps them feel at ease.
-            </p>
-            <textarea
-              id="how-to-support"
-              name="how-to-support"
-              rows="3"
-              aria-describedby="support-hint"
-            ></textarea>
+          <div class="record-page" id="record-page-5" hidden>
+            <div class="field">
+              <label for="how-to-support">How and when to support <span class="about-whom">them</span></label>
+              <p id="how-to-support-hint" class="hint">The practical part: what they do themselves, what they want a hand with, and how they want that hand given.</p>
+              <ul class="prompts" id="how-to-support-prompts">
+              <li>Their routines — mornings, bedtime, washing, dressing, the toilet. What they manage alone, and what they would like help with.</li>
+              <li>Eating and drinking: how food is prepared, any special cup or cutlery, how they like to be helped, what they actually like.</li>
+              <li>Glasses, hearing aids, teeth — anything that has to go on before the day can start properly.</li>
+              <li>What changes in an unfamiliar place, like a hospital ward?</li>
+              <li>Anything that sets them off, and what helps when it happens.</li>
+              </ul>
+              <textarea
+                id="how-to-support"
+                name="how-to-support"
+                rows="10"
+                aria-describedby="how-to-support-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
-
-          <div class="field">
-            <label for="also-worth-knowing">
-              Also worth knowing about <span class="about-whom">them</span>
-            </label>
-            <textarea
-              id="also-worth-knowing"
-              name="also-worth-knowing"
-              rows="3"
-            ></textarea>
+          <div class="record-page" id="record-page-6" hidden>
+            <div class="field">
+              <label for="also-worth-knowing">Also worth knowing about <span class="about-whom">them</span></label>
+              <p id="also-worth-knowing-hint" class="hint">The person, not the care. This is often the section professionals say they remember.</p>
+              <ul class="prompts" id="also-worth-knowing-prompts">
+              <li>A short version of their life: where they grew up, what they did for a living, who mattered to them.</li>
+              <li>What they are like now — what they are good at, what they follow, what they will happily talk about for an hour.</li>
+              <li>What they would rather not talk about.</li>
+              <li>Anything else that did not fit above.</li>
+              </ul>
+              <textarea
+                id="also-worth-knowing"
+                name="also-worth-knowing"
+                rows="10"
+                aria-describedby="also-worth-knowing-hint"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="record-next">Continue</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <button type="button" class="record-cancel linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
 
           <!--
             The standard's own acknowledgement that the person whose record
             this is may not be the person typing.
 
-            Set apart from the seven, because it is not something about her —
+            Its own page, and last, because it is not something about her —
             it is about how the page in front of you came to exist. Signed
-            authorship already proves who wrote each version; this says it in
-            words, where somebody reading the record will actually see it.
+            authorship already proves who wrote each version; this says it
+            in words, where somebody reading the record will see it.
           -->
-          <div class="field" id="supported-by-field">
-            <label for="supported-by">Supported to write this by</label>
-            <p id="supported-by-hint" class="hint">
-              Who helped put this together. Leave it blank if they wrote it
-              themselves.
-            </p>
-            <input
-              id="supported-by"
-              name="supported-by"
-              type="text"
-              autocomplete="off"
-              aria-describedby="supported-by-hint"
-            />
-          </div>
-
-          <div class="actions">
-            <button type="submit">Save</button>
-            <!--
-              Always offered. A form you can enter but not leave is a trap, and
-              a mistyped field should never cost more than a press to undo.
-            -->
-            <button type="button" id="cancel-edit" class="secondary">
-              Cancel
-            </button>
+          <div class="record-page" id="record-page-7" hidden>
+            <div class="field" id="supported-by-field">
+              <label for="supported-by">Supported to write this by</label>
+              <p id="supported-by-hint" class="hint">
+                Who helped put this together. Leave it blank if they wrote
+                it themselves.
+              </p>
+              <input
+                id="supported-by"
+                name="supported-by"
+                type="text"
+                autocomplete="off"
+                aria-describedby="supported-by-hint"
+              />
+            </div>
+            <div class="actions">
+              <button type="submit">Save</button>
+              <button type="button" class="record-back secondary">Back</button>
+            </div>
+            <div class="actions quiet">
+              <button type="button" class="record-restart linky">
+                Back to the start
+              </button>
+              <!--
+                Always offered. A form you can enter but not leave is a
+                trap, and a mistyped field should never cost more than a
+                press to undo.
+              -->
+              <button type="button" id="cancel-edit" class="linky">
+                Stop and leave it as it was
+              </button>
+            </div>
           </div>
         </form>
 
