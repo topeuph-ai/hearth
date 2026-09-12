@@ -260,26 +260,36 @@ button.secondary {
 /*
  * The four jobs a circle screen does, along the top.
  *
- * Buttons rather than links, because nothing here is a URL — and styled as
- * tabs rather than as four more things to press, so the one you are on is
- * obvious without reading it.
+ * Buttons rather than links, because nothing here is a URL.
+ *
+ * The first attempt drew each tab as a box with its bottom edge cut away, the
+ * way a filing-cabinet tab looks. That works on one line and falls apart on
+ * two: these labels carry a person's name in them, so they wrap on an
+ * ordinary window, and the row underneath ended up with boxes hanging off a
+ * line that was no longer beneath them.
+ *
+ * So the mark of where you are is a thick underline on the word itself, which
+ * survives wrapping, and reads the same at any width.
  */
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  margin: 1.25rem 0;
-  border-bottom: 2px solid var(--line);
+  /* Tight enough that four tabs and a person's name usually make one row,
+     and harmless when a longer name pushes them onto two. */
+  gap: 0.25rem 1rem;
+  margin: 0 0 1.5rem;
+  padding-bottom: 0.1rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .circle-tab {
   background: none;
-  border: 2px solid transparent;
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  border: none;
+  border-bottom: 4px solid transparent;
+  border-radius: 0;
   color: var(--muted);
-  padding: 0.6rem 0.9rem;
-  margin-bottom: -2px;
+  font-size: 1rem;
+  padding: 0.5rem 0.1rem;
   cursor: pointer;
 }
 
@@ -287,14 +297,14 @@ button.secondary {
   color: var(--ink);
 }
 
-/* Where you are. Not colour alone: the border carries it too, for anybody
-   who cannot tell these two colours apart. */
+/*
+ * Where you are. Never colour alone: the weight and the underline carry it
+ * too, for anybody who cannot tell these two apart.
+ */
 .circle-tab.here {
   color: var(--ink);
   font-weight: 600;
-  border-color: var(--line);
-  border-bottom: 2px solid var(--paper);
-  background: var(--paper);
+  border-bottom-color: var(--accent);
 }
 
 .linky {

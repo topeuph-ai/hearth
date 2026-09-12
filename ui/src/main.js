@@ -462,6 +462,19 @@ let circleAsksTwo = false;
 const CIRCLE_PAGES = ["record", "people", "invite", "suggestions"];
 let circleShows = "record";
 
+/*
+ * Whether the record on screen has just this moment been written.
+ *
+ * Writing it is a run of pages that ends with reading the whole thing over,
+ * and offering three other places to be in the middle of that is an
+ * invitation to wander off before looking at it. So the tabs wait until she
+ * has been to the end of that run and pressed on.
+ *
+ * Only for the person who wrote it, and only the once. Coming back to a
+ * circle later, or opening somebody else's, starts with the tabs there.
+ */
+let justWroteIt = false;
+
 /**
  * Put the circle screen into a mode. The only place these are set.
  *
@@ -524,7 +537,7 @@ function showCircleMode(mode = circleMode) {
    * yet is three ways to be disappointed. And nothing at all while the form
    * is open, which is the rule the buttons above already follow.
    */
-  const mayRoam = somethingToShowPeople;
+  const mayRoam = somethingToShowPeople && !justWroteIt;
   $("circle-tabs").hidden = !mayRoam;
 
   // Only the holder invites anybody, so only she has the tab for it.
@@ -582,8 +595,12 @@ for (const tab of document.querySelectorAll(".circle-tab")) {
 }
 
 // Carrying on from the record goes where the holder has to go next: the
-// address, and who to send it to first.
-$("carry-on").addEventListener("click", () => showCirclePage("invite"));
+// address, and who to send it to first. It is also the moment she has read
+// the record over, which is what the rest of the circle was waiting for.
+$("carry-on").addEventListener("click", () => {
+  justWroteIt = false;
+  showCirclePage("invite");
+});
 
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
@@ -1228,6 +1245,8 @@ $("record-form").addEventListener("submit", async (event) => {
       );
     } else {
       await call("create_about_me", aboutMe, circle.cellId);
+      // Written for the first time, so the next thing is to read it over.
+      justWroteIt = true;
     }
 
     editingOneSection = false;
@@ -2554,6 +2573,8 @@ function renderCircles() {
 async function openCircle(item) {
   circle = { cellId: item.cellId };
   circleAsksTwo = Boolean(item.asksTwo);
+  // Coming back to a circle is not writing one.
+  justWroteIt = false;
   // Always the record first. Coming back to a circle to read it is the
   // ordinary reason for coming back to one.
   circleShows = "record";
@@ -2606,6 +2627,7 @@ function forgetTheCircle() {
   theDoorIsHere = false;
   circleAsksTwo = false;
   circleShows = "record";
+  justWroteIt = false;
   if (watchingForTheAsking) {
     clearInterval(watchingForTheAsking);
     watchingForTheAsking = null;
