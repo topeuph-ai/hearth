@@ -436,7 +436,7 @@ const hasBeenWritten = (entry) =>
  * mode instead of reading it back off the screen removes the question rather
  * than answering it again.
  *
- * `showCircleMode` below is the only thing allowed to set these six elements.
+ * `showCircleMode` below is the only thing allowed to set these elements.
  */
 const READING = "reading";
 const WRITING = "writing";
@@ -444,8 +444,11 @@ const SAYING_I_READ_IT = "acknowledging";
 
 let circleMode = READING;
 
+/** Whether this device has a door to this circle at all. See loadTheDoor. */
+let theDoorIsHere = false;
+
 /**
- * Put the circle screen into a mode. The only place these six are set.
+ * Put the circle screen into a mode. The only place these are set.
  *
  * Called both when the mode changes and at the end of every re-read, so a
  * refresh arriving mid-form redraws the mode somebody is actually in rather
@@ -476,6 +479,31 @@ function showCircleMode(mode = circleMode) {
     circleMode = READING;
     $("acknowledge-form").hidden = true;
   }
+
+  /*
+   * Nothing to offer anybody until there is something to offer them.
+   *
+   * The list of people, the queue at the door, and the address to give out
+   * were all on screen from the moment the circle existed — under a form that
+   * had not been filled in yet. So the first thing the app said to somebody
+   * who had just made a circle was "give somebody the address", and what they
+   * would have been giving the address to was a name and seven empty
+   * headings.
+   *
+   * This rule is not new. It used to guard the panel that made invitations,
+   * word for word: nothing to invite anybody to until something has been
+   * written. That panel was deleted when invitations stopped being something
+   * people see, and the rule went with it instead of moving to the door that
+   * replaced it.
+   *
+   * The second half is the same rule the buttons above follow: while somebody
+   * is part-way through writing, the screen underneath them holds still.
+   */
+  const somethingToShowPeople = written && mode !== WRITING;
+
+  $("people").hidden = !somethingToShowPeople;
+  $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
+  $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
 }
 
 /** Whether the last load put a written record on the screen. */
@@ -1840,7 +1868,6 @@ function renderPeople() {
    * way to look for anybody — the one screen where looking again is the whole
    * point. An empty list with an honest line under it is better than no list.
    */
-  $("people").hidden = false;
   $("people-empty").hidden = members.size > 0;
 
   // Only the holder appoints, and only where there is somebody to appoint.
@@ -2380,6 +2407,7 @@ function forgetTheCircle() {
   // circle these would be somebody else's answers on somebody else's screen.
   whoAgrees = null;
   seconderHere = null;
+  theDoorIsHere = false;
   if (watchingForTheAsking) {
     clearInterval(watchingForTheAsking);
     watchingForTheAsking = null;
@@ -3005,20 +3033,19 @@ async function cellForRoom(room, name) {
 let knocking = [];
 
 async function loadTheDoor() {
-  const door = $("at-the-door");
-  const address = $("door-address");
   const room = isHolder() ? roomFor(circle?.cellId) : null;
 
   if (!room) {
-    door.hidden = true;
-    address.hidden = true;
+    theDoorIsHere = false;
+    showCircleMode();
     currentRoomCell = null;
     knocking = [];
     $("knock-list").replaceChildren();
     return;
   }
 
-  address.hidden = false;
+  theDoorIsHere = true;
+  showCircleMode();
   $("door-address-output").textContent = roomToAddress(room);
 
   let roomCell;
@@ -3033,7 +3060,6 @@ async function loadTheDoor() {
      */
     console.error(error);
     currentRoomCell = null;
-    door.hidden = false;
     $("knock-list").replaceChildren();
     $("nobody-knocking").hidden = false;
     $("nobody-knocking").textContent =
@@ -3055,7 +3081,6 @@ async function loadTheDoor() {
   // Somebody who has already been answered is not still at the door.
   const waiting = knocking.filter((k) => !k.answered);
 
-  door.hidden = false;
   $("nobody-knocking").hidden = waiting.length > 0;
   $("nobody-knocking").textContent =
     "Nobody is waiting. Give somebody the address below and they can ask from " +
