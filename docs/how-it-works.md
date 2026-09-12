@@ -490,6 +490,72 @@ because nobody is writing to that circle any more.
 That is the real difference between the two, and it is what decides which to
 offer for what:
 
+### Can a tampered-with app be spotted?
+
+Asked because if it cannot be stopped, being able to notice it is the next
+best thing. The answer is in two halves and they are opposites.
+
+**Reading cannot be noticed. Not now, not ever, not by any design.** Somebody
+who modifies their app to keep showing a circle after removal makes no request
+to anybody: the entries are already on their disk, put there by ordinary
+replication, and drawing them on their own screen touches no network at all.
+There is nothing to observe because nothing happens.
+
+This is the same fact that makes acknowledgements in this app a deliberate
+written act rather than something inferred. **A DHT has no read receipts.** If
+this app ever appears to tell you who has read something without them pressing
+a button to say so, it is lying.
+
+**Writing is the opposite: it is visible, signed, and the network denounces
+it by itself.** Everything anybody writes is an action on their own chain,
+signed by them, and served by the neighbourhood of their public key. Holochain
+0.7 gives a zome one window onto it — `get_agent_activity` — which returns,
+in its own documentation's words: the highest observed chain item; whether the
+chain contains only valid items, contains at least one invalid item, is
+forked, or is empty; **any warrants collected for invalid actions committed by
+the agent**; and the hashes of valid and rejected actions.
+
+A warrant is not a log entry somebody has to remember to write. When a peer
+validates something and it fails, it issues a `ChainIntegrityWarrant` naming
+the author, the action, its signature, and a human-readable reason — and that
+warrant is gossiped like anything else. There is a second kind,
+`ChainFork`, which carries two actions with the same sequence number as proof
+that one identity has been run in two places at once. **That is exactly the
+shape of "kept an old build alongside the new one", and it is self-proving.**
+
+So, for a person who has been marked as gone and has modified their app:
+
+| What they do | Noticed? |
+| --- | --- |
+| Read the record they still hold | **No.** Nothing is requested and nothing happens |
+| Write anything at all into the circle | **Yes.** It appears, signed, with their name on it |
+| Author something that breaks a rule | **Yes**, and the network says so of its own accord, with evidence |
+| Run their identity in two places to keep an old build | **Yes** — a forked chain, proven by two actions at the same sequence |
+
+**And the one thing that is not available at any price**: there is no way to
+ask who is online, or whose node is running. The whole of what a zome may
+learn about another agent in this version is `get_agent_activity`. Presence is
+not observable, which is consistent with everything else here — a circle whose
+members are all asleep is not a circle in trouble.
+
+#### What is worth building from that
+
+Two cheap things, neither built:
+
+**Write the departure down.** If marking somebody as gone is an entry in the
+circle rather than a setting on one device, then who was removed and when is
+part of the record everybody holds. Anything that person writes afterwards is
+then visibly a write from somebody who was removed — which is the whole of the
+detection anybody needs, and it costs one entry type.
+
+**Show the health of each member's chain.** `get_agent_activity` on the people
+in a circle would surface a forked or warranted chain without anybody going
+looking. It is a genuine integrity signal and it is one call per member.
+
+Neither of these detects reading, because nothing detects reading. What they
+do is make continued *participation* impossible to do quietly, which is a
+different and achievable goal.
+
 **Re-forming the circle: the last resort, and the one that holds.** They are
 excluded by mathematics rather than by everybody's app agreeing to behave, and
 their copy is frozen on the day it happens.
