@@ -447,6 +447,9 @@ let circleMode = READING;
 /** Whether this device has a door to this circle at all. See loadTheDoor. */
 let theDoorIsHere = false;
 
+/** Whether the circle on screen says it asks two people to agree. */
+let circleAsksTwo = false;
+
 /*
  * The circle screen has two pages, and this says which.
  *
@@ -527,6 +530,15 @@ function showCircleMode(mode = circleMode) {
   // The way on from the record, which is only a way on while there is
   // somewhere to go and the record is what you are looking at.
   $("carry-on").hidden = !somethingToShowPeople || !onTheRecord;
+
+  /*
+   * Whose invitation should go first.
+   *
+   * Only while it is still true: once somebody has agreed to be the second
+   * person, the sentence has done its job and saying it again would be the
+   * screen nagging about something already done.
+   */
+  $("ask-them-first").hidden = !circleAsksTwo || whoAgrees?.willing === true;
 }
 
 function showCirclePage(which) {
@@ -2470,6 +2482,9 @@ async function loadCircles() {
       // Kept so clearing the label can go back to it. The label overrides
       // this; it does not replace it.
       madeWith: c.name || "Circle",
+      // Whether this circle says it asks two people to agree. Part of what
+      // the circle is, so it is read off the cell rather than asked for.
+      asksTwo: Boolean(propertiesOf(c)?.requires_second_yes),
     }));
 
   if (circles.length === 0) {
@@ -2501,6 +2516,7 @@ function renderCircles() {
 
 async function openCircle(item) {
   circle = { cellId: item.cellId };
+  circleAsksTwo = Boolean(item.asksTwo);
   // Always the record first. Coming back to a circle to read it is the
   // ordinary reason for coming back to one.
   circleShows = "record";
@@ -2551,6 +2567,7 @@ function forgetTheCircle() {
   whoAgrees = null;
   seconderHere = null;
   theDoorIsHere = false;
+  circleAsksTwo = false;
   circleShows = "record";
   if (watchingForTheAsking) {
     clearInterval(watchingForTheAsking);
@@ -2701,6 +2718,63 @@ wireCopyButton(
   "copy-door-address",
   () => $("door-address-output").textContent,
   "Address copied",
+);
+
+/**
+ * The whole message, ready to paste into whatever they use.
+ *
+ * What somebody receiving an address needs is the address *and* what to do
+ * with it. Making the holder write that part herself — every time, for every
+ * person — is the errand most likely to be done badly or skipped, and the
+ * person on the other end is then left holding a long line of characters and
+ * no idea what it is for.
+ *
+ * Deliberately plain text with no links in it. This goes into a text message
+ * or a WhatsApp, and it has to survive being read on a phone by somebody who
+ * has never heard of any of this.
+ */
+function anInvitationToSend() {
+  /*
+   * The name, if there is one, and English either way.
+   *
+   * personName already prefers what the record says over what was typed when
+   * the circle was made, which is the right order: the record is what
+   * everybody else reads. But it can be empty, and the first draft of this
+   * filled the gap with a description — producing "part of the person this
+   * circle is about's Hearth", which is not a sentence anybody would send.
+   *
+   * "them" throughout rather than a pronoun for the person. Nothing here has
+   * been told which one they use, and guessing wrong in a message somebody
+   * sends to their family is worse than the small stiffness of "them".
+   */
+  const name = personName();
+  const whose = name ? `${name}'s` : "their";
+  const whom = name || "them";
+  const address = $("door-address-output").textContent;
+
+  return [
+    `I would like you to be part of ${whose} Hearth — a private record of ` +
+      `what matters to them and how to look after them.`,
+    "",
+    "Here is the address of the circle:",
+    "",
+    address,
+    "",
+    "To get in:",
+    "1. Open Hearth and press \u201CJoin a circle\u201D.",
+    "2. Paste the address above into the box.",
+    `3. Put in your name and how you are connected to ${whom}.`,
+    "4. Press \u201CAsk to join\u201D, then wait.",
+    "",
+    "I will see you waiting and let you in. It may not be straight away, and " +
+      "it will open on its own once I have.",
+  ].join("\n");
+}
+
+wireCopyButton(
+  "copy-invitation-message",
+  anInvitationToSend,
+  "Message copied. Paste it into an email, a text, or WhatsApp.",
 );
 
 /*
