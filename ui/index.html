@@ -618,6 +618,16 @@
           </div>
         </form>
 
+        <!--
+          Page one: what is written about the person, and nothing else.
+
+          A container rather than a rule per element. Everything inside keeps
+          deciding its own business — whether there is a record, whether there
+          is anything to acknowledge — and this decides only whether this page
+          is the one on screen. Two places setting one element from different
+          reasoning is how the last three of these went wrong.
+        -->
+        <div id="circle-record">
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->
           <p id="no-record-empty" hidden>
@@ -692,6 +702,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -722,6 +741,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -753,6 +781,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -784,6 +821,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -812,6 +858,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -843,6 +898,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -873,6 +937,15 @@
               ></textarea>
             </div>
             <div class="actions">
+              <!--
+                Changing one section is a different job from writing all seven,
+                and it ends differently: save this one and go straight back to
+                the record. Hidden while somebody is working through the whole
+                form, where saving half of it is not a thing anybody means.
+              -->
+              <button type="submit" class="record-save-one" hidden>
+                Save this and go back
+              </button>
               <button type="button" class="record-next">Continue</button>
               <button type="button" class="record-back secondary">Back</button>
             </div>
@@ -931,7 +1004,17 @@
         </form>
 
         <div class="actions" id="record-actions" hidden>
-          <button type="button" id="edit-record">Change this</button>
+          <!--
+            Where this page goes when the record is right.
+
+            Not called "Save": by the time anybody reads this the record is
+            already written, and a button claiming to save it would be the
+            screen taking credit for something that happened a page ago.
+          -->
+          <button type="button" id="carry-on" hidden>Carry on</button>
+          <button type="button" id="edit-record" class="secondary">
+            Change all of it
+          </button>
           <button type="button" id="acknowledge" hidden>
             I have read this
           </button>
@@ -986,6 +1069,24 @@
           anybody has to clear. The heading says "who is in", not "members",
           because this is a circle around a person, not an organisation.
         -->
+        </div>
+
+        <!--
+          The circle, once the record is read and right.
+
+          Two pages, because they are two jobs. Reading over what has been
+          written is one thing; deciding who may see it is another, and a
+          screenful of the second sitting under the first is how somebody came
+          to be offered "give somebody the address" above a record they had not
+          checked yet.
+        -->
+        <div id="circle-around" hidden>
+          <div class="actions">
+            <button type="button" id="back-to-record" class="secondary">
+              Back to the record
+            </button>
+          </div>
+
         <section id="people" hidden>
           <h3>Who is in this circle</h3>
           <p class="hint">
@@ -1226,6 +1327,11 @@
         </section>
 
 
+        <!--
+          Kept on this page rather than under the record, because taking a
+          circle off a device is about the circle, not about what is written
+          in it.
+        -->
         <details id="leave-details">
           <summary>Take this off my device</summary>
           <p>
@@ -1249,6 +1355,7 @@
             </button>
           </div>
         </details>
+        </div>
       </section>
 
       <!--

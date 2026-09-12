@@ -305,6 +305,34 @@ dd {
   margin-top: 0;
 }
 
+/*
+ * An answer can be long, and the page should not be.
+ *
+ * Seven sections at full length is a page nobody scrolls to the end of. So
+ * each one is given about eight lines and scrolls inside itself, with a
+ * button to open it right out when somebody wants the whole thing. The
+ * scrollbar is there either way; the button is for people who do not think to
+ * look for one.
+ */
+.record-field dd {
+  margin: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.record-field dd.all-of-it {
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* The two quiet buttons under an answer, away from the words themselves. */
+.record-field .show-all,
+.record-field .change-one {
+  margin-top: 0.6rem;
+  margin-right: 1.25rem;
+}
+
 ul {
   padding-left: 1.2rem;
 }

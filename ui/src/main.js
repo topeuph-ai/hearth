@@ -447,6 +447,19 @@ let circleMode = READING;
 /** Whether this device has a door to this circle at all. See loadTheDoor. */
 let theDoorIsHere = false;
 
+/*
+ * The circle screen has two pages, and this says which.
+ *
+ * "record" is what is written about the person; "around" is everybody else —
+ * who is in the circle, who is asking to join, the address to give out, and
+ * the way to take the circle off this device.
+ *
+ * They are two jobs, and a screenful of the second sitting under the first is
+ * how somebody came to be offered "give somebody the address" above a record
+ * they had not read yet.
+ */
+let circleShows = "record";
+
 /**
  * Put the circle screen into a mode. The only place these are set.
  *
@@ -500,11 +513,32 @@ function showCircleMode(mode = circleMode) {
    * is part-way through writing, the screen underneath them holds still.
    */
   const somethingToShowPeople = written && mode !== WRITING;
+  const onTheRecord = circleShows === "record";
+
+  // Which of the two pages is on screen. Everything inside either one still
+  // decides its own business; this decides only which page you are looking at.
+  $("circle-record").hidden = !onTheRecord;
+  $("circle-around").hidden = onTheRecord || !somethingToShowPeople;
 
   $("people").hidden = !somethingToShowPeople;
   $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
   $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
+
+  // The way on from the record, which is only a way on while there is
+  // somewhere to go and the record is what you are looking at.
+  $("carry-on").hidden = !somethingToShowPeople || !onTheRecord;
 }
+
+function showCirclePage(which) {
+  circleShows = which;
+  showCircleMode();
+  // A box that was hidden measured nothing, so ask again now it can be seen.
+  if (which === "record") sayWhichAnswersRunLong();
+  window.scrollTo({ top: 0 });
+}
+
+$("carry-on").addEventListener("click", () => showCirclePage("around"));
+$("back-to-record").addEventListener("click", () => showCirclePage("record"));
 
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
@@ -528,7 +562,7 @@ function renderRecord(current) {
 
   const list = $("record-fields");
   list.replaceChildren();
-  for (const [key, label] of FIELDS) {
+  for (const [index, [key, label]] of FIELDS.entries()) {
     if (!entry[key]?.trim()) continue;
 
     const dt = document.createElement("dt");
@@ -554,6 +588,49 @@ function renderRecord(current) {
     const group = document.createElement("div");
     group.className = "record-field";
     group.append(dt, dd);
+
+    /*
+     * Longer than the box, and a way to see the rest.
+     *
+     * "How and when to support me" is the section that runs long — routines,
+     * mealtimes, what changes in hospital — and a box that silently cuts it
+     * off is worse than one that scrolls, because nothing tells you there is
+     * more. The box scrolls either way; this says out loud that it needs to.
+     *
+     * Made now and shown later. Whether the words overflow depends on the
+     * window, the font and the reader's own text size, so it has to be
+     * measured rather than guessed at from how many characters there are —
+     * and it cannot be measured until the page has been laid out. See
+     * sayWhichAnswersRunLong.
+     */
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "linky show-all";
+    more.hidden = true;
+    more.textContent = "Show all of it";
+    more.addEventListener("click", () => {
+      const open = dd.classList.toggle("all-of-it");
+      more.textContent = open ? "Show less" : "Show all of it";
+    });
+    group.append(more);
+
+    /*
+     * Change this one, from here.
+     *
+     * Fixing one line used to mean "Change all of it" and pressing Continue
+     * until you reached the right page. The sections are in the standard's
+     * order and so are the pages, so the one beside this heading is the one
+     * to open.
+     */
+    if (isHolder()) {
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "linky change-one";
+      change.textContent = "Change this";
+      change.addEventListener("click", () => changeOneSection(index));
+      group.append(change);
+    }
+
     list.append(group);
   }
 
@@ -571,6 +648,8 @@ function renderRecord(current) {
   // Only for a real fork. Editing your own record twice is not two people
   // disagreeing, and saying it was is worse than saying nothing: it invites
   // somebody to go looking for a conflict that never happened.
+  sayWhichAnswersRunLong();
+
   const note = $("version-note");
   if (current.divergent_versions > 1) {
     note.hidden = false;
@@ -580,6 +659,28 @@ function renderRecord(current) {
   } else {
     note.hidden = true;
   }
+}
+
+/*
+ * Which answers are longer than the box they are in.
+ *
+ * Asked of the laid-out page, one frame after it is drawn. Asked any earlier
+ * every answer measures zero against zero — the record may not even be on
+ * screen yet when it is built — and the button would never appear on
+ * anything.
+ */
+function sayWhichAnswersRunLong() {
+  requestAnimationFrame(() => {
+    for (const group of document.querySelectorAll(".record-field")) {
+      const dd = group.querySelector("dd");
+      const more = group.querySelector(".show-all");
+      if (!dd || !more) continue;
+      // Nothing to say while it is open: the button says "Show less" and is
+      // the only way back.
+      const open = dd.classList.contains("all-of-it");
+      more.hidden = !open && dd.scrollHeight <= dd.clientHeight + 2;
+    }
+  });
 }
 
 function renderReaders(records) {
@@ -961,22 +1062,43 @@ $("create-circle-form").addEventListener("submit", async (event) => {
 const recordPages = () => [...document.querySelectorAll(".record-page")];
 let recordPage = 0;
 
+/*
+ * Whether this visit to the form is about one section or about all of them.
+ *
+ * Pressing "Change" beside a section is a small job with a small ending: save
+ * that one and go straight back to the record. Walking the whole form is a
+ * different job, and offering "save this one" half way through it invites
+ * somebody to save a record they are in the middle of writing.
+ */
+let editingOneSection = false;
+
 function showRecordPage(which) {
   const pages = recordPages();
   recordPage = Math.max(0, Math.min(which, pages.length - 1));
 
   pages.forEach((page, i) => {
     page.hidden = i !== recordPage;
-    // Nowhere to go back to from the first one, and nothing to start again
-    // from either.
+
+    // Working through the whole form: forward, back, and back to the start,
+    // with nowhere to go back to from the first page.
     for (const button of page.querySelectorAll(".record-back, .record-restart")) {
-      button.hidden = recordPage === 0;
+      button.hidden = editingOneSection || recordPage === 0;
+    }
+    for (const button of page.querySelectorAll(".record-next")) {
+      button.hidden = editingOneSection;
+    }
+
+    // Changing one section: save it, or leave it as it was. Nothing else.
+    for (const button of page.querySelectorAll(".record-save-one")) {
+      button.hidden = !editingOneSection;
     }
   });
 
   // Where you are, in words. A form with no end in sight is a form people
   // abandon, and eight pages with nothing to say how many is worse than one
-  // long one.
+  // long one. Changing a single section is not eight pages and does not need
+  // counting.
+  $("record-progress").hidden = editingOneSection;
   $("record-progress").textContent = `Page ${recordPage + 1} of ${pages.length}`;
 
   const box = pages[recordPage]?.querySelector("textarea, input");
@@ -1006,12 +1128,29 @@ for (const button of document.querySelectorAll(".record-cancel")) {
 }
 
 $("edit-record").addEventListener("click", () => {
+  editingOneSection = false;
   fillForm();
   showCircleMode(WRITING);
   showRecordPage(0);
 });
 
+/**
+ * Change one section, from the record itself.
+ *
+ * Everything about the form is the same — it is one form and it saves all
+ * seven either way. What changes is what is on screen: the page you asked
+ * for, a button that saves and comes back, and nothing that invites you to
+ * walk through the other six.
+ */
+function changeOneSection(which) {
+  editingOneSection = true;
+  fillForm();
+  showCircleMode(WRITING);
+  showRecordPage(which);
+}
+
 $("cancel-edit").addEventListener("click", () => {
+  editingOneSection = false;
   showCircleMode(READING);
   $("edit-record").focus();
 });
@@ -1046,6 +1185,7 @@ $("record-form").addEventListener("submit", async (event) => {
       await call("create_about_me", aboutMe, circle.cellId);
     }
 
+    editingOneSection = false;
     showCircleMode(READING);
     await loadCircle();
 
@@ -2361,6 +2501,9 @@ function renderCircles() {
 
 async function openCircle(item) {
   circle = { cellId: item.cellId };
+  // Always the record first. Coming back to a circle to read it is the
+  // ordinary reason for coming back to one.
+  circleShows = "record";
 
   // A different circle has different people in it, and none of them is "new".
   peopleLastSeen = new Set();
@@ -2408,6 +2551,7 @@ function forgetTheCircle() {
   whoAgrees = null;
   seconderHere = null;
   theDoorIsHere = false;
+  circleShows = "record";
   if (watchingForTheAsking) {
     clearInterval(watchingForTheAsking);
     watchingForTheAsking = null;
