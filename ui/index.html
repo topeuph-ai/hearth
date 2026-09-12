@@ -129,21 +129,34 @@
       </section>
 
       <section id="create" hidden>
+        <!--
+          One Back, meaning one step back.
+
+          On the first page that is out to the menu; on the second it is the
+          first page. Two Backs on one screen, one of which quietly throws away
+          what you have typed, is a trap — and a form you can enter but not
+          leave is the thing this button exists to prevent.
+        -->
         <div class="actions">
-          <button type="button" class="secondary back-to-choose">Back</button>
+          <button type="button" id="create-back" class="secondary">Back</button>
         </div>
         <h2>Create a circle</h2>
-        <p>
+        <p id="create-intro">
           A circle is a private space about one person. Only people you let in
           can see it. It lives on the devices of the people in it — there is no
           company holding a copy.
         </p>
         <form id="create-circle-form">
           <!--
-            Ask first. Everything after this reads differently depending on the
-            answer, and asking somebody how they are connected to themselves is
-            a small absurdity that undermines the whole thing.
+            Asked on a page of its own, with nothing under it.
+
+            Everything after this reads differently depending on the answer,
+            and asking somebody how they are connected to themselves is a small
+            absurdity that undermines the whole thing. It was already first;
+            now it is also alone, because a screenful of boxes is where
+            somebody stops reading and starts guessing.
           -->
+          <div id="create-step-1">
           <fieldset class="field">
             <legend>Who is this circle about?</legend>
             <label class="choice-row">
@@ -166,7 +179,12 @@
               Me — this is my own record
             </label>
           </fieldset>
+            <div class="actions">
+              <button type="button" id="create-continue">Continue</button>
+            </div>
+          </div>
 
+          <div id="create-step-2" hidden>
           <div class="field">
             <label for="person-name" id="person-name-label">
               Their full name
@@ -307,6 +325,7 @@
           </fieldset>
 
           <button type="submit" id="create-circle-submit">Create the circle</button>
+          </div>
         </form>
       </section>
 

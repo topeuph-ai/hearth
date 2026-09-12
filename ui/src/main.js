@@ -2521,16 +2521,68 @@ $("go-back").addEventListener("click", () => {
  * field. The alternative — a second form — would be two places to fix every
  * time the questions change, and they have changed a lot.
  */
+/*
+ * Making a circle, one page at a time.
+ *
+ * It was one screen with five boxes and two fieldsets on it, and on a laptop
+ * the bottom of it was below the fold. A screenful of boxes is where somebody
+ * stops reading and starts guessing, and the guessing matters here: two of
+ * those boxes name two different people and one of them is read by the whole
+ * circle.
+ *
+ * Splitting it also buys room to say more, because each page now has room to
+ * spare rather than needing every line shortened to fit.
+ *
+ * The first page is the question everything else depends on. Nothing else is
+ * on it.
+ */
+const CREATE_PAGES = ["create-step-1", "create-step-2"];
+let createPage = 0;
+
+function showCreatePage(which) {
+  createPage = which;
+  CREATE_PAGES.forEach((id, i) => {
+    $(id).hidden = i !== which;
+  });
+  // Said once, on the page that introduces the thing. Repeating it above the
+  // boxes would be three lines somebody has already read.
+  $("create-intro").hidden = which !== 0;
+  window.scrollTo({ top: 0 });
+}
+
 function goToCreate() {
   // Always shown. Whether a circle asks two people to agree is one question
   // about the circle being made, not a different kind of circle reached by a
   // different button.
   $("decides-just-me").checked = true;
+  showCreatePage(0);
   show("create");
-  $("person-name").focus();
+  $("about-someone-else").focus();
 }
 
 $("choose-create").addEventListener("click", goToCreate);
+
+$("create-continue").addEventListener("click", () => {
+  showCreatePage(1);
+  $("person-name").focus();
+});
+
+/*
+ * One Back, meaning one step back.
+ *
+ * Two Backs on one screen, one of which quietly throws away what you have
+ * typed, is a trap. So this is the only one, and what it does depends on
+ * where you are: out to the menu from the first page, and back to the first
+ * page from the second.
+ */
+$("create-back").addEventListener("click", () => {
+  if (createPage > 0) {
+    showCreatePage(createPage - 1);
+    $("about-someone-else").focus();
+    return;
+  }
+  show("choose");
+});
 
 /*
  * A second join starts empty, and does not know her name yet.
