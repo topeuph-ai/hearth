@@ -412,11 +412,15 @@ agreed and neither is built; the demo does not need them, and they are written
 down here so that the thinking is not lost.
 
 **Marking somebody as gone — the everyday one.** The holder writes a departure
-into the circle; every app that sees it stops listing that person, and
-*their own app stops showing them the circle at all*. For somebody using the
-software as it ships — which is almost everybody who will ever be removed from
-anything — that is removal. It does not stop the data arriving on their
-device, and it cannot undo what they have already read.
+into the circle; every app that sees it stops listing that person, and *their
+own app stops showing them the circle at all* — including everything they had
+already read. For somebody using the software as it ships, which is almost
+everybody who will ever be removed from anything, that is removal.
+
+What it does not touch is a copy made outside the app: a screenshot, a note, a
+photograph. Somebody who sees it coming can make one, as they could with a
+paper file. And it does not stop the data continuing to arrive on their
+device, unseen — which is the reason the second option exists.
 
 **Re-forming the circle — the last resort.** A new circle without them, with
 the record carried across and the remaining members moved over by their own

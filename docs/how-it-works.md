@@ -443,14 +443,41 @@ So the honest picture has three levels, not two:
 
 | | Does removal hold? |
 | --- | --- |
-| Somebody using the app as it ships | **Yes.** The circle is gone from their screen |
-| Somebody who kept what they already read | No — and no design anywhere changes that |
-| Somebody who modifies the app, keeps an old build, or reads the database directly | No |
+| Somebody using the app as it ships | **Yes** — and this includes everything they had already read. The circle is gone from their screen |
+| A copy they made outside the app: written down, screenshotted, photographed, remembered | **No.** Nothing anywhere changes that |
+| Somebody who modifies the app, keeps an old build, or reads the database file directly | **No** — but it is work, and that is the point |
 
-The third line is the one worth being careful about, and it is worth saying
-what it is not: it is not a peculiarity of having no server. Anybody with a
-copy of anything can keep it. What a server genuinely adds is that it can
-refuse to *send* future updates, and that is a real difference — see below.
+**The first line is stronger than it first looks, and an earlier draft of this
+section got it wrong.** It is tempting to write the second line as "what they
+have already read", and that is not the same thing at all. What they have
+already read is still *inside the app*, and the app has just been told they
+are not in this circle — so it goes, along with everything else about that
+circle. Removal is not only about what happens next; it takes back the whole
+of it.
+
+The only thing genuinely beyond reach is a copy made **outside** the app,
+which is a deliberate act: a photograph, a note on paper, a screenshot, a
+memory. Somebody who sees removal coming can make one. That is true of every
+record that has ever existed, on paper or otherwise, and it is the honest
+boundary — not "they keep the data", which is not what happens.
+
+**And the third line is a threshold, not a hole.** Nothing here is a
+cryptographic guarantee that a determined person cannot read what is on their
+own disk, and this document should not pretend otherwise. What it is, is a
+real cost: modify the app, or find and read a SQLite file, or keep an old
+build and stop it updating. That cost is beyond almost everybody, and for the
+people this is built around — families, support workers, district nurses — it
+is the difference between "I cannot see it any more" and "I can".
+
+Making something difficult is a legitimate answer when the alternative is
+nothing at all. What is not legitimate is calling it impossible, which is why
+these three lines are set out separately rather than summarised into one.
+
+It is also worth saying what the third line is **not**: it is not a
+peculiarity of having no server. Anybody with a copy of anything can keep it,
+and a server-based app in which data has already synced to a phone is in the
+same position. What a server genuinely adds is that it can refuse to *send*
+future updates — a real difference, and the subject of the next paragraph.
 
 **One consequence to design around.** Somebody removed this way keeps
 receiving every future version onto their disk, silently, for as long as their

@@ -230,9 +230,22 @@ Three different things get called revocation, and conflating them produces softw
 
 **The sound answer is to re-form the circle.** A circle is a cheap clone, so removing someone means creating a new circle with a new network seed and inviting everyone except them. They are excluded by mathematics rather than by a rule somebody has to enforce.
 
-**Stopping someone reading what they already hold is not achievable.** Once a person has legitimately received the plaintext, it is theirs. This is true of this architecture and of every other, including systems that claim otherwise by deleting a copy they control while the reader's screenshot survives. **[DECISION: this must be said plainly to families, not buried. A circle member is a person you have told something to.]**
+**Stopping someone reading what they already hold** needs separating into two questions that an earlier version of this document ran together, because the answers are different and the difference matters to a family being asked to trust this.
 
-Best-effort removal inside an existing circle — the holder records a departure, and other members' software stops displaying that person and stops sharing new material with them — is worth building for the ordinary case of a professional leaving a case. It is a courtesy, not a control, and must never be presented as one.
+*Can their software be made to stop showing it to them?* Yes, for the ordinary case. The holder records a departure; the removed person's own copy of the app sees that record and closes the circle — not only future versions, but everything about it they had already read. For somebody using the software as it is distributed, being removed means opening the app and finding the circle gone. This is access control and it is worth building.
+
+*Is the data gone from their device?* No. It remains, and it continues to arrive there by ordinary replication, unseen. **A removal of this kind is therefore not erasure and must never be recorded or described as one**, including in any response to a data subject.
+
+*Can a determined person get at it anyway?* Yes — by modifying the software, keeping an old build, or reading the local database directly. This is a cost rather than a barrier. It is beyond almost everybody, and it is not a peculiarity of having no central server: a phone that has already synchronised data from a server-based service is in exactly the same position.
+
+**And what no design reaches: a copy made outside the software.** A screenshot, a photograph, a note, a memory. Somebody who anticipates removal can make one, as they could with a paper file. **[DECISION: this must be said plainly to families, not buried. A circle member is a person you have told something to.]**
+
+Two removals are therefore planned, and they are not the same instrument:
+
+- **Marking somebody as gone** — proportionate for a professional leaving a case. Effective against ordinary use; not erasure; their device keeps receiving what it cannot show.
+- **Re-forming the circle** — for a safeguarding situation, or somebody who should not have been admitted. Excludes them by mathematics, and freezes their copy at the day it happens, because nothing is written to that circle afterwards.
+
+Neither is built. Both are described in [how-it-works.md](how-it-works.md#revocation).
 
 ### The erasure tension
 
