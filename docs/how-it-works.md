@@ -417,10 +417,53 @@ have. Once a person has legitimately received something readable, it is theirs.
 already read the data**, on this architecture or any other. The
 [DPIA](DPIA.md) says so rather than implying otherwise.
 
-Best-effort removal within an existing circle — the holder records a departure,
-everybody else's app stops showing that person and stops sharing new material
-with them — is worth building for the ordinary case of a professional moving on.
-**It is a courtesy, not a control, and must never be described as one.**
+### Two different things called "removing somebody"
+
+**Marking somebody as gone.** The holder records a departure; everybody else's
+app stops listing that person as being in the circle. Worth building for the
+ordinary case of a professional moving on, and it is **a courtesy, not a
+control, and must never be described as one.**
+
+An earlier version of this section said such an app would also "stop sharing
+new material with them". **That was wrong and is worth correcting rather than
+quietly deleting.** Gossip is not something an app chooses to do person by
+person: every member's node holds and serves the circle's data to every other
+member of it, and there is no per-agent filter anywhere in that. Somebody
+marked as gone carries on receiving every future version of the record, from
+everybody, exactly as before. Their name comes off a list. That is the whole
+of it.
+
+So if this is built, the sentence on screen has to be something like *"they
+will no longer be listed, and they will still be able to read this"* — which
+is a strange thing to offer, and is the reason it has not been built.
+
+**Actually removing somebody: re-forming the circle.** The one that works, for
+the reason above — they are excluded by mathematics rather than by everybody's
+app agreeing to behave.
+
+The objection to it has always been the cost: everybody else has to join the
+new circle. But that cost is an interface problem, not an architectural one,
+and it is smaller than it looks:
+
+1. The holder's app makes a new circle and copies the record into it.
+2. It makes a door for the new circle, and an invitation for every member
+   except the one being removed.
+3. It sends each of them their invitation **as a signal in the old circle** —
+   which it can, because the holder is still in the old circle with them.
+4. Their apps join the new one and carry the label across. Nobody types
+   anything.
+
+The person removed is in the old circle, which simply stops being written to.
+They keep what they already had, which is true of every design and cannot be
+otherwise.
+
+**None of that needs the integrity zome.** Signals, circle creation,
+invitations and joining all exist and all live in the coordinator, so this is
+buildable without a migration — which makes it a very different proposition
+from most of what is left on this list.
+
+What it does **not** do, and nothing can: get back what they have already
+read.
 
 ---
 
