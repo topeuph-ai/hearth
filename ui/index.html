@@ -1223,29 +1223,85 @@
           </p>
           <ul id="pending-list"></ul>
           </section>
-          <details id="leave-details">
-          <summary>Take this off my device</summary>
-          <p>
-          This takes the circle off your list, here, on this device. It does
-          not reach anybody else: everyone still in it keeps their copy, and
-          anything they have already read stays read.
-          </p>
           <!--
-          Not "nobody else has joined yet". The app knows who has introduced
-          themselves, which is not the same as who is in the circle, and
-          stating the one as though it were the other is exactly the kind of
-          claim this code has no business making. So: an if, not a fact.
+            Well away from everything else, and named after what it does.
+
+            "Take this off my device" sat a thumb's width under "Check again"
+            and said neither whose circle nor that it was a removal. The rule
+            for anything that cannot be undone by pressing it again: say the
+            name, say the act, and put space around it.
           -->
-          <p>
-          There is no server keeping a spare. If nobody else has a copy, this
-          is the only one.
-          </p>
-          <div class="actions">
-          <button type="button" id="leave-circle" class="secondary">
-          Take <span class="about-whom">them</span> off my device
-          </button>
-          </div>
+          <hr class="before-leaving" />
+
+          <details id="leave-details">
+            <summary>
+              ⚠️ Remove <span class="about-whose">this</span> circle from my
+              device
+            </summary>
+            <p>
+              This takes the circle off your list, here, on this device. It
+              does not reach anybody else: everyone still in it keeps their
+              copy, and anything they have already read stays read.
+            </p>
+            <!--
+              Not "nobody else has joined yet". The app knows who has
+              introduced themselves, which is not the same as who is in the
+              circle, and stating the one as though it were the other is
+              exactly the kind of claim this code has no business making. So:
+              an if, not a fact.
+            -->
+            <p>
+              There is no server keeping a spare. If nobody else has a copy,
+              this is the only one.
+            </p>
+            <div class="actions">
+              <button type="button" id="leave-circle" class="secondary">
+                ⚠️ Remove <span class="about-whose">this</span> circle from
+                my device
+              </button>
+            </div>
+            <!--
+              True, and checked before it was written here: leaving switches
+              the circle off rather than deleting it, so everything in it is
+              still on this disk and coming back switches it on again. What it
+              does not promise is that coming back is up to you — it is up to
+              whoever holds the circle, exactly as it was the first time.
+            -->
+            <p class="hint" id="leaving-is-not-forever">
+              This is not permanent. Everything in it stays on this device, and
+              if you are let in again it comes back as it was — you would ask
+              the same way you did the first time.
+            </p>
           </details>
+
+          <!--
+            The last thing between a press and a circle disappearing off the
+            screen.
+
+            A dialog rather than the browser's own confirm box, for the reason
+            the acknowledgement form is not a prompt either: a grey box in the
+            browser's words, on top of a care record, is the one moment the app
+            stops looking like itself.
+
+            "No" is the button that is focused and the button that looks like
+            the answer. Somebody who opened this by accident should be able to
+            press the obvious thing and be fine.
+          -->
+          <dialog id="really-leave">
+            <h3 id="really-leave-question">
+              Are you sure you want to leave this circle?
+            </h3>
+            <p class="hint">
+              It comes off this device. Everyone else keeps theirs, and you can
+              ask to be let in again.
+            </p>
+            <div class="actions">
+              <button type="button" id="stay-here">No, take me back</button>
+              <button type="button" id="leave-for-real" class="secondary">
+                Yes, remove it
+              </button>
+            </div>
+          </dialog>
         </div>
 
         <div id="circle-invite" hidden>

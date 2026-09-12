@@ -306,6 +306,17 @@ function nameHer(name) {
   for (const span of document.querySelectorAll(".about-whom")) {
     span.textContent = who;
   }
+
+  /*
+   * The same name, where the sentence needs it to own something.
+   *
+   * "Remove Margaret Smythe circle from my device" is what you get without
+   * this, and "Remove their circle" is what you get when there is no name
+   * yet. Found by reading the button rather than the code.
+   */
+  for (const span of document.querySelectorAll(".about-whose")) {
+    span.textContent = name?.trim() ? `${who}'s` : "their";
+  }
 }
 
 /*
@@ -2661,7 +2672,29 @@ function forgetTheCircle() {
   $("appoint-hint").hidden = true;
 }
 
-$("leave-circle").addEventListener("click", async () => {
+/*
+ * Nothing happens until the second press, and the second press is the one
+ * that has the circle's name on it.
+ */
+$("leave-circle").addEventListener("click", () => {
+  // "this's circle" is what the obvious version of this line produces on a
+  // circle whose record has not arrived yet.
+  const name = personName();
+  $("really-leave-question").textContent = name
+    ? `Are you sure you want to leave ${name}'s circle?`
+    : "Are you sure you want to leave this circle?";
+  const box = $("really-leave");
+  box.showModal();
+  $("stay-here").focus();
+});
+
+$("stay-here").addEventListener("click", () => {
+  $("really-leave").close();
+  $("leave-circle").focus();
+});
+
+$("leave-for-real").addEventListener("click", async () => {
+  $("really-leave").close();
   try {
     const leaving = $("circle-heading").textContent;
     // Held before anything is switched off, because forgetTheCircle drops it.
@@ -3860,15 +3893,33 @@ async function collectFrom(roomCell) {
   const label = bundle.about?.trim() || "Their circle";
 
   /*
-   * Already in, and only looking again because nothing said so.
+   * Already here — but switched on, or switched off?
    *
-   * The answer stays in the room for good, and this device stays in the room
-   * with it, so the same invitation is found again on every look. Without
-   * this, coming back to the list of circles and waiting twenty seconds
-   * produced "Tried to create a cell with an existing id" — a wasm error, in
-   * front of somebody whose circle was working perfectly.
+   * The answer stays in the room for good and this device stays in the room
+   * with it, so the same invitation is found on every look. Returning early
+   * on any match is what stops that becoming "Tried to create a cell with an
+   * existing id" every twenty seconds.
+   *
+   * But a circle somebody has taken off their device is still here too, only
+   * disabled — and it matched, so somebody who left, knocked again and was
+   * let in got nothing at all. No error, no circle, no way to tell why. Found
+   * by asking whether coming back actually worked before writing on the
+   * screen that it does.
    */
-  if (await circleAlreadyHere(bundle)) return;
+  const here = await circleAlreadyHere(bundle);
+  if (here?.enabled) return;
+  if (here) {
+    // Intact, with everything that was in it. It was only switched off.
+    const back = await call("rejoin_circle", here.cellId[0]);
+    circle = { cellId: back.cell_id };
+    holder = bundle.founder;
+    alwaysAWayBack();
+    show("circle");
+    announce("You are back in.");
+    await loadCircles();
+    await loadCircle();
+    return;
+  }
 
   const cell = await call("join_circle", {
     founder: bundle.founder,

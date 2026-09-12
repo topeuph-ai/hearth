@@ -358,6 +358,46 @@ button.secondary {
   margin-top: 0;
 }
 
+/*
+ * Space before the one thing on this page that removes something.
+ *
+ * It sat a thumb's width under "Check again", which is a button somebody
+ * presses without thinking, several times a visit.
+ */
+hr.before-leaving {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 4rem 0 1.5rem;
+}
+
+#leave-details summary {
+  color: var(--muted);
+}
+
+/*
+ * The last thing between a press and a circle leaving the screen.
+ *
+ * Deliberately not the browser's own confirm box: a grey panel in the
+ * browser's words, on top of a care record, is the one moment the app stops
+ * looking like itself.
+ */
+#really-leave {
+  max-width: 30rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 1.5rem;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+#really-leave::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#really-leave h3 {
+  margin-top: 0;
+}
+
 .linky {
   background: none;
   border: none;
