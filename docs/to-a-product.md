@@ -405,6 +405,31 @@ always been available by never endorsing anybody. What it adds is that refusing
 **reaches her**, so she can ask somebody else — which she does by pressing
 another name.
 
+### Decided, not built: two ways to remove somebody
+
+Nothing in Hearth removes anybody from a circle today. Both of these are
+agreed and neither is built; the demo does not need them, and they are written
+down here so that the thinking is not lost.
+
+**Marking somebody as gone — the everyday one.** The holder writes a departure
+into the circle; every app that sees it stops listing that person, and
+*their own app stops showing them the circle at all*. For somebody using the
+software as it ships — which is almost everybody who will ever be removed from
+anything — that is removal. It does not stop the data arriving on their
+device, and it cannot undo what they have already read.
+
+**Re-forming the circle — the last resort.** A new circle without them, with
+the record carried across and the remaining members moved over by their own
+apps, which is buildable without touching the integrity zome. They are then
+excluded by mathematics, and their copy is frozen on the day it happens.
+
+Why both, and in that order: a circle takes time to establish, and re-forming
+starts that history over. A support worker moving on does not warrant it.
+Somebody who should never have been let in does.
+
+The full version, including what each one does and does not hold against, is
+in [`how-it-works.md`](how-it-works.md#revocation).
+
 ### Open: redundancy and a check are not the same thing
 
 The suggestion was to replace "two people must agree" with **two admins of

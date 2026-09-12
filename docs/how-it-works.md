@@ -425,25 +425,58 @@ ordinary case of a professional moving on, and it is **a courtesy, not a
 control, and must never be described as one.**
 
 An earlier version of this section said such an app would also "stop sharing
-new material with them". **That was wrong and is worth correcting rather than
-quietly deleting.** Gossip is not something an app chooses to do person by
-person: every member's node holds and serves the circle's data to every other
-member of it, and there is no per-agent filter anywhere in that. Somebody
-marked as gone carries on receiving every future version of the record, from
-everybody, exactly as before. Their name comes off a list. That is the whole
-of it.
+new material with them". That is not right: gossip is not something an app
+chooses to do person by person. Every member's node holds and serves the
+circle's data to every other member of it, with no per-agent filter anywhere
+in that, so the **data** keeps arriving on their device whatever anybody
+decides.
 
-So if this is built, the sentence on screen has to be something like *"they
-will no longer be listed, and they will still be able to read this"* — which
-is a strange thing to offer, and is the reason it has not been built.
+**But the data arriving is not the same as the person seeing it**, and an
+earlier draft of this correction ran the two together — concluding that such a
+removal would be near enough useless. That was wrong in the direction that
+matters. The app that would refuse to show the circle is **their own app**,
+which is this app. For somebody using the software as it ships, being removed
+means opening Hearth and finding the circle gone. That is what removal means
+to almost everybody who will ever be removed from anything.
 
-**Actually removing somebody: re-forming the circle.** The one that works, for
-the reason above — they are excluded by mathematics rather than by everybody's
-app agreeing to behave.
+So the honest picture has three levels, not two:
 
-The objection to it has always been the cost: everybody else has to join the
-new circle. But that cost is an interface problem, not an architectural one,
-and it is smaller than it looks:
+| | Does removal hold? |
+| --- | --- |
+| Somebody using the app as it ships | **Yes.** The circle is gone from their screen |
+| Somebody who kept what they already read | No — and no design anywhere changes that |
+| Somebody who modifies the app, keeps an old build, or reads the database directly | No |
+
+The third line is the one worth being careful about, and it is worth saying
+what it is not: it is not a peculiarity of having no server. Anybody with a
+copy of anything can keep it. What a server genuinely adds is that it can
+refuse to *send* future updates, and that is a real difference — see below.
+
+**One consequence to design around.** Somebody removed this way keeps
+receiving every future version onto their disk, silently, for as long as their
+app is installed. They cannot see it; the device has it. So a device that
+falls into the wrong hands a year later holds the record as it is **now**, not
+as it was on the day they were removed. Re-forming the circle does not have
+that property: their copy stops at the moment of removal and stays there,
+because nobody is writing to that circle any more.
+
+That is the real difference between the two, and it is what decides which to
+offer for what:
+
+**Re-forming the circle: the last resort, and the one that holds.** They are
+excluded by mathematics rather than by everybody's app agreeing to behave, and
+their copy is frozen on the day it happens.
+
+It is the last resort because a circle takes time to establish — people
+invited, a second person appointed, professionals who have read it and
+acknowledged it — and re-forming starts that history again. For a support
+worker moving to another job, marking them as gone is the proportionate
+answer. For somebody who should not have been let in, or a safeguarding
+situation, it is not, and this is what to reach for.
+
+The objection to re-forming has always been the cost: everybody else has to
+join the new circle. But that cost is an interface problem, not an
+architectural one, and it is smaller than it looks:
 
 1. The holder's app makes a new circle and copies the record into it.
 2. It makes a door for the new circle, and an invitation for every member
