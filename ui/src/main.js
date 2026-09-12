@@ -2640,11 +2640,43 @@ function showCreatePage(which) {
   window.scrollTo({ top: 0 });
 }
 
+/*
+ * A second circle starts empty, and starts as somebody else's.
+ *
+ * Only the "who decides" answer was being reset, so everything else was
+ * whatever the last visit left: the name of the last person, and — the one
+ * that actually bites — the answer to "Who is this circle about?".
+ *
+ * That answer decides whether three of the four questions on the next page
+ * exist at all. Look at "Me — this is my own record" once, for any reason,
+ * come back, and the form quietly stops asking how you are connected to them
+ * and what you call them, for every circle you make after it. Nothing is
+ * broken on screen; the questions are simply not there, and the circle is
+ * made without the answers.
+ *
+ * The joining screen has had this since somebody was nearly invited to answer
+ * questions about the wrong person. The same reasoning applies here and it
+ * never got the same treatment.
+ */
 function goToCreate() {
-  // Always shown. Whether a circle asks two people to agree is one question
-  // about the circle being made, not a different kind of circle reached by a
-  // different button.
+  $("about-someone-else").checked = true;
+  // Which hides or shows the three questions that depend on that answer.
+  updateWhoseCircle();
+
+  for (const id of [
+    "person-name",
+    "carer-name",
+    "carer-relationship",
+    "circle-name",
+  ]) {
+    $(id).value = "";
+  }
+
+  // Whether a circle asks two people to agree is one question about the
+  // circle being made, not a different kind of circle reached by a different
+  // button.
   $("decides-just-me").checked = true;
+
   showCreatePage(0);
   show("create");
   $("about-someone-else").focus();
