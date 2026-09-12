@@ -2536,7 +2536,10 @@ $("go-back").addEventListener("click", () => {
  * The first page is the question everything else depends on. Nothing else is
  * on it.
  */
-const CREATE_PAGES = ["create-step-1", "create-step-2"];
+const CREATE_PAGES = ["create-step-1", "create-step-2", "create-step-3"];
+
+/** What to put the cursor in when each page opens. */
+const CREATE_FOCUS = ["about-someone-else", "person-name", "decides-just-me"];
 let createPage = 0;
 
 function showCreatePage(which) {
@@ -2562,10 +2565,30 @@ function goToCreate() {
 
 $("choose-create").addEventListener("click", goToCreate);
 
-$("create-continue").addEventListener("click", () => {
-  showCreatePage(1);
-  $("person-name").focus();
-});
+/*
+ * Forward, but not past an empty box that the last page will need.
+ *
+ * A required field on a page you have walked away from cannot be pointed at:
+ * the browser refuses to report a problem on something it cannot show, so
+ * "Create the circle" does nothing at all and says nothing about why. That is
+ * a silent dead end, and it has caught this project once already.
+ *
+ * So each page checks its own before it lets you leave it, while the box is
+ * still on screen to be pointed at.
+ */
+for (const button of document.querySelectorAll(".create-next")) {
+  button.addEventListener("click", () => {
+    const here = $(CREATE_PAGES[createPage]);
+    for (const field of here.querySelectorAll("[required]")) {
+      if (!field.checkValidity()) {
+        field.reportValidity();
+        return;
+      }
+    }
+    showCreatePage(createPage + 1);
+    $(CREATE_FOCUS[createPage]).focus();
+  });
+}
 
 /*
  * One Back, meaning one step back.
@@ -2578,7 +2601,7 @@ $("create-continue").addEventListener("click", () => {
 $("create-back").addEventListener("click", () => {
   if (createPage > 0) {
     showCreatePage(createPage - 1);
-    $("about-someone-else").focus();
+    $(CREATE_FOCUS[createPage]).focus();
     return;
   }
   show("choose");
