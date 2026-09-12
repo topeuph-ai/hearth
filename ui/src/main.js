@@ -585,6 +585,9 @@ function showCircleMode(mode = circleMode) {
 function showCirclePage(which) {
   circleShows = which;
   showCircleMode();
+  // Opening the tab is the answer to being asked. The number stays: it is a
+  // fact about who is outside, not a bell still ringing.
+  sayWhoIsWaiting();
   // A box that was hidden measured nothing, so ask again now it can be seen.
   if (which === "record") sayWhichAnswersRunLong();
   window.scrollTo({ top: 0 });
@@ -2626,6 +2629,13 @@ function forgetTheCircle() {
   seconderHere = null;
   theDoorIsHere = false;
   circleAsksTwo = false;
+  knocking = [];
+  lastWaitingCount = 0;
+  stopChiming();
+  $("waiting-count").textContent = "";
+  document
+    .querySelector('.circle-tab[data-page="people"]')
+    .classList.remove("asking");
   circleShows = "record";
   justWroteIt = false;
   if (watchingForTheAsking) {
@@ -3400,6 +3410,8 @@ async function loadTheDoor() {
   for (const item of waiting) {
     list.append(knockCard(item, roomCell));
   }
+
+  sayWhoIsWaiting();
 }
 
 function knockCard(item, roomCell) {
@@ -3532,6 +3544,150 @@ function knockCard(item, roomCell) {
 /** Knocks put aside on this device, for this visit only. */
 const ignored = new Set();
 
+// ---------------------------------------------------------------------------
+// Somebody is waiting at the door
+// ---------------------------------------------------------------------------
+//
+// The one thing in this app where another person is on the other end of the
+// wait. Everything else can be found when somebody next looks; this cannot,
+// because until she looks, they are standing outside.
+//
+// Three things say so, in increasing order of rudeness: a number on the tab,
+// which is visible from the other three pages; the tab flashing, which is
+// visible from across the room; and a sound, which is the only one that
+// reaches somebody not looking at the screen at all. The first two stop when
+// she opens the tab. The number stays, because it is a fact rather than an
+// alarm.
+
+/** How many people are waiting and have not been put aside. */
+function howManyWaiting() {
+  return knocking.filter(
+    (k) => !k.answered && !ignored.has(asText(k.knock)) && !ignored.has(k.who),
+  ).length;
+}
+
+const SOUND_OFF = "hearth:knock-sound-off";
+const soundIsOff = () => {
+  try {
+    return localStorage.getItem(SOUND_OFF) === "yes";
+  } catch {
+    return false;
+  }
+};
+
+let chimeTimer = null;
+let chimesLeft = 0;
+let lastWaitingCount = 0;
+
+/*
+ * A chime, made rather than fetched.
+ *
+ * No audio file, which keeps the content security policy as tight as it is
+ * and the .webhapp as small as it is. Two soft notes a fifth apart, short and
+ * quiet — a doorbell, not an alarm, for a record about somebody who may be
+ * asleep in the next room.
+ */
+function chime() {
+  try {
+    const Sound = window.AudioContext || window.webkitAudioContext;
+    if (!Sound) return;
+    const audio = new Sound();
+    // Browsers refuse to make a sound until somebody has pressed something.
+    // She has — she is in a circle — but a refused promise must not throw.
+    audio.resume?.().catch(() => {});
+
+    for (const [at, hz] of [
+      [0, 587.33],
+      [0.18, 880],
+    ]) {
+      const note = audio.createOscillator();
+      const level = audio.createGain();
+      note.type = "sine";
+      note.frequency.value = hz;
+      note.connect(level);
+      level.connect(audio.destination);
+
+      const start = audio.currentTime + at;
+      level.gain.setValueAtTime(0, start);
+      level.gain.linearRampToValueAtTime(0.08, start + 0.02);
+      level.gain.exponentialRampToValueAtTime(0.0001, start + 0.5);
+      note.start(start);
+      note.stop(start + 0.55);
+    }
+
+    setTimeout(() => audio.close?.(), 1500);
+  } catch {
+    // A machine with no sound is not a machine with a problem.
+  }
+}
+
+function stopChiming() {
+  if (chimeTimer) clearInterval(chimeTimer);
+  chimeTimer = null;
+  chimesLeft = 0;
+}
+
+/*
+ * Say that somebody is waiting, as loudly as the situation deserves.
+ *
+ * The sound repeats every thirty seconds and then gives up. An app that
+ * chimes all night because somebody knocked at nine is an app whose sound
+ * gets switched off for good, and then nobody is told about anything.
+ * Somebody new arriving starts it again.
+ */
+function sayWhoIsWaiting() {
+  const waiting = howManyWaiting();
+  const looking = circleShows === "people";
+
+  $("waiting-count").textContent = waiting ? ` (${waiting})` : "";
+
+  const tab = document.querySelector('.circle-tab[data-page="people"]');
+  tab.classList.toggle("asking", waiting > 0 && !looking);
+
+  const moreThanBefore = waiting > lastWaitingCount;
+  lastWaitingCount = waiting;
+
+  if (!waiting || looking || soundIsOff()) {
+    stopChiming();
+    return;
+  }
+
+  if (moreThanBefore) {
+    chimesLeft = 10;
+    chime();
+  }
+  if (!chimeTimer && chimesLeft > 0) {
+    chimeTimer = setInterval(() => {
+      if (chimesLeft <= 0 || circleShows === "people" || soundIsOff()) {
+        stopChiming();
+        return;
+      }
+      chimesLeft -= 1;
+      chime();
+    }, 30_000);
+  }
+}
+
+function sayWhetherTheSoundIsOn() {
+  $("knock-sound").textContent = soundIsOff()
+    ? "Turn the sound back on"
+    : "Turn the sound off";
+}
+
+$("knock-sound").addEventListener("click", () => {
+  const off = !soundIsOff();
+  try {
+    localStorage.setItem(SOUND_OFF, off ? "yes" : "no");
+  } catch {
+    // A device that will not remember it still obeys it for this visit.
+  }
+  sayWhetherTheSoundIsOn();
+  announce(off ? "Sound off. The tab will still say." : "Sound on.");
+  sayWhoIsWaiting();
+});
+
+sayWhetherTheSoundIsOn();
+
 function renderIgnored() {
   const list = $("knock-list");
   list.replaceChildren();
@@ -3542,6 +3698,10 @@ function renderIgnored() {
   for (const item of waiting) {
     list.append(knockCard(item, currentRoomCell));
   }
+
+  // Somebody put aside is somebody no longer waiting, so the number and the
+  // flashing go with them.
+  sayWhoIsWaiting();
 }
 
 let currentRoomCell = null;

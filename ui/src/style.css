@@ -307,6 +307,57 @@ button.secondary {
   border-bottom-color: var(--accent);
 }
 
+/*
+ * Somebody is waiting, seen from the other three tabs.
+ *
+ * Colour and weight rather than movement alone, because a flash that only
+ * flashes is invisible to somebody who has looked away and is meaningless to
+ * anybody who cannot see it. The number beside the word says the same thing
+ * standing still.
+ *
+ * Slow on purpose: a second and a half each way is a thing you notice, not a
+ * thing that nags. And it stops entirely for anybody who has asked their
+ * computer to stop moving things about.
+ */
+@keyframes asking {
+  0%, 100% { color: var(--muted); }
+  50% { color: var(--accent); }
+}
+
+.circle-tab.asking {
+  font-weight: 600;
+  animation: asking 3s ease-in-out infinite;
+}
+
+.circle-tab.asking.here {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circle-tab.asking {
+    animation: none;
+    color: var(--accent);
+  }
+}
+
+/*
+ * The people in the circle, in a circle.
+ *
+ * A box around the names, because that is what a circle is: these people and
+ * nobody else. The people still asking to join sit outside it, which is
+ * exactly where they are.
+ */
+#people {
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem 1.25rem 0.5rem;
+  margin: 1.5rem 0;
+}
+
+#people h3 {
+  margin-top: 0;
+}
+
 .linky {
   background: none;
   border: none;

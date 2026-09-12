@@ -640,8 +640,14 @@
           <button type="button" class="circle-tab" data-page="record">
             About <span class="about-whom">them</span>
           </button>
+          <!--
+            The number of people waiting is on the tab, because the tab is what
+            you can see from the other three pages. Somebody knocking is the
+            one thing in this app that another person is waiting on, and it
+            used to be visible only to somebody already looking at it.
+          -->
           <button type="button" class="circle-tab" data-page="people">
-            People in the circle
+            People in the circle<span id="waiting-count"></span>
           </button>
           <!--
             The holder's, and nobody else's. It was briefly a heading anybody
@@ -1104,14 +1110,6 @@
 
 
         <div id="circle-people" hidden>
-          <section id="at-the-door" hidden>
-          <h3>People asking to join</h3>
-          <ul id="knock-list"></ul>
-          <p id="nobody-knocking" class="hint" hidden>
-              Nobody is waiting yet. Send somebody the address above and they
-              can ask from their own Hearth.
-            </p>
-          </section>
           <!--
             Somebody is let in, and until this existed nothing anywhere said
             so. The circle grew and the screen looked identical, so there was
@@ -1156,6 +1154,27 @@
           </button>
           </div>
           </section>
+
+          <section id="at-the-door" hidden>
+          <h3>People asking to join</h3>
+            <!--
+              A sound with no way to switch it off is a sound somebody puts up
+              with until they stop using the app. It is remembered on this
+              device, because it is a fact about this room and this person's
+              hearing, not about the circle.
+            -->
+            <div class="actions quiet">
+              <button type="button" id="knock-sound" class="linky">
+                Turn the sound off
+              </button>
+            </div>
+          <ul id="knock-list"></ul>
+          <p id="nobody-knocking" class="hint" hidden>
+              Nobody is waiting yet. Send somebody the address above and they
+              can ask from their own Hearth.
+            </p>
+          </section>
+
           <section id="introduce-section" hidden>
           <h3>Who are you?</h3>
           <p>
