@@ -130,6 +130,14 @@ jobs:
             node --check "$f"
           done
 
+      # Markup that is not the shape it looks like. A section lost its opening
+      # tag in a refactor and swallowed the one after it; every id was still
+      # present exactly once, every button still had a listener, and browsers
+      # render it happily — so nothing noticed but a screen behaving oddly.
+      - name: The page is the shape it looks
+        working-directory: ui
+        run: node scripts/the-page-is-the-shape-it-looks.mjs
+
       # A button that does nothing is worse than no button: it gets pressed,
       # and then pressed again. One went dead in a refactor — the line wiring
       # it found the buttons by class, so it had no id in it, and every check

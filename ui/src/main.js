@@ -451,16 +451,15 @@ let theDoorIsHere = false;
 let circleAsksTwo = false;
 
 /*
- * The circle screen has two pages, and this says which.
+ * Which of the circle's four pages is showing.
  *
- * "record" is what is written about the person; "around" is everybody else —
- * who is in the circle, who is asking to join, the address to give out, and
- * the way to take the circle off this device.
- *
- * They are two jobs, and a screenful of the second sitting under the first is
- * how somebody came to be offered "give somebody the address" above a record
- * they had not read yet.
+ * Reading the record, seeing who is in the circle, inviting somebody, and
+ * looking at what people have offered are four different reasons to be here.
+ * Stacked on one page, three of them were the bottom half of something else —
+ * which is how somebody came to be offered "give somebody the address" above
+ * a record they had not read yet.
  */
+const CIRCLE_PAGES = ["record", "people", "invite", "suggestions"];
 let circleShows = "record";
 
 /**
@@ -516,20 +515,48 @@ function showCircleMode(mode = circleMode) {
    * is part-way through writing, the screen underneath them holds still.
    */
   const somethingToShowPeople = written && mode !== WRITING;
-  const onTheRecord = circleShows === "record";
 
-  // Which of the two pages is on screen. Everything inside either one still
-  // decides its own business; this decides only which page you are looking at.
-  $("circle-record").hidden = !onTheRecord;
-  $("circle-around").hidden = onTheRecord || !somethingToShowPeople;
+  /*
+   * The tabs, and which page they lead to.
+   *
+   * Nothing but the record until something is written: three tabs offering
+   * people, invitations and suggestions about a record that does not exist
+   * yet is three ways to be disappointed. And nothing at all while the form
+   * is open, which is the rule the buttons above already follow.
+   */
+  const mayRoam = somethingToShowPeople;
+  $("circle-tabs").hidden = !mayRoam;
+
+  // Only the holder invites anybody, so only she has the tab for it.
+  const inviteTab = document.querySelector('.circle-tab[data-page="invite"]');
+  inviteTab.hidden = !amHolder;
+
+  // Somewhere to be, whatever has just been hidden underneath you.
+  if (!mayRoam) circleShows = "record";
+  if (circleShows === "invite" && !amHolder) circleShows = "record";
+
+  for (const page of CIRCLE_PAGES) {
+    $(`circle-${page}`).hidden = page !== circleShows;
+  }
+  for (const tab of document.querySelectorAll(".circle-tab")) {
+    const here = tab.dataset.page === circleShows;
+    tab.classList.toggle("here", here);
+    tab.setAttribute("aria-current", here ? "page" : "false");
+  }
 
   $("people").hidden = !somethingToShowPeople;
   $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
   $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
 
-  // The way on from the record, which is only a way on while there is
-  // somewhere to go and the record is what you are looking at.
-  $("carry-on").hidden = !somethingToShowPeople || !onTheRecord;
+  /*
+   * The way on from the record, for the holder who has just written it.
+   *
+   * A member sees "I have read this" here instead, which is the thing they
+   * came to do. Both were on screen at once, side by side and both in the
+   * same weight, so the two buttons looked like the same button twice.
+   */
+  $("carry-on").hidden =
+    !somethingToShowPeople || circleShows !== "record" || !amHolder;
 
   /*
    * Whose invitation should go first.
@@ -539,6 +566,7 @@ function showCircleMode(mode = circleMode) {
    * screen nagging about something already done.
    */
   $("ask-them-first").hidden = !circleAsksTwo || whoAgrees?.willing === true;
+
 }
 
 function showCirclePage(which) {
@@ -549,8 +577,13 @@ function showCirclePage(which) {
   window.scrollTo({ top: 0 });
 }
 
-$("carry-on").addEventListener("click", () => showCirclePage("around"));
-$("back-to-record").addEventListener("click", () => showCirclePage("record"));
+for (const tab of document.querySelectorAll(".circle-tab")) {
+  tab.addEventListener("click", () => showCirclePage(tab.dataset.page));
+}
+
+// Carrying on from the record goes where the holder has to go next: the
+// address, and who to send it to first.
+$("carry-on").addEventListener("click", () => showCirclePage("invite"));
 
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
@@ -1583,16 +1616,20 @@ function renderSuggestions() {
   }
 
   /*
-   * The list at the bottom is now the fallback, not the main event.
+   * Two places, on purpose, and no longer a fallback.
    *
-   * Everything in it also appears beside the words it is about, which is
-   * where somebody would look for it. It is still here for the case where
-   * there is no record on screen to attach anything to — nothing written yet,
-   * or not arrived on this device.
+   * Every suggestion appears beside the words it is about, on the record,
+   * which is where somebody reading the record would look for it. The list
+   * here is the suggestion box: a page of its own, for somebody who came to
+   * see what has been offered rather than to read the record.
+   *
+   * It used to hide itself whenever the record was on screen, because it was
+   * the same page and saying everything twice would have been noise. They are
+   * different pages now, so the only question left is whether there is
+   * anything in it.
    */
   markSuggestionsOnTheRecord();
-  $("suggestions-section").hidden =
-    suggestions.length === 0 || !$("record").hidden;
+  $("suggestions-section").hidden = suggestions.length === 0;
 }
 
 /*

@@ -1059,16 +1059,319 @@
           </div>
         </form>
 
-        <!--
-          Somebody invites a nephew, he joins, and until now nothing anywhere
-          said so. The invitation went out, the circle grew, and the screen
-          looked identical — so there was no way to tell whether it had worked
-          except to ask him.
+          <!--
+            Who has read it, kept with the record rather than with the people.
 
-          A list of people, in their own words. No counts, no badges, nothing
-          anybody has to clear. The heading says "who is in", not "members",
-          because this is a circle around a person, not an organisation.
+            It is a fact about this record — which version, read by whom — and
+            somebody looking at the words is the person who wants to know
+            whether a professional has seen them.
+          -->
+          <section id="readers" hidden>
+            <h3>Who has read it</h3>
+            <ul id="readers-list"></ul>
+          </section>
+        </div>
+
+        <!--
+          Four jobs, four tabs.
+
+          This was one long page, and then two, and neither worked. Reading
+          the record, seeing who is in the circle, inviting somebody, and
+          looking at what people have offered are four different reasons to
+          be here — and stacking them made three of them the bottom half of
+          something else.
         -->
+        <nav id="circle-tabs" class="tabs" hidden aria-label="This circle">
+          <button type="button" class="circle-tab" data-page="record">
+            About <span class="about-whom">them</span>
+          </button>
+          <button type="button" class="circle-tab" data-page="people">
+            People in the circle
+          </button>
+          <!--
+            The holder's, and nobody else's. It was briefly a heading anybody
+            could reach with nothing underneath it, because the address
+            inside was hidden from everybody but her and the heading was not.
+          -->
+          <button type="button" class="circle-tab" data-page="invite" hidden>
+            Invite someone
+          </button>
+          <button type="button" class="circle-tab" data-page="suggestions">
+            Suggestion box
+          </button>
+        </nav>
+
+        <div id="circle-people" hidden>
+          <section id="at-the-door" hidden>
+          <h3>People asking to join</h3>
+          <ul id="knock-list"></ul>
+          <p id="nobody-knocking" class="hint" hidden>
+              Nobody is waiting yet. Send somebody the address above and they
+              can ask from their own Hearth.
+            </p>
+          </section>
+          <!--
+            Somebody is let in, and until this existed nothing anywhere said
+            so. The circle grew and the screen looked identical, so there was
+            no way to tell whether it had worked except to ask them.
+
+            A list of people, in their own words. No counts, no badges,
+            nothing anybody has to clear. The heading says "who is in", not
+            "members", because this is a circle around a person, not an
+            organisation.
+          -->
+          <section id="people" hidden>
+          <h3>Who is in this circle</h3>
+          <p class="hint">
+          How each person describes themselves. Nobody checks any of it.
+          </p>
+          <!--
+          Only to the holder, and only where the thing it describes is.
+
+          Choosing the second person used to be a folded-away panel with a
+          dropdown in it, a long way from the list of the people it was
+          choosing between. Pressing a name is the same act with nothing in
+          front of it.
+          -->
+          <p id="appoint-hint" class="hint" hidden>
+          You can ask one of them to be the second person who agrees before
+          anybody new joins. Press their name. They will be asked whether
+          they are willing, and you can change who it is at any time.
+          </p>
+          <ul id="people-list"></ul>
+          <p id="people-empty" class="hint" hidden>
+          Nobody has said who they are yet.
+          </p>
+          <div class="actions">
+          <!--
+          Because a signal is a nudge, not a guarantee. The one that says
+          somebody has joined is sent at the exact moment the two machines
+          have only just met, which is when it is least likely to arrive —
+          so there has to be a way to simply look again.
+          -->
+          <button type="button" id="check-people" class="secondary">
+          Check again
+          </button>
+          </div>
+          </section>
+          <section id="introduce-section" hidden>
+          <h3>Who are you?</h3>
+          <p>
+          So the circle knows who said what. Nobody checks any of this — it is
+          how you describe yourself, not a credential.
+          </p>
+          <form id="introduce-form">
+          <div class="field">
+          <label for="member-name">Your name</label>
+          <input
+          id="member-name"
+          name="member-name"
+          type="text"
+          required
+          autocomplete="name"
+          />
+          </div>
+          <div class="field" id="relationship-field">
+          <label for="member-relationship">
+          How are you connected to <span id="relationship-whom">them</span>?
+          </label>
+          <p id="relationship-hint" class="hint">
+          In your own words. “Her son”, “district nurse”, “support worker,
+          Tuesdays”.
+          </p>
+          <input
+          id="member-relationship"
+          name="member-relationship"
+          type="text"
+          autocomplete="off"
+          aria-describedby="relationship-hint"
+          />
+          </div>
+          <button type="submit">Save</button>
+          </form>
+          </section>
+          <section id="pending-members" hidden>
+          <h3 id="pending-heading">Waiting to be let in</h3>
+          <p id="pending-explains-holder" class="hint" hidden>
+          <span id="pending-seconder-name">The second person</span> has to
+          agree before any of these can join.
+          </p>
+          <p id="pending-explains-seconder" class="hint" hidden>
+          Nobody joins this circle unless you agree as well. Nothing here has
+          been checked — the names are what the holder calls them.
+          </p>
+          <ul id="pending-list"></ul>
+          </section>
+          <details id="leave-details">
+          <summary>Take this off my device</summary>
+          <p>
+          This takes the circle off your list, here, on this device. It does
+          not reach anybody else: everyone still in it keeps their copy, and
+          anything they have already read stays read.
+          </p>
+          <!--
+          Not "nobody else has joined yet". The app knows who has introduced
+          themselves, which is not the same as who is in the circle, and
+          stating the one as though it were the other is exactly the kind of
+          claim this code has no business making. So: an if, not a fact.
+          -->
+          <p>
+          There is no server keeping a spare. If nobody else has a copy, this
+          is the only one.
+          </p>
+          <div class="actions">
+          <button type="button" id="leave-circle" class="secondary">
+          Take <span class="about-whom">them</span> off my device
+          </button>
+          </div>
+          </details>
+        </div>
+
+        <div id="circle-invite" hidden>
+          <h2>Inviting someone into the circle</h2>
+
+          <!--
+          Who the first invitation should go to, when it matters.
+
+          A circle that asks two people to agree cannot ask anybody until
+          the second person is in it: you choose them by pressing their name
+          in the list of people, and a name is only in that list once they
+          have joined. So the first person through the door has to be the
+          one who will be standing at it — and nothing said so.
+
+          Every arrival before them is one the holder let in on her own,
+          which is precisely the thing she asked the circle to prevent.
+          -->
+          <p id="ask-them-first" class="notice" hidden>
+          <strong>Send this to the person who will agree with you first.</strong>
+          You chose that nobody joins this circle unless two of you say so.
+          You choose who the second person is by pressing their name in
+          <em>Who is in this circle</em> — so they have to be in it before
+          you can ask them. Anybody you let in before that, you will have let
+          in on your own.
+          </p>
+          <section id="door-address" hidden>
+          <p>
+          Everybody comes into this circle the same way: you give them its
+          address, they paste it into their own Hearth, and you let them
+          in.
+          </p>
+          <p>
+          <strong>The address is the same for everybody and it never
+          changes</strong>, so you only need to send it once, and you can
+          send it to as many people as you like.
+          </p>
+          <p class="notice">
+          It is safe to send. Having the address lets somebody
+          <strong>ask</strong> to join. It does not let them in, it shows
+          them nothing about
+          <span class="about-whom">them</span>, and nobody gets in until
+          you say so.
+          </p>
+
+          <h3>The address</h3>
+          <output id="door-address-output"></output>
+          <div class="actions">
+          <button type="button" id="copy-door-address" class="secondary">
+          Copy the address on its own
+          </button>
+          </div>
+
+          <h3>Send it however suits you</h3>
+          <p class="hint">
+          Email, WhatsApp, a text message, Signal, Messenger — or write it
+          down and hand it over. It is a long line of letters and numbers,
+          so anything you can paste into is easier than reading it out.
+          </p>
+
+          <!--
+          The whole message, not just the address.
+
+          What the person receiving it needs is the address *and* what to
+          do with it. Making the holder write that part herself, every
+          time, for every person, is the errand this button removes — and
+          it is the errand most likely to be done badly or skipped.
+          -->
+          <h3>What to tell them</h3>
+          <p class="hint">
+          This button puts the address and these instructions together on
+          your clipboard, ready to paste into a message. You do not have to
+          use it — the address on its own is above.
+          </p>
+          <div class="actions">
+          <button type="button" id="copy-invitation-message">
+          Copy a message to send them
+          </button>
+          </div>
+          <ol class="steps" id="what-to-tell-them">
+          <li>Open Hearth and press <strong>Join a circle</strong>.</li>
+          <li>Paste the address into the box.</li>
+          <li>
+          Put in your name and how you are connected to
+          <span class="about-whom">them</span>.
+          </li>
+          <li>
+          Press <strong>Ask to join</strong>, then wait. It will open on
+          its own once you have been let in.
+          </li>
+          </ol>
+          </section>
+        </div>
+
+        <div id="circle-suggestions" hidden>
+          <section id="suggestions-section" hidden>
+          <h3>Suggestions</h3>
+          <ul id="suggestions-list"></ul>
+          </section>
+          <section id="suggest-section" hidden>
+          <h3>Suggest something</h3>
+          <p>
+          You cannot change the record yourself — it is in
+          <span id="suggest-whose">their</span> own words. But if you know
+          something that would help, offer it here.
+          </p>
+          <form id="suggest-form">
+          <div class="field">
+          <label for="suggest-field">What is it about?</label>
+          <!-- The seven, in her voice, in the standard's order. -->
+          <select id="suggest-field" name="suggest-field">
+          <option value="WhatMattersToMe">What matters most to me</option>
+          <option value="PeopleWhoMatter">People who matter to me</option>
+          <option value="HowToCommunicateWithMe">
+          How to talk with me
+          </option>
+          <option value="MyWellness">My wellness</option>
+          <option value="PleaseDoAndPleaseDoNot">
+          Please do, and please do not
+          </option>
+          <option value="HowToSupportMe">
+          How and when to support me
+          </option>
+          <option value="AlsoWorthKnowing">
+          Also worth knowing about me
+          </option>
+          </select>
+          </div>
+          <div class="field">
+          <label for="suggest-text">What should it say?</label>
+          <textarea id="suggest-text" name="suggest-text" rows="3" required></textarea>
+          </div>
+          <div class="field">
+          <label for="suggest-because">How do you know?</label>
+          <p id="because-hint" class="hint">
+          Often the more useful part. “She talked about her allotment all
+          summer.”
+          </p>
+          <textarea
+          id="suggest-because"
+          name="suggest-because"
+          rows="2"
+          aria-describedby="because-hint"
+          ></textarea>
+          </div>
+          <button type="submit">Offer this</button>
+          </form>
+          </section>
         </div>
 
         <!--
@@ -1080,367 +1383,7 @@
           to be offered "give somebody the address" above a record they had not
           checked yet.
         -->
-        <div id="circle-around" hidden>
-          <div class="actions">
-            <button type="button" id="back-to-record" class="secondary">
-              Back to the record
-            </button>
-          </div>
 
-          <h2>Inviting someone into the circle</h2>
-
-          <!--
-            Who the first invitation should go to, when it matters.
-
-            A circle that asks two people to agree cannot ask anybody until
-            the second person is in it: you choose them by pressing their name
-            in the list of people, and a name is only in that list once they
-            have joined. So the first person through the door has to be the
-            one who will be standing at it — and nothing said so.
-
-            Every arrival before them is one the holder let in on her own,
-            which is precisely the thing she asked the circle to prevent.
-          -->
-          <p id="ask-them-first" class="notice" hidden>
-            <strong>Send this to the person who will agree with you first.</strong>
-            You chose that nobody joins this circle unless two of you say so.
-            You choose who the second person is by pressing their name in
-            <em>Who is in this circle</em> — so they have to be in it before
-            you can ask them. Anybody you let in before that, you will have let
-            in on your own.
-          </p>
-
-          <!--
-            The address, explained rather than displayed.
-
-            It used to be a folded-away box called "The address to give
-            people", with the explanation inside the fold. Somebody who had
-            just made a record had no idea that the next thing to do was open
-            it, and no idea what the thing inside it was.
-
-            It is the page now, because giving somebody the address is the
-            whole of inviting them.
-          -->
-          <section id="door-address" hidden>
-            <p>
-              Everybody comes into this circle the same way: you give them its
-              address, they paste it into their own Hearth, and you let them
-              in.
-            </p>
-            <p>
-              <strong>The address is the same for everybody and it never
-              changes</strong>, so you only need to send it once, and you can
-              send it to as many people as you like.
-            </p>
-            <p class="notice">
-              It is safe to send. Having the address lets somebody
-              <strong>ask</strong> to join. It does not let them in, it shows
-              them nothing about
-              <span class="about-whom">them</span>, and nobody gets in until
-              you say so.
-            </p>
-
-            <h3>The address</h3>
-            <output id="door-address-output"></output>
-            <div class="actions">
-              <button type="button" id="copy-door-address" class="secondary">
-                Copy the address on its own
-              </button>
-            </div>
-
-            <h3>Send it however suits you</h3>
-            <p class="hint">
-              Email, WhatsApp, a text message, Signal, Messenger — or write it
-              down and hand it over. It is a long line of letters and numbers,
-              so anything you can paste into is easier than reading it out.
-            </p>
-
-            <!--
-              The whole message, not just the address.
-
-              What the person receiving it needs is the address *and* what to
-              do with it. Making the holder write that part herself, every
-              time, for every person, is the errand this button removes — and
-              it is the errand most likely to be done badly or skipped.
-            -->
-            <h3>What to tell them</h3>
-            <p class="hint">
-              This button puts the address and these instructions together on
-              your clipboard, ready to paste into a message. You do not have to
-              use it — the address on its own is above.
-            </p>
-            <div class="actions">
-              <button type="button" id="copy-invitation-message">
-                Copy a message to send them
-              </button>
-            </div>
-            <ol class="steps" id="what-to-tell-them">
-              <li>Open Hearth and press <strong>Join a circle</strong>.</li>
-              <li>Paste the address into the box.</li>
-              <li>
-                Put in your name and how you are connected to
-                <span class="about-whom">them</span>.
-              </li>
-              <li>
-                Press <strong>Ask to join</strong>, then wait. It will open on
-                its own once you have been let in.
-              </li>
-            </ol>
-          </section>
-
-          <section id="at-the-door" hidden>
-            <h3>People asking to join</h3>
-            <ul id="knock-list"></ul>
-            <p id="nobody-knocking" class="hint" hidden>
-              Nobody is waiting yet. Send somebody the address above and they
-              can ask from their own Hearth.
-            </p>
-          </section>
-
-        <section id="people" hidden>
-          <h3>Who is in this circle</h3>
-          <p class="hint">
-            How each person describes themselves. Nobody checks any of it.
-          </p>
-          <!--
-            Only to the holder, and only where the thing it describes is.
-
-            Choosing the second person used to be a folded-away panel with a
-            dropdown in it, a long way from the list of the people it was
-            choosing between. Pressing a name is the same act with nothing in
-            front of it.
-          -->
-          <p id="appoint-hint" class="hint" hidden>
-            You can ask one of them to be the second person who agrees before
-            anybody new joins. Press their name. They will be asked whether
-            they are willing, and you can change who it is at any time.
-          </p>
-          <ul id="people-list"></ul>
-          <p id="people-empty" class="hint" hidden>
-            Nobody has said who they are yet.
-          </p>
-          <div class="actions">
-            <!--
-              Because a signal is a nudge, not a guarantee. The one that says
-              somebody has joined is sent at the exact moment the two machines
-              have only just met, which is when it is least likely to arrive —
-              so there has to be a way to simply look again.
-            -->
-            <button type="button" id="check-people" class="secondary">
-              Check again
-            </button>
-          </div>
-        </section>
-
-        <section id="readers" hidden>
-          <h3>Who has read it</h3>
-          <ul id="readers-list"></ul>
-        </section>
-
-        <section id="introduce-section" hidden>
-          <h3>Who are you?</h3>
-          <p>
-            So the circle knows who said what. Nobody checks any of this — it is
-            how you describe yourself, not a credential.
-          </p>
-          <form id="introduce-form">
-            <div class="field">
-              <label for="member-name">Your name</label>
-              <input
-                id="member-name"
-                name="member-name"
-                type="text"
-                required
-                autocomplete="name"
-              />
-            </div>
-            <div class="field" id="relationship-field">
-              <label for="member-relationship">
-                How are you connected to <span id="relationship-whom">them</span>?
-              </label>
-              <p id="relationship-hint" class="hint">
-                In your own words. “Her son”, “district nurse”, “support worker,
-                Tuesdays”.
-              </p>
-              <input
-                id="member-relationship"
-                name="member-relationship"
-                type="text"
-                autocomplete="off"
-                aria-describedby="relationship-hint"
-              />
-            </div>
-            <button type="submit">Save</button>
-          </form>
-        </section>
-
-        <section id="suggestions-section" hidden>
-          <h3>Suggestions</h3>
-          <ul id="suggestions-list"></ul>
-        </section>
-
-        <section id="suggest-section" hidden>
-          <h3>Suggest something</h3>
-          <p>
-            You cannot change the record yourself — it is in
-            <span id="suggest-whose">their</span> own words. But if you know
-            something that would help, offer it here.
-          </p>
-          <form id="suggest-form">
-            <div class="field">
-              <label for="suggest-field">What is it about?</label>
-              <!-- The seven, in her voice, in the standard's order. -->
-              <select id="suggest-field" name="suggest-field">
-                <option value="WhatMattersToMe">What matters most to me</option>
-                <option value="PeopleWhoMatter">People who matter to me</option>
-                <option value="HowToCommunicateWithMe">
-                  How to talk with me
-                </option>
-                <option value="MyWellness">My wellness</option>
-                <option value="PleaseDoAndPleaseDoNot">
-                  Please do, and please do not
-                </option>
-                <option value="HowToSupportMe">
-                  How and when to support me
-                </option>
-                <option value="AlsoWorthKnowing">
-                  Also worth knowing about me
-                </option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="suggest-text">What should it say?</label>
-              <textarea id="suggest-text" name="suggest-text" rows="3" required></textarea>
-            </div>
-            <div class="field">
-              <label for="suggest-because">How do you know?</label>
-              <p id="because-hint" class="hint">
-                Often the more useful part. “She talked about her allotment all
-                summer.”
-              </p>
-              <textarea
-                id="suggest-because"
-                name="suggest-because"
-                rows="2"
-                aria-describedby="because-hint"
-              ></textarea>
-            </div>
-            <button type="submit">Offer this</button>
-          </form>
-        </section>
-
-        <!--
-          Folded away on purpose, and this is not the same call as the name
-          field above. A name is something you edit most times you come back
-          here; this is something you do once, if ever, and it should not sit
-          at thumb height next to the buttons somebody presses every visit.
-
-          The wording is the careful part. There is no operator here, so there
-          is nothing that could reach across and remove this from anybody
-          else. Saying "delete" or "remove" would be the interface claiming a
-          power that does not exist anywhere in the system. You leave; the
-          circle carries on without you.
-        -->
-        <!--
-          Appointing somebody to agree to who joins, after the circle exists.
-
-          It was on the create form first, which put it in the wrong order: you
-          could not make a circle at all until you had a second person's
-          identifier in your hand. The circle has to come first.
-
-          The catch is that admission is enforced by what is baked into the
-          circle when it is made, so appointing somebody afterwards cannot be
-          enforced by itself — the circle would not know about them. So this
-          makes a new circle with them named in it and carries the record
-          across. That is the same answer this project gives to revocation, and
-          it works for the same reason: circles are clones, so a new one is
-          cheap.
-
-          What is not cheap is everybody re-joining, which is why the wording
-          says plainly that doing this early costs almost nothing and doing it
-          late costs everybody an invitation.
-        -->
-        <!--
-          Agreeing to who joins, for the person asked to do it.
-
-          This was a card on the front page, for somebody outside the circle,
-          which stopped being true: the second yes is now appointed from among
-          the people already in a circle, so this is where they are. They come
-          in on the holder's invitation alone — nobody has to countersign their
-          own way in — and from then on nobody else arrives without them.
-        -->
-        <!--
-          A pointer, not the form.
-
-          The form itself is a screen of its own, reached from the front page,
-          because agreeing to who joins does not need this circle and should
-          not require being in it. This is only here so somebody who is both a
-          member and the second yes can find it from where they already are.
-        -->
-        <!--
-          People put forward, waiting on the second agreement.
-
-          One list, read by two people from opposite ends. The holder sees how
-          far each one has got and, once it is finished, the invitation to
-          send. The person who has to agree sees a name and a button.
-
-          It replaces five copy-and-pastes between two devices that were
-          already members of the same circle and perfectly able to talk to each
-          other. The only message that still has to leave is the last one, to
-          the person joining, who is by definition outside.
-        -->
-        <!--
-          The door, and who is standing at it.
-
-          One address, shared once, that works for everybody and never
-          changes. It replaces collecting an identifier from each person
-          before you can invite them — which is the step that defeats an
-          elderly holder, and the reason inviting anybody was a chore.
-        -->
-
-          <h3 id="pending-heading">Waiting to be let in</h3>
-          <p id="pending-explains-holder" class="hint" hidden>
-            <span id="pending-seconder-name">The second person</span> has to
-            agree before any of these can join.
-          </p>
-          <p id="pending-explains-seconder" class="hint" hidden>
-            Nobody joins this circle unless you agree as well. Nothing here has
-            been checked — the names are what the holder calls them.
-          </p>
-          <ul id="pending-list"></ul>
-        </section>
-
-
-        <section id="pending-members" hidden>
-        <!--
-          Kept on this page rather than under the record, because taking a
-          circle off a device is about the circle, not about what is written
-          in it.
-        -->
-        <details id="leave-details">
-          <summary>Take this off my device</summary>
-          <p>
-            This takes the circle off your list, here, on this device. It does
-            not reach anybody else: everyone still in it keeps their copy, and
-            anything they have already read stays read.
-          </p>
-          <!--
-            Not "nobody else has joined yet". The app knows who has introduced
-            themselves, which is not the same as who is in the circle, and
-            stating the one as though it were the other is exactly the kind of
-            claim this code has no business making. So: an if, not a fact.
-          -->
-          <p>
-            There is no server keeping a spare. If nobody else has a copy, this
-            is the only one.
-          </p>
-          <div class="actions">
-            <button type="button" id="leave-circle" class="secondary">
-              Take <span class="about-whom">them</span> off my device
-            </button>
-          </div>
-        </details>
-        </div>
       </section>
 
       <!--

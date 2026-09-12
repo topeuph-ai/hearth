@@ -257,6 +257,46 @@ button.secondary {
   gap: 1.25rem;
 }
 
+/*
+ * The four jobs a circle screen does, along the top.
+ *
+ * Buttons rather than links, because nothing here is a URL — and styled as
+ * tabs rather than as four more things to press, so the one you are on is
+ * obvious without reading it.
+ */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 1.25rem 0;
+  border-bottom: 2px solid var(--line);
+}
+
+.circle-tab {
+  background: none;
+  border: 2px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 0.6rem 0.9rem;
+  margin-bottom: -2px;
+  cursor: pointer;
+}
+
+.circle-tab:hover {
+  color: var(--ink);
+}
+
+/* Where you are. Not colour alone: the border carries it too, for anybody
+   who cannot tell these two colours apart. */
+.circle-tab.here {
+  color: var(--ink);
+  font-weight: 600;
+  border-color: var(--line);
+  border-bottom: 2px solid var(--paper);
+  background: var(--paper);
+}
+
 .linky {
   background: none;
   border: none;
