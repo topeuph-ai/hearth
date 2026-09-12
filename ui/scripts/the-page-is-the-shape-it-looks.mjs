@@ -41,6 +41,24 @@ const lineOf = (index) => source.slice(0, index).split("\n").length;
 const stack = [];
 const problems = [];
 
+/*
+ * Line endings first, because a stray carriage return is invisible.
+ *
+ * Scripted edits here translate newlines to match the file, and one of them
+ * did it twice — leaving CR CR LF on every line it touched. Nothing renders
+ * differently, nothing fails, and git stores half of it, so the only symptom
+ * is an anchored edit that cannot find a line which is plainly there. That
+ * cost an hour before anybody thought to look at the bytes.
+ */
+if (/\r\r/.test(html)) {
+  problems.push(
+    "the file has doubled carriage returns — a line-ending fix applied twice",
+  );
+}
+if (/\r\n/.test(html) && /[^\r]\n/.test(html)) {
+  problems.push("the file mixes CRLF and LF line endings");
+}
+
 for (const m of source.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?(\/?)>/g)) {
   const [tag, name, selfClosing] = m;
   const lower = name.toLowerCase();

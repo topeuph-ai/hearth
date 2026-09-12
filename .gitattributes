@@ -1,0 +1,8 @@
+# Git stores LF and checks out whatever the platform wants.
+#
+# Without this, scripted edits that translate newlines to match a file can
+# apply the translation twice and leave CR CR LF inside lines. git then keeps
+# half of it, an anchored edit stops matching a line that is plainly there,
+# and nothing anywhere renders differently. See
+# ui/scripts/the-page-is-the-shape-it-looks.mjs, which now fails on it.
+* text=auto
