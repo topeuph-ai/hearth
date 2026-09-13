@@ -651,6 +651,24 @@ function whenItWasWritten(record, now = new Date()) {
   });
 }
 
+/**
+ * Open the suggestion box already pointed at one section.
+ *
+ * The sections in the box's list are in the standard's order, and so are the
+ * sections of the record — so the section beside the button is the option at
+ * the same position. Checked rather than trusted: if the two lists ever stop
+ * lining up, the box opens without choosing, rather than choosing wrongly.
+ */
+function suggestAbout(index) {
+  const choose = $("suggest-field");
+  if (choose.options.length === FIELDS.length) {
+    choose.selectedIndex = index;
+  }
+  showCirclePage("suggestions");
+  $("suggest-section").scrollIntoView({ block: "start" });
+  $("suggest-text").focus();
+}
+
 function renderRecord(current) {
   const entry = entryOf(current?.record);
 
@@ -747,6 +765,21 @@ function renderRecord(current) {
       change.textContent = "Change this";
       change.addEventListener("click", () => changeOneSection(index));
       group.append(change);
+    } else {
+      /*
+       * And for everybody else, the same place to start from.
+       *
+       * Offering a suggestion meant going to another tab and choosing, from a
+       * list, the section you had just been reading. The person reading a
+       * section is the person who has noticed something about it, so the way
+       * to say so belongs beside it.
+       */
+      const suggest = document.createElement("button");
+      suggest.type = "button";
+      suggest.className = "linky change-one";
+      suggest.textContent = "Suggest a change to this";
+      suggest.addEventListener("click", () => suggestAbout(index));
+      group.append(suggest);
     }
 
     list.append(group);
