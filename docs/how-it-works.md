@@ -668,6 +668,66 @@ from most of what is left on this list.
 What it does **not** do, and nothing can: get back what they have already
 read.
 
+#### It can happen out of sight
+
+Only the holder needs to know it happened. She presses one button; every other
+member's app moves them in the background, and what they see afterwards is the
+same record, the same names, the same tabs. Nobody is asked to do anything.
+
+What cannot be hidden, stated plainly:
+
+- **The removed person sees the old circle go quiet.** Nothing new arrives.
+  They are not told why, but somebody paying attention will notice.
+- **Somebody offline moves when they are next online at the same time as
+  somebody who has already moved.** Until then they are in the old circle.
+- **The history comes across as history.** Acknowledgements and suggestions
+  are copied as a record of what happened, not as the original signed entries,
+  because a signature belongs to the chain it was written on.
+- **The door has a new address.** Any invitation not yet used has to be sent
+  again.
+- **A second person's agreement** has to be either carried across as history
+  or asked for again. Not decided.
+
+#### When re-forming is the right answer, and not just the strongest
+
+Deleting the removed person's copy and changing the key covers the everyday
+case. The test for reaching past it is simple: **re-form when the problem
+cannot be fixed by the removed person's app co-operating, or when what needs
+hiding is something encryption does not hide.**
+
+1. **A lost or stolen device.** Nobody has done anything wrong, but somebody
+   else is now holding a member's identity. "Their app deletes its copy" does
+   nothing, because a stranger controls that app. The member joins the new
+   circle from a new device; the old identity is never invited.
+2. **Somebody who keeps writing after removal.** Marking somebody as gone hides
+   them; it does not stop them *writing* into the old circle — suggestions,
+   false introductions at the door, harassment. It still arrives on everybody's
+   device, even if honest apps hide it. In a new circle they cannot write at
+   all.
+3. **When even the shape of the activity is dangerous.** Encryption hides
+   *what* was written, not *that* something was written, *when*, or *by whom*.
+   Where the removed person is a risk to the person the record is about, seeing
+   that somebody new joined on Tuesday, or that three people read the record at
+   two in the morning, can be enough to guess an admission or a move. A new
+   circle shows them nothing.
+4. **Something was written that should never have been.** Changing the record
+   does not remove earlier versions: every member's device keeps them. A new
+   circle carries across only the record as it stands, so the mistake does not
+   travel with it.
+5. **Something is getting out and nobody knows who.** The door address has
+   spread, or something has leaked. Move, and carry across only the people you
+   are sure of.
+6. **Until encryption is built.** Today nothing locks the record, so re-forming
+   is the only removal that stops a determined person reading what is written
+   next.
+
+#### The same machinery upgrades will need
+
+Moving every member to a new circle, without anybody typing anything, is
+exactly what [changing the integrity zome](to-a-product.md#0-the-one-nobody-has-written-down-upgrades)
+will require once real records exist: every circle moved onto the new version.
+Built well once, it serves both.
+
 ---
 
 ## Offline is not a failure state

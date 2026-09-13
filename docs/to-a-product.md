@@ -431,6 +431,21 @@ Why both, and in that order: a circle takes time to establish, and re-forming
 starts that history over. A support worker moving on does not warrant it.
 Somebody who should never have been let in does.
 
+Re-forming can happen out of sight: only the holder needs to know, and the
+other members' apps move them in the background. It is the right answer for a
+lost or stolen device, somebody who keeps writing after removal, a
+safeguarding case where even *when* things happen is dangerous, something
+written that should never have been, a leak nobody can trace — and, until
+encryption exists, any removal that has to hold against a determined person.
+The reasons, and what cannot be hidden, are in
+[`how-it-works.md`](how-it-works.md#when-re-forming-is-the-right-answer-and-not-just-the-strongest).
+
+**And it is the upgrade path.** Moving everybody to a new circle is exactly
+what the next integrity zome will need for any circle holding a real record.
+That suggests building it **before** the migration batch below rather than
+after: built first, it is what would make that batch safe to ship. Suggested,
+not decided.
+
 **Two additions that give the everyday removal real teeth**, both agreed in
 principle and neither built:
 
