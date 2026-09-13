@@ -2295,6 +2295,74 @@ $("decline-to-agree").addEventListener("click", () =>
   answerTheAsking(false).catch(problem),
 );
 
+/*
+ * Whether each member's chain is in good order — checked quietly, shown only
+ * when it is not.
+ *
+ * Nothing is shown for a chain that is fine, and nothing for one this device
+ * has not heard about yet, which is ordinary for somebody who has just
+ * joined. Two things are worth saying, and both are things somebody's app has
+ * actually done, proven by the network rather than suspected by this one:
+ * the same identity running in two places at once, and something written
+ * that other people's devices have said broke the rules.
+ *
+ * Shown to the holder only. She is the one who decides who stays in the
+ * circle, and a warning about a named person, shown to everybody in it, would
+ * be unkind where the cause is innocent — and a fork can be: an old device
+ * left switched on after moving to a new one produces exactly the same proof.
+ *
+ * Remembered for five minutes per person, so the twenty-second re-read does
+ * not turn into one network request per member every twenty seconds.
+ */
+const chainHealth = new Map(); // agent key text -> { status, warrants, at }
+const askingAboutChain = new Set();
+const CHAIN_HEALTH_FRESH_FOR = 5 * 60 * 1000;
+
+function checkChainHealth(key) {
+  const known = chainHealth.get(key);
+  if (known && Date.now() - known.at < CHAIN_HEALTH_FRESH_FOR) return;
+  if (askingAboutChain.has(key) || !circle) return;
+
+  askingAboutChain.add(key);
+  const inCircle = asText(circle.cellId?.[0]);
+
+  orNothingYet(call("chain_health", key, circle.cellId), null)
+    .then((health) => {
+      askingAboutChain.delete(key);
+      // Nothing came back, or the circle on screen changed while asking.
+      if (!health || asText(circle?.cellId?.[0]) !== inCircle) return;
+      const before = chainHealth.get(key);
+      chainHealth.set(key, { ...health, at: Date.now() });
+      // Only redraw when there is something new to say.
+      if (
+        chainNeedsSaying(health) !== Boolean(before && chainNeedsSaying(before))
+      ) {
+        renderPeople();
+      }
+    })
+    .catch(() => askingAboutChain.delete(key));
+}
+
+const chainNeedsSaying = (health) =>
+  health.status === "forked" ||
+  health.status === "invalid" ||
+  Number(health.warrants) > 0;
+
+function chainHealthNote(health) {
+  const note = document.createElement("p");
+  note.className = "notice";
+  note.textContent =
+    health.status === "forked"
+      ? "This person's identity seems to be in use in two places at once. " +
+        "That can happen innocently — an old device still switched on after " +
+        "moving to a new one — or it can mean a copy of their app is being " +
+        "run somewhere else."
+      : "Something this person's app wrote broke this circle's rules, and " +
+        "other people's devices have said so. The copy of the app they are " +
+        "using may have been changed.";
+  return note;
+}
+
 /** Name the holder in "… will decide whether to add it", once names are known. */
 function sayWhoDecidesSuggestions() {
   $("who-decides-suggestions").textContent =
@@ -2335,6 +2403,14 @@ function renderPeople() {
 
     const theirs = whoAgrees?.agrees === key;
     if (theirs) li.append(howFarTheAskingHasGot(who, key));
+
+    // Only for the holder, only about somebody else, and only when something
+    // is actually wrong. See checkChainHealth.
+    if (amHolder && key !== asText(me)) {
+      checkChainHealth(key);
+      const health = chainHealth.get(key);
+      if (health && chainNeedsSaying(health)) li.append(chainHealthNote(health));
+    }
 
     // Asking somebody else replaces whoever is asked now, so the person
     // already asked needs no button of their own — pressing another name is
@@ -2865,6 +2941,8 @@ function forgetTheCircle() {
   seconderHere = null;
   theDoorIsHere = false;
   circleAsksTwo = false;
+  chainHealth.clear();
+  askingAboutChain.clear();
   knocking = [];
   lastWaitingCount = 0;
   stopChiming();

@@ -1827,6 +1827,66 @@ pub fn knock(words: WhoIsKnocking) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("Could not read the knock just written"))
 }
 
+// ---------------------------------------------------------------------------
+// Whether a member's chain is in good order
+// ---------------------------------------------------------------------------
+//
+// The one window a zome has onto another agent in Holochain 0.7 is
+// `get_agent_activity`. It cannot say who is online, and it cannot say
+// who has read anything — nothing can. What it can say is whether the chain
+// an agent has written is in one piece, and whether other peers have found
+// something on it that the rules reject.
+//
+// That is worth showing because both are things somebody has *done*, and
+// both are self-proving. A fork is two actions at the same position on one
+// chain: one identity running in two places at once, which is exactly the
+// shape of keeping an old copy of the app alongside a new one. A warrant is a
+// peer's signed statement that an action broke a rule, with the action
+// attached.
+
+/// What `chain_health` found, in words the interface can act on.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChainHealth {
+    /// `"valid"`, `"closed"`, `"forked"`, `"invalid"`, or `"unknown"` when nothing
+    /// about this chain has reached this device yet — which is ordinary for
+    /// somebody who has only just joined, and not a fault.
+    pub status: String,
+    /// How many warrants peers have issued against this agent.
+    pub warrants: u32,
+}
+
+/// Whether one member's chain is in good order.
+///
+/// A status request only: the answer is a summary, not the member's actions,
+/// so asking it about everybody in the circle stays cheap.
+#[hdk_extern]
+pub fn chain_health(agent: String) -> ExternResult<ChainHealth> {
+    let agent = AgentPubKey::try_from(agent.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+
+    let activity = get_agent_activity(
+        agent,
+        ChainQueryFilter::new(),
+        ActivityRequest::Status,
+        GetOptions::default(),
+    )?;
+
+    let status = match activity.status {
+        ChainStatus::Empty => "unknown",
+        ChainStatus::Valid(_) => "valid",
+        ChainStatus::Forked(_) => "forked",
+        ChainStatus::Invalid(_) => "invalid",
+        // Valid, and its author has closed it and will write no more. Hearth
+        // never does that itself, and it is not a fault if something else did.
+        ChainStatus::Closed(_) => "closed",
+    };
+
+    Ok(ChainHealth {
+        status: status.to_string(),
+        warrants: activity.warrants.len() as u32,
+    })
+}
+
 /// Somebody at the door, and what has become of them.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Knocking {
