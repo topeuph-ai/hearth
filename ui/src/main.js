@@ -1267,9 +1267,24 @@ function showRecordPage(which) {
       button.hidden = editingOneSection;
     }
 
-    // Changing one section: save it, or leave it as it was. Nothing else.
+    // Changing one section: save it, or go back without changing. Nothing else.
     for (const button of page.querySelectorAll(".record-save-one")) {
       button.hidden = !editingOneSection;
+    }
+
+    /*
+     * Going back without changing only means something when there is
+     * something to go back to.
+     *
+     * Writing a record for the first time, straight after making the circle,
+     * there is no record yet — so "go back without changing" was a way out
+     * to an empty page, sitting under every one of the eight. Every section
+     * can already be passed over with Continue, so there is no trap in
+     * leaving it off: this is offered only when an existing record is being
+     * changed.
+     */
+    for (const button of page.querySelectorAll(".record-cancel, #cancel-edit")) {
+      button.hidden = !record;
     }
   });
 
