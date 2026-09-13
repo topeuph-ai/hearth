@@ -245,7 +245,11 @@ Two removals are therefore planned, and they are not the same instrument:
 - **Marking somebody as gone** — proportionate for a professional leaving a case. Effective against ordinary use; not erasure; their device keeps receiving what it cannot show.
 - **Re-forming the circle** — for a safeguarding situation, or somebody who should not have been admitted. Excludes them by mathematics, and freezes their copy at the day it happens, because nothing is written to that circle afterwards.
 
-Neither is built. Both are described in [how-it-works.md](how-it-works.md#revocation).
+Two further measures are planned alongside them, and neither is built: **encrypting the record with a key that is replaced on removal**, so that material written afterwards cannot be opened on the removed person's device even by modified software; and **deleting the circle from that device** when its software sees the removal, which in Holochain 0.7 removes the local database file.
+
+**Even together these must not be recorded or described as erasure.** Deletion depends on the removed person's own software acting on the removal; it does not happen on a modified copy or a device taken offline first. Deleting a file does not wipe the disk. And the platform provides no means of deleting an encryption key from the local keystore. They reduce the risk substantially for ordinary use and for a device examined later; they do not guarantee it.
+
+All of this is described in [how-it-works.md](how-it-works.md#revocation).
 
 ### The erasure tension
 

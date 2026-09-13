@@ -538,6 +538,83 @@ learn about another agent in this version is `get_agent_activity`. Presence is
 not observable, which is consistent with everything else here — a circle whose
 members are all asleep is not a circle in trouble.
 
+### Making removal hold in both directions
+
+Two further ideas, both Ceri's, which between them close most of what is left
+in the tables above. Neither is built. Both were checked against the Holochain
+0.7.0 source before being written down here.
+
+#### Everything written after removal: encrypt the record, change the key
+
+The record is locked with a key that only members of the circle hold. Each
+member's app is given its own copy, sealed so that only that member can open
+it — the same kind of sealing the knocks at the door already use.
+
+When somebody is removed, the holder's app makes a **new key** and gives it to
+everybody except them, and everything written from then on is locked with it.
+
+Their device still receives the new versions, because replication does not
+choose person by person. But they arrive locked with a key that device was
+never given. **A modified app does not help: there is nothing on the device
+that can open them.** This is the part that is mathematics rather than
+software behaving itself.
+
+The HDK at 0.7.0 has what it needs: `x_salsa20_poly1305_shared_secret_create_random`
+makes a key that stays inside the keystore, `..._export` and `..._ingest` pass
+one to a named person, and `x_salsa20_poly1305_encrypt` / `..._decrypt` use it.
+Somebody offline when the key changes finds their copy waiting in the circle,
+addressed to them, when they come back — which is how everything else here
+already works.
+
+What it costs: the network cannot check the contents of something it cannot
+read. Rules about **who** may write still hold; rules about **what** was
+written move into the app, as they did for knocks. Suggestions and
+acknowledgements need the same treatment, or they give away what the record
+says. And it changes the shape of the record, which is a migration.
+
+#### Everything written before removal: delete it from their device
+
+The obvious question once the record is encrypted: the removed person's app
+stops decrypting new versions, so could it also make the old ones unreadable?
+
+It can do better than re-encrypt them. **It can delete them.** On seeing that
+they have been removed, their app switches the circle off and deletes it —
+and in Holochain 0.7.0 deleting a switched-off circle removes that circle's
+database file from the device. Checked in the conductor: `delete_clone_cell`
+calls `delete_cell_databases`, which deletes the store for any DNA no other
+installed app still uses, and purges every row if the file cannot be removed.
+
+That is different from leaving, on purpose. **Leaving switches the circle off
+and keeps it**, so that somebody let back in finds it as it was — which is what
+somebody who chose to go and changed their mind wants. **Being removed would
+delete it**, and anybody later let back in starts fresh and receives the record
+as it is then.
+
+The limits, stated plainly:
+
+- **It is carried out by their own app.** An ordinary copy does it. A modified
+  one ignores the removal, and somebody who takes their device offline before
+  the removal reaches it keeps everything. A threshold, as in the table above.
+- **Deleting a file is not wiping a disk.** Recovery tools can sometimes find a
+  deleted file. With the record also encrypted, what is recovered is
+  scrambled — but the HDK has **no way to delete a key from the keystore**, so
+  the key may still be on that device, and a determined examiner who also has
+  the keystore's passphrase could open it.
+- **A copy made outside the app is untouched**, as always.
+
+#### Where that leaves the three levels
+
+| | Marking as gone | + encryption and a new key | + deleting on removal |
+| --- | --- | --- | --- |
+| Ordinary use of the app | Holds | Holds | Holds |
+| Reading what arrives *after* removal, with a modified app | Does not hold | **Holds** | **Holds** |
+| Reading what arrived *before* removal, with a modified app | Does not hold | Does not hold | Does not hold |
+| A device found or examined later | Everything, readable | Old readable, new scrambled | Old deleted, new scrambled |
+| A copy made outside the app | Does not hold | Does not hold | Does not hold |
+
+With both, the everyday removal does nearly everything re-forming the circle
+does — which makes re-forming a rarer last resort still.
+
 #### What is worth building from that
 
 Two cheap things, neither built:

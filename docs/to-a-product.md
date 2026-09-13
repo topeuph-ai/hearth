@@ -431,6 +431,23 @@ Why both, and in that order: a circle takes time to establish, and re-forming
 starts that history over. A support worker moving on does not warrant it.
 Somebody who should never have been let in does.
 
+**Two additions that give the everyday removal real teeth**, both agreed in
+principle and neither built:
+
+- **Encrypt the record and change the key on removal.** Everything written
+  afterwards arrives on the removed person's device locked with a key it was
+  never given, so a modified app sees nonsense. Mathematics rather than
+  software behaving itself.
+- **Delete the circle from the removed person's device.** Their app, on seeing
+  the removal, switches the circle off and deletes it; Holochain 0.7 removes
+  the database file. Works for anybody using the app as it ships; a modified
+  app or a device taken offline in time keeps it.
+
+**These belong in one batch with marking somebody as gone, coded values and
+multimedia.** Every one of them changes the rules a circle is built from, so
+every one breaks circles made before it. Done together they cost one
+migration; done one at a time they cost four.
+
 The full version, including what each one does and does not hold against, is
 in [`how-it-works.md`](how-it-works.md#revocation).
 
