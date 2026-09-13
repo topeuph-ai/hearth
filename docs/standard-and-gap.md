@@ -47,7 +47,7 @@ Two metadata elements sit outside the sections:
 | PRSB element | Hearth |
 | --- | --- |
 | Supported to write this by | yes — `supported_to_write_this_by` |
-| Date last updated | partly — every version is a signed action with a timestamp, so it exists but is never shown |
+| Date last updated | yes — read from the signed action's own timestamp and shown under the name |
 
 ## What this means
 

@@ -619,6 +619,38 @@ $("carry-on").addEventListener("click", () => {
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
 
+/**
+ * When a record was written, in the words a person would use.
+ *
+ * Holochain stamps every action with microseconds since 1970, in the action's
+ * header — `signed_action.hashed.content.header.timestamp` in 0.7, the same
+ * place the author moved to. It can arrive as a number or a BigInt depending
+ * on the client, so it is converted rather than assumed.
+ *
+ * "Today" and "yesterday" are compared as dates on this device's calendar,
+ * not as twenty-four hours, because "yesterday" at ten past midnight means
+ * the day before, not an hour ago.
+ */
+function whenItWasWritten(record, now = new Date()) {
+  const raw = record?.signed_action?.hashed?.content?.header?.timestamp;
+  if (raw === undefined || raw === null) return null;
+
+  const written = new Date(Number(raw) / 1000);
+  if (Number.isNaN(written.getTime())) return null;
+
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const daysAgo = Math.round((day(now) - day(written)) / 86_400_000);
+
+  if (daysAgo === 0) return "today";
+  if (daysAgo === 1) return "yesterday";
+
+  return written.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function renderRecord(current) {
   const entry = entryOf(current?.record);
 
@@ -635,6 +667,16 @@ function renderRecord(current) {
   $("no-record").hidden = true;
   $("record").hidden = false;
   $("record-name").textContent = entry.display_name;
+
+  // The standard's "Date last updated". Hidden rather than guessed at if the
+  // action somehow arrives without one.
+  const when = whenItWasWritten(current.record);
+  $("last-updated").hidden = !when;
+  $("last-updated").textContent = when
+    ? when === "today" || when === "yesterday"
+      ? `Last updated ${when}.`
+      : `Last updated on ${when}.`
+    : "";
 
   const list = $("record-fields");
   list.replaceChildren();
