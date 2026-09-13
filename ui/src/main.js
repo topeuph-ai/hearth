@@ -1347,9 +1347,34 @@ function showRecordPage(which) {
   $("record-progress").hidden = editingOneSection;
   $("record-progress").textContent = `Page ${recordPage + 1} of ${pages.length}`;
 
-  const box = pages[recordPage]?.querySelector("textarea, input");
-  if (box) box.focus();
-  window.scrollTo({ top: 0 });
+  /*
+   * Bring the section into view, and let it be seen arriving.
+   *
+   * This used to put the cursor in the box and then jump to the top of the
+   * page — which undid the scroll the cursor had just caused. Pressing
+   * "Change this" on a section left the heading, the hint and four prompts
+   * filling the window, with the box that had just opened sitting below the
+   * bottom edge and nothing to say it was there.
+   *
+   * So the page now glides to the section itself, stopping just under the
+   * name bar that stays at the top, which puts the section's heading, its
+   * box and the button under it on screen together. The movement is part of
+   * the point: it shows somebody that something opened. For anybody whose
+   * computer asks for less motion, it goes straight there instead.
+   */
+  const page = pages[recordPage];
+  const box = page?.querySelector("textarea, input");
+  if (page) {
+    const bar = document.querySelector(".circle-bar");
+    const under = (bar?.getBoundingClientRect().height ?? 0) + 12;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({
+      top: Math.max(0, page.getBoundingClientRect().top + window.scrollY - under),
+      behavior: still ? "auto" : "smooth",
+    });
+  }
+  // Focused without scrolling, so it does not fight the scroll above.
+  if (box) box.focus({ preventScroll: true });
 }
 
 for (const button of document.querySelectorAll(".record-next")) {
