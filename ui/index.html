@@ -302,7 +302,16 @@
             circle you are already making.
           -->
           <fieldset class="field" id="seconder-field">
-            <legend>Who decides who joins?</legend>
+            <!--
+              Worded so it cannot be mistaken for page one.
+
+              Page one asks "Me — this is my own record" or "Someone I care
+              for". This page used to answer with "Just me" or "Me and one
+              other person, together" — two short choices beginning with "me",
+              two pages apart, and on the own-record path it read as being
+              asked the same question twice.
+            -->
+            <legend>When somebody asks to join, who says yes?</legend>
             <label class="choice-row">
               <input
                 type="radio"
@@ -311,7 +320,7 @@
                 value="just-me"
                 checked
               />
-              Just me
+              I do
             </label>
             <label class="choice-row">
               <input
@@ -320,7 +329,7 @@
                 id="decides-two-of-us"
                 value="two-of-us"
               />
-              Me and one other person, together
+              I do, and one other person has to agree as well
             </label>
             <p class="hint">
               You choose the other person later, from whoever is in the circle,
@@ -663,6 +672,19 @@
         </nav>
 
         <div id="circle-record">
+          <!--
+            For everybody but the holder, before they read a word of it.
+
+            The buttons under each section offer a suggestion, and nothing on
+            the page said why they could not simply change it — or who would
+            see what they offered, or what would happen to it.
+          -->
+          <p id="members-can-suggest" class="notice" hidden>
+            You cannot change what is written here, but you can offer a
+            suggestion about any part of it.
+            <span id="who-decides-suggestions">The person who holds this
+            circle</span> will decide whether to add it.
+          </p>
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->
           <p id="no-record-empty" hidden>
@@ -1420,7 +1442,20 @@
           something that would help, offer it here.
           </p>
           <form id="suggest-form">
-          <div class="field">
+          <!--
+            Arriving from "Offer a suggestion" under a section, the section is
+            already known — asking again, from a list, is asking somebody to
+            repeat what they just pressed. So it is said instead, with a way
+            to change it for anybody who pressed the wrong one.
+          -->
+          <p id="suggesting-about" class="notice" hidden>
+            Your suggestion is about
+            <strong id="suggesting-about-section"></strong>.
+            <button type="button" id="suggest-another-section" class="linky">
+              Choose a different section
+            </button>
+          </p>
+          <div class="field" id="suggest-field-choice">
           <label for="suggest-field">What is it about?</label>
           <!-- The seven, in her voice, in the standard's order. -->
           <select id="suggest-field" name="suggest-field">

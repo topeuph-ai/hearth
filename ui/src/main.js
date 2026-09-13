@@ -505,7 +505,8 @@ function showCircleMode(mode = circleMode) {
   // The things underneath it, which must not reappear while it is open.
   $("record-actions").hidden = mode === WRITING;
   $("edit-record").hidden = !amHolder;
-  $("edit-record").textContent = written ? "Change this" : "Write it";
+  // "Change this" now means one section, beside it. This one walks all seven.
+  $("edit-record").textContent = written ? "Change all of it" : "Write it";
 
   // Saying you have read it. Offered to everybody but the holder, and only
   // once there is something to have read.
@@ -568,6 +569,10 @@ function showCircleMode(mode = circleMode) {
     tab.setAttribute("aria-current", here ? "page" : "false");
   }
 
+  // What a member may do with the record, said above it.
+  $("members-can-suggest").hidden = amHolder || !written;
+  sayWhoDecidesSuggestions();
+
   $("people").hidden = !somethingToShowPeople;
   $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
   $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
@@ -605,7 +610,10 @@ function showCirclePage(which) {
 }
 
 for (const tab of document.querySelectorAll(".circle-tab")) {
-  tab.addEventListener("click", () => showCirclePage(tab.dataset.page));
+  tab.addEventListener("click", () => {
+    if (tab.dataset.page === "suggestions") suggestingAboutOneSection(false);
+    showCirclePage(tab.dataset.page);
+  });
 }
 
 // Carrying on from the record goes where the holder has to go next: the
@@ -661,13 +669,32 @@ function whenItWasWritten(record, now = new Date()) {
  */
 function suggestAbout(index) {
   const choose = $("suggest-field");
+  showCirclePage("suggestions");
+
   if (choose.options.length === FIELDS.length) {
     choose.selectedIndex = index;
+    $("suggesting-about-section").textContent =
+      `“${choose.options[index].textContent.trim()}”`;
+    suggestingAboutOneSection(true);
+  } else {
+    // The lists no longer line up. Ask, rather than choose wrongly.
+    suggestingAboutOneSection(false);
   }
-  showCirclePage("suggestions");
+
   $("suggest-section").scrollIntoView({ block: "start" });
   $("suggest-text").focus();
 }
+
+/** Whether the section is already chosen (arrived from it) or to be asked. */
+function suggestingAboutOneSection(fixed) {
+  $("suggesting-about").hidden = !fixed;
+  $("suggest-field-choice").hidden = fixed;
+}
+
+$("suggest-another-section").addEventListener("click", () => {
+  suggestingAboutOneSection(false);
+  $("suggest-field").focus();
+});
 
 function renderRecord(current) {
   const entry = entryOf(current?.record);
@@ -777,7 +804,8 @@ function renderRecord(current) {
       const suggest = document.createElement("button");
       suggest.type = "button";
       suggest.className = "linky change-one";
-      suggest.textContent = "Suggest a change to this";
+      // They cannot change anything, so the button does not say "change".
+      suggest.textContent = "Offer a suggestion";
       suggest.addEventListener("click", () => suggestAbout(index));
       group.append(suggest);
     }
@@ -1967,6 +1995,7 @@ $("suggest-form").addEventListener("submit", async (event) => {
       circle.cellId,
     );
     $("suggest-form").reset();
+    suggestingAboutOneSection(false);
     announce("Offered. The person who holds this circle will see it.");
     await loadCircle();
   } catch (error) {
@@ -2153,7 +2182,15 @@ $("decline-to-agree").addEventListener("click", () =>
   answerTheAsking(false).catch(problem),
 );
 
+/** Name the holder in "… will decide whether to add it", once names are known. */
+function sayWhoDecidesSuggestions() {
+  $("who-decides-suggestions").textContent =
+    members.get(holder)?.name?.trim() || "The person who holds this circle";
+}
+
 function renderPeople() {
+  // Names have just arrived, and one of them may be the holder's.
+  sayWhoDecidesSuggestions();
   const list = $("people-list");
   list.replaceChildren();
 
@@ -4023,6 +4060,13 @@ async function collectFrom(roomCell) {
 
   alwaysAWayBack();
   show("circle");
-  announce(`You are in ${label}.`);
+  // "You are in Margaret Smythe." is not a sentence anybody should be shown.
+  // Whose circle, then — and "their circle" when all there is to go on is
+  // the fallback label.
+  announce(
+    label === "Their circle"
+      ? "You are in their circle."
+      : `You are in ${label}'s circle.`,
+  );
   await loadCircle();
 }
