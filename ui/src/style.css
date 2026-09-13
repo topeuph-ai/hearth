@@ -462,6 +462,12 @@ dd {
   white-space: pre-wrap;
 }
 
+/* Said quietly, so it reads as a gap rather than as something she wrote. */
+.record-field dd.nothing-yet {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .record-field dd.all-of-it {
   max-height: none;
   overflow-y: visible;

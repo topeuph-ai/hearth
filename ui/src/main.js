@@ -506,7 +506,7 @@ function showCircleMode(mode = circleMode) {
   $("record-actions").hidden = mode === WRITING;
   $("edit-record").hidden = !amHolder;
   // "Change this" now means one section, beside it. This one walks all seven.
-  $("edit-record").textContent = written ? "Change all of it" : "Write it";
+  $("edit-record").textContent = beenThroughOnce ? "Change all of it" : "Write it";
 
   // Saying you have read it. Offered to everybody but the holder, and only
   // once there is something to have read.
@@ -539,7 +539,8 @@ function showCircleMode(mode = circleMode) {
    * The second half is the same rule the buttons above follow: while somebody
    * is part-way through writing, the screen underneath them holds still.
    */
-  const somethingToShowPeople = written && mode !== WRITING;
+  // Once the holder has been through the pages — whatever is in them.
+  const somethingToShowPeople = beenThroughOnce && mode !== WRITING;
 
   /*
    * The tabs, and which page they lead to.
@@ -570,7 +571,7 @@ function showCircleMode(mode = circleMode) {
   }
 
   // What a member may do with the record, said above it.
-  $("members-can-suggest").hidden = amHolder || !written;
+  $("members-can-suggest").hidden = amHolder || !beenThroughOnce;
   sayWhoDecidesSuggestions();
 
   $("people").hidden = !somethingToShowPeople;
@@ -626,6 +627,29 @@ $("carry-on").addEventListener("click", () => {
 
 /** Whether the last load put a written record on the screen. */
 let showingSomething = false;
+
+/*
+ * Whether the holder has been through the writing pages once — with or
+ * without writing anything.
+ *
+ * The rest of the circle used to wait until something had been written. That
+ * put pressure in the wrong place: making the circle is the job that has to
+ * be done now, and what matters to somebody is often the thing a family needs
+ * a week to think about. Leaving every box empty and pressing Save is a real
+ * choice, and it now lands on the same page as filling all seven in.
+ *
+ * Read from the record rather than remembered, so it survives a reload and is
+ * the same on every device. Making a circle saves a first version holding
+ * only the name; going through the pages saves another on top of it. So the
+ * record being an update is the answer — checked against a running conductor
+ * before being relied on. Anything already written counts too, for circles
+ * made before this.
+ */
+let beenThroughOnce = false;
+
+const hasBeenThroughOnce = (current) =>
+  current?.record?.signed_action?.hashed?.content?.data?.type === "Update" ||
+  hasBeenWritten(entryOf(current?.record));
 
 /**
  * When a record was written, in the words a person would use.
@@ -703,7 +727,7 @@ function renderRecord(current) {
   // question on this screen is phrased around it.
   if (entry?.display_name) nameHer(entry.display_name);
 
-  if (!hasBeenWritten(entry)) {
+  if (!hasBeenThroughOnce(current)) {
     $("no-record").hidden = false;
     $("record").hidden = true;
     return;
@@ -726,16 +750,26 @@ function renderRecord(current) {
   const list = $("record-fields");
   list.replaceChildren();
   for (const [index, [key, label]] of FIELDS.entries()) {
-    if (!entry[key]?.trim()) continue;
-
     const dt = document.createElement("dt");
     dt.textContent = label;
     // So a suggestion can find the words it is about, and sit next to them
     // rather than in a pile at the bottom of the page.
     dt.dataset.field = key;
 
+    /*
+     * Every section, written or not.
+     *
+     * Empty sections used to be left off, which was tidy while there was
+     * always something in most of them. Now a record can be all seven empty
+     * on purpose, and a page with nothing on it would give the holder nowhere
+     * to press "Change this" when she is ready — and give everybody else
+     * nowhere to offer a suggestion about the thing that is missing, which is
+     * exactly when a suggestion is most useful.
+     */
     const dd = document.createElement("dd");
-    dd.textContent = entry[key];
+    const said = entry[key]?.trim();
+    dd.textContent = said ? entry[key] : "Nothing written here yet.";
+    if (!said) dd.classList.add("nothing-yet");
     dd.dataset.fieldValue = key;
 
     /*
@@ -1005,12 +1039,13 @@ async function drawTheCircle() {
   // What the screen is actually showing, for anything that needs to agree
   // with it rather than with what was typed a moment ago.
   showingSomething = written;
+  beenThroughOnce = haveIt && hasBeenThroughOnce(current);
 
   record = haveIt ? { original, current } : null;
   renderRecord(haveIt ? current : null);
 
-  $("no-record-empty").hidden = written || !amHolder;
-  $("no-record-waiting").hidden = written || amHolder;
+  $("no-record-empty").hidden = beenThroughOnce || !amHolder;
+  $("no-record-waiting").hidden = beenThroughOnce || amHolder;
 
   /*
    * A refresh must not put the button back underneath the open form.
@@ -1288,7 +1323,7 @@ function showRecordPage(which) {
      * an edit, and the button stayed.
      */
     for (const button of page.querySelectorAll(".record-cancel, #cancel-edit")) {
-      button.hidden = !showingSomething;
+      button.hidden = !beenThroughOnce;
     }
   });
 
@@ -1366,7 +1401,7 @@ $("record-form").addEventListener("submit", async (event) => {
      * was always yes, and the tabs that are meant to wait for "Carry on"
      * after the first pass never waited.
      */
-    const firstTimeWritten = !showingSomething;
+    const firstTimeWritten = !beenThroughOnce;
     const aboutMe = {
       display_name: personName(),
       what_matters_to_me: $("what-matters").value,
@@ -1418,7 +1453,11 @@ $("record-form").addEventListener("submit", async (event) => {
       $("check-it-over").hidden = false;
       announce("Saved. Read it over, then give people the address.");
     } else if (isHolder()) {
-      announce(`Saved. Nothing has been written about ${aboutMe.display_name.trim() || "them"} yet.`);
+      // No pressure in the wording either: an empty record is a choice, and
+      // the circle is ready to use without one.
+      announce(
+        "Saved. Your circle is ready. Fill in each part whenever you are ready — press Change this beside it.",
+      );
     } else {
       announce("Saved.");
     }
@@ -2800,6 +2839,7 @@ function forgetTheCircle() {
   suggestions = [];
   peopleLastSeen = new Set();
   showingSomething = false;
+  beenThroughOnce = false;
   knownName = "";
 
   // And the screen, which is the part she can actually see.
