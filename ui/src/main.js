@@ -1274,17 +1274,21 @@ function showRecordPage(which) {
 
     /*
      * Going back without changing only means something when there is
-     * something to go back to.
+     * something written to go back to.
      *
-     * Writing a record for the first time, straight after making the circle,
-     * there is no record yet — so "go back without changing" was a way out
-     * to an empty page, sitting under every one of the eight. Every section
-     * can already be passed over with Continue, so there is no trap in
-     * leaving it off: this is offered only when an existing record is being
-     * changed.
+     * Writing it for the first time, straight after making the circle, there
+     * is nothing — so "go back without changing" was a way out to an empty
+     * page, under every one of the eight. Every section can already be passed
+     * over with Continue, so there is no trap in leaving it off.
+     *
+     * Asked of what has been *written*, not of whether a record exists. The
+     * first attempt asked the second, and a record always exists by then:
+     * making a circle saves one straight away with only the person's name in
+     * it, so that it is never nameless. That made every first pass look like
+     * an edit, and the button stayed.
      */
     for (const button of page.querySelectorAll(".record-cancel, #cancel-edit")) {
-      button.hidden = !record;
+      button.hidden = !showingSomething;
     }
   });
 
@@ -1352,6 +1356,17 @@ $("cancel-edit").addEventListener("click", () => {
 $("record-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
+    /*
+     * Whether this save is the first time anything has been written.
+     *
+     * Read before saving, because saving is what changes the answer. And
+     * asked of what has been written rather than whether a record exists,
+     * for the reason given in showRecordPage: making a circle already saved
+     * a record with a name and nothing else in it, so "is there a record?"
+     * was always yes, and the tabs that are meant to wait for "Carry on"
+     * after the first pass never waited.
+     */
+    const firstTimeWritten = !showingSomething;
     const aboutMe = {
       display_name: personName(),
       what_matters_to_me: $("what-matters").value,
@@ -1377,9 +1392,11 @@ $("record-form").addEventListener("submit", async (event) => {
       );
     } else {
       await call("create_about_me", aboutMe, circle.cellId);
-      // Written for the first time, so the next thing is to read it over.
-      justWroteIt = true;
     }
+
+    // Written for the first time, so the next thing is to read it over —
+    // and the rest of the circle waits until that has happened.
+    if (firstTimeWritten) justWroteIt = true;
 
     editingOneSection = false;
     showCircleMode(READING);
