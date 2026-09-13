@@ -504,9 +504,22 @@ function showCircleMode(mode = circleMode) {
 
   // The things underneath it, which must not reappear while it is open.
   $("record-actions").hidden = mode === WRITING;
-  $("edit-record").hidden = !amHolder;
-  // "Change this" now means one section, beside it. This one walks all seven.
-  $("edit-record").textContent = beenThroughOnce ? "Change all of it" : "Write it";
+  /*
+   * "Write it" — only until the pages have been through once.
+   *
+   * After that, every section has its own "Change this", and a second button
+   * that walked all seven in a row was one nobody could explain: it was
+   * called "Change all of it", and the first person to read it asked whether
+   * it cleared everything and started again. A button that has to be
+   * explained is a button that frightens somebody off it, or worse, one they
+   * press expecting something else.
+   *
+   * It stays for the one case with no other way in: a circle whose pages were
+   * never finished — the app closed halfway, say — which shows "Nothing has
+   * been written yet" and nothing to press beside any section.
+   */
+  $("edit-record").hidden = !amHolder || beenThroughOnce;
+  $("edit-record").textContent = "Write it";
 
   // Saying you have read it. Offered to everybody but the holder, and only
   // once there is something to have read.
@@ -1385,7 +1398,11 @@ function changeOneSection(which) {
 $("cancel-edit").addEventListener("click", () => {
   editingOneSection = false;
   showCircleMode(READING);
-  $("edit-record").focus();
+  // Somewhere visible to land. "Write it" is gone once the pages have been
+  // through, so focus the record itself instead of a hidden button.
+  const landing = beenThroughOnce ? $("record-name") : $("edit-record");
+  if (landing === $("record-name")) landing.setAttribute("tabindex", "-1");
+  landing.focus();
 });
 
 $("record-form").addEventListener("submit", async (event) => {
