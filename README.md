@@ -5,8 +5,10 @@
 A care record that belongs to the person it is about, and works across
 organisations that will never share a computer system.
 
-**There is no server and no company in the middle.** Nobody hosts it. Nobody
-can switch it off.
+**No central service stores or controls the record.** Nobody hosts it, and
+there is no company in the middle. Devices do use public servers to *find*
+each other across the internet — they carry addresses, never records. See
+[the hard questions](docs/hard-questions.md#10-what-does-no-operator-really-mean).
 
 ---
 
@@ -253,6 +255,7 @@ Read the first one before the others.
 | | |
 |---|---|
 | [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [hard-questions.md](docs/hard-questions.md) | The questions a sceptical reviewer would ask, and the honest answer to each — including where the answer is not software |
 | [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
@@ -285,12 +288,16 @@ in [docs/building-it.md](docs/building-it.md).
 
 Two laptops and a phone. A person, their daughter, a nurse.
 
-The daughter writes something. It appears on the nurse's screen. **Unplug the
-router** — it carries on working. Take a device out of the room, change
-something, bring it back — it catches up.
+The daughter writes something. It appears on the nurse's screen. **Take the
+internet away and keep the local network** — it should carry on working. Take a
+device out of the room, change something, bring it back — it catches up.
 
-> There is no account, no server and no company. If I am hit by a bus tomorrow,
-> this carries on working.
+**⚠️ Not yet shown.** Nothing has been tried on two real machines, and whether
+two devices keep reaching each other with the internet gone is exactly what the
+first two-machine test is for. Until then that sentence is a claim.
+
+> There is no account and no company holding the record. If I am hit by a bus
+> tomorrow, nobody's circle depends on me.
 
 ---
 

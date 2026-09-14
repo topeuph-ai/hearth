@@ -1139,6 +1139,27 @@ async function drawTheCircle() {
   await loadSuggestions();
 }
 
+/*
+ * A suggestion that was set aside is shown only to the holder, who decided,
+ * and to whoever offered it, who deserves to know what became of it.
+ *
+ * Everybody else used to see every one, forever. Ceri's reasons for stopping
+ * that, both of them: a circle of ten loving, enthusiastic people will have a
+ * great deal to suggest, and the box fills with things that went nowhere; and
+ * something sensitive a support worker offered, which the holder turned down,
+ * stayed readable by the whole circle anyway.
+ *
+ * What this is and is not, the same as removal: every member's app hides it,
+ * and it is still on their devices, because nothing written in a circle can be
+ * unwritten. A modified app could show it. See docs/hard-questions.md.
+ */
+function stillWorthShowing(item) {
+  if (isHolder()) return true;
+  const outcome = entryOf(item.outcome);
+  if (!outcome || outcome.accepted) return true;
+  return asText(authorOf(item.suggestion)) === asText(me);
+}
+
 async function loadSuggestions() {
   const amHolder = isHolder();
 
@@ -1147,10 +1168,11 @@ async function loadSuggestions() {
   // used.
   $("suggest-section").hidden = amHolder;
 
-  suggestions = await orNothingYet(
+  const everything = await orNothingYet(
     call("get_suggestions", null, circle.cellId),
     [],
   );
+  suggestions = everything.filter(stillWorthShowing);
   renderSuggestions();
 }
 
@@ -1165,6 +1187,9 @@ function fillForm() {
   $("how-to-support").value = entry?.how_to_support_me ?? "";
   $("also-worth-knowing").value = entry?.also_worth_knowing ?? "";
   $("supported-by").value = entry?.supported_to_write_this_by ?? "";
+  // A section written before the word limit existed says so the moment it is
+  // opened, rather than when somebody tries to save it.
+  for (const id of WORD_LIMITED) sayHowManyWords($(id));
 }
 
 // ---------------------------------------------------------------------------
@@ -1937,7 +1962,10 @@ function renderSuggestions() {
 
   // What was decided before the circle moved, kept as history. See
   // historyFor, and why these are words rather than the entries themselves.
-  const earlier = historyFor(circle?.cellId)?.suggestions ?? [];
+  // The same rule as above for what was set aside before the move.
+  const earlier = (historyFor(circle?.cellId)?.suggestions ?? []).filter(
+    (item) => isHolder() || item.accepted || item.who === "You",
+  );
   for (const item of earlier) list.append(earlierSuggestionCard(item));
 
   $("suggestions-section").hidden = suggestions.length === 0 && earlier.length === 0;
@@ -4920,3 +4948,149 @@ async function carryTheAgreementAcross() {
   loadCircle();
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// How much fits in one section
+// ---------------------------------------------------------------------------
+//
+// Five hundred words a section, Ceri's number, and easy to raise if anybody
+// asks.
+//
+// The reason is not tidiness. Everything written in a circle is copied to
+// every member's device, and every change stores another whole copy. The
+// only limit Holochain itself sets is four megabytes an entry — roughly a
+// thousand pages — so without this, one confused or unkind member could
+// fill other people's disks with a single paste.
+//
+// This is the interface's limit, so an ordinary copy of Hearth keeps to it
+// and a modified one need not. The rule every peer checks belongs in the next
+// version of the integrity zome. See docs/hard-questions.md.
+
+const WORD_LIMIT = 500;
+
+const WORD_LIMITED = [
+  "what-matters",
+  "people-who-matter",
+  "how-to-communicate",
+  "my-wellness",
+  "please-do",
+  "how-to-support",
+  "also-worth-knowing",
+  "suggest-text",
+  "suggest-because",
+];
+
+const countWords = (text) => text.trim().split(/\s+/).filter(Boolean).length;
+
+/*
+ * Said only when it is close, and plainly when it is over.
+ *
+ * A running "12 of 500 words" under every box is a number to watch while
+ * trying to think about somebody you love. So nothing is shown until the
+ * last hundred words, and going over is a sentence, not a red box.
+ */
+function sayHowManyWords(box) {
+  const note = $(`${box.id}-words`);
+  const words = countWords(box.value);
+  const over = words - WORD_LIMIT;
+
+  if (over > 0) {
+    const message =
+      `This is ${words} words, which is ${over} more than fits. ` +
+      `Each part holds up to ${WORD_LIMIT} words.`;
+    note.textContent = message;
+    note.className = "notice";
+    note.hidden = false;
+    return;
+  }
+
+  note.className = "hint";
+  note.hidden = words < WORD_LIMIT - 100;
+  note.textContent = `${words} of ${WORD_LIMIT} words.`;
+}
+
+for (const id of WORD_LIMITED) {
+  const box = $(id);
+  const note = document.createElement("p");
+  note.id = `${id}-words`;
+  note.className = "hint";
+  note.hidden = true;
+  note.setAttribute("aria-live", "polite");
+  box.after(note);
+  box.addEventListener("input", () => sayHowManyWords(box));
+}
+
+/** The first box on this page, or anywhere in this form, that is too long. */
+function tooLongIn(container) {
+  for (const id of WORD_LIMITED) {
+    const box = $(id);
+    if (!container.contains(box)) continue;
+    sayHowManyWords(box);
+    if (countWords(box.value) > WORD_LIMIT) return box;
+  }
+  return null;
+}
+
+/*
+ * Say it where the box is, and put the cursor there.
+ *
+ * Deliberately not the browser's own validity bubble. A form holding a box the
+ * browser considers invalid refuses to submit at all when that box is on a
+ * page that is not showing, and says nothing about why — the silent dead end
+ * the create pages already fell into once. The sentence under the box is on
+ * screen and read out, which is all this needs.
+ */
+function pointAt(box) {
+  const page = recordPages().findIndex((p) => p.contains(box));
+  if (page >= 0 && page !== recordPage) showRecordPage(page);
+  box.focus();
+  $(`${box.id}-words`).scrollIntoView({ block: "center" });
+}
+
+/*
+ * Not past a box that is too long, while it is still on screen to point at.
+ *
+ * The same lesson as the create pages: a browser will not report a problem on
+ * a box it cannot show, so a save that fails on page three while you stand on
+ * page seven does nothing and says nothing. So each page is checked as you
+ * leave it, and the whole form is checked on saving, going back to the page
+ * that needs shortening first.
+ *
+ * Capture listeners, so they run before the ones that move the page or save.
+ */
+for (const button of document.querySelectorAll(".record-next")) {
+  button.addEventListener(
+    "click",
+    (event) => {
+      const box = tooLongIn(recordPages()[recordPage]);
+      if (!box) return;
+      event.stopImmediatePropagation();
+      pointAt(box);
+    },
+    { capture: true },
+  );
+}
+
+$("record-form").addEventListener(
+  "submit",
+  (event) => {
+    const box = tooLongIn($("record-form"));
+    if (!box) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pointAt(box);
+  },
+  { capture: true },
+);
+
+$("suggest-form").addEventListener(
+  "submit",
+  (event) => {
+    const box = tooLongIn($("suggest-form"));
+    if (!box) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pointAt(box);
+  },
+  { capture: true },
+);
