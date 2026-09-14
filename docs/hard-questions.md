@@ -20,7 +20,7 @@ removed them on purpose, and has to find social ones instead.
 | 1 | Why does everyone in the circle see everything? | **Open — a decision** |
 | 2 | Who has legitimate authority to act for the person? | Not a software question; stated, not solved |
 | 3 | What does "held by the person" actually mean? | Needs saying precisely |
-| 4 | What can Hearth do that RIX cannot? | Argued, **not yet shown** |
+| 4 | What can Hearth do that RIX cannot? | **One of three shown** |
 | 5 | What happens when the holder disappears? | Half-built |
 | 6 | What does an acknowledgement prove? | Answered below |
 | 7 | Should set-aside suggestions live forever? | **Decided and built** |
@@ -121,14 +121,18 @@ Three scenarios that could be *demonstrated*, not claimed:
 2. **The internet goes, and the people in the room keep sharing.** Two devices
    on the same local network pass a change between them with the broadband
    unplugged. A hosted service cannot: every change goes up to its server and
-   back down. **⚠️ Not yet tried.** It is the second half of the first
-   two-machine test, and if it fails, the README is wrong and must change.
+   back down. **✅ Shown 14 September 2026**, on two Windows machines on one
+   home wifi with the broadband unplugged: a change on one arrived on the
+   other. The two had met online first; see
+   [what-is-proven.md](what-is-proven.md#two-machines-and-then-no-internet)
+   for exactly what it does and does not show.
 3. **A professional contributes without their organisation joining anybody's
    system.** No data-sharing agreement with a platform, because there is no
    platform to share with.
 
-Until those are filmed, Holochain is a hypothesis about this problem rather
-than a demonstrated advantage.
+One of the three has now been watched happening; the other two have not. And
+none has been filmed, which is what would let somebody who was not in the room
+believe it.
 
 ## 5. What happens when the holder disappears?
 

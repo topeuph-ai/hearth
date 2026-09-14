@@ -111,6 +111,36 @@ conductors running side by side, each in its own window, on this machine.
 Invitations, joining, writing, suggestions, acknowledgement, leaving and
 rejoining all work.
 
+### Two machines, and then no internet
+
+**14 September 2026, the first time Hearth ran anywhere but one computer.**
+Two Windows machines — a desktop PC and a laptop — each with the released
+0.2.2 installer, on the same home wifi.
+
+**Online:** Margaret's circle was made on the PC. Dave, on the laptop, knocked
+at its door address, was let in, offered a suggestion, and the holder accepted
+it on the other machine.
+
+**Then with the internet taken away:** the broadband cable into the router was
+unplugged, leaving both machines on the local network and neither able to reach
+anything beyond it. "What matters most to me" was changed on the holder's PC,
+and the change appeared on Dave's laptop.
+
+That is the thing a hosted service cannot do. Its devices only know how to
+talk to its server; with the internet gone, the people in the room stop
+sharing. Here they did not.
+
+What this does **not** yet show, so nobody reads more into it:
+
+- **The two machines had already met online** before the internet went. Two
+  devices meeting for the very first time with no internet at all is untried.
+- **Both were on one local network.** Two machines on different networks,
+  with no internet between them, cannot reach each other and nothing claims
+  they can.
+- **Nobody restarted the app while offline.** Whether a device finds the other
+  again after a restart with no internet is untried.
+- **Two machines, not twenty.** Nothing here is evidence about scale.
+
 ### It conforms to the standard it claims
 
 Checked field by field against the PRSB About Me JSON. See
@@ -120,37 +150,18 @@ Checked field by field against the PRSB About Me JSON. See
 
 ## Built, but not proven
 
-### Two machines have never run this
+### Two machines across the internet, in different places
 
-**This is the most important line on the page.**
+**Two machines on one home network now work, online and offline** — see
+[above](#two-machines-and-then-no-internet). What has not been tried is two
+machines in different buildings, on different networks, finding each other
+across the internet through the bootstrap and relay servers. Every piece that
+needs is in the build, and that is the next thing worth watching happen.
 
-The app is built to find its peers over the internet, and every piece it needs
-is there: it ships with Holochain inside it, it points at a bootstrap server
-that does rendezvous only and holds no data, and the flags that make it work
-across machines have been found and tested as far as they can be tested from a
-single computer.
+### Nobody outside the project has installed a release
 
-**But no second machine has ever run a node. The reason is money, not
-confidence.** There is one Windows machine here. The other laptop is a
-Chromebook, which cannot run it. Renting a Windows host for an afternoon, or
-buying a second machine, is not a technical problem — it is simply not free, and
-this project is funded by nobody.
-
-So the claim "install it on two machines and they find each other" is a claim
-about the design and about what the code contains. **It is not a claim anybody
-has watched happen.** It is the single thing most worth a reviewer's time,
-because it is cheap for anybody with two computers and impossible here.
-
-What *has* been established from one machine: multiple conductors on one host
-find each other and sync; the bootstrap server is reachable and is not a data
-path; and the specific failure caused by antivirus HTTPS interception has been
-diagnosed and documented, because it happened here and cost a day.
-
-### No release has ever been published
-
-The installer builds from source, and has been built and installed on this
-machine. Nobody has ever downloaded one. Until there is a release, "try it
-yourself" is an invitation nobody can accept.
+Releases are published and downloadable. Nobody but the author is known to
+have installed one.
 
 ### Joining a circle can take about ninety seconds
 
@@ -233,9 +244,10 @@ expect it to have.
 
 ## What we would want help with, in order
 
-1. **Two machines.** Somebody with two computers running the installer and
-   saying what happened. The cheapest possible thing to do, and the largest
-   answer it is possible to get.
+1. **Two machines in different places.** Two on one home network work, online
+   and offline. Somebody in another building installing the release and joining
+   a circle across the internet is the next largest answer it is possible to
+   get.
 2. **A read of the cryptography and the validation callbacks** by somebody who
    has written Holochain before, looking for the class of mistake that tests
    written by the author will never find.

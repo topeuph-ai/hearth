@@ -148,17 +148,16 @@ exactly as it was. The longer explanation is in
 
 ## The one thing this project most needs
 
-**Two computers have never run this.**
+**Two computers have run this — and kept working with the internet unplugged.**
 
-Every part needed to work across the internet is in the build, and several
-copies running on one machine do find each other. But there is one Windows
-machine here, the other laptop is a Chromebook, and renting a host costs money.
+On 14 September 2026, a desktop and a laptop on the same home wifi, each with
+the 0.2.2 release: somebody joined a circle through its door, offered a
+suggestion and had it accepted. Then the broadband was unplugged, the record
+was changed on one machine, and the change arrived on the other.
 
-So "install it on two machines and they find each other" is a claim about what
-the code contains. **It is not something anybody has watched happen.**
-
-If you have two computers, that is half an hour that would tell this project
-more than anything else could. See
+Not yet tried: two machines in different places, finding each other across the
+internet. If you are somewhere else and have a Windows computer, that is the
+half hour that would tell this project the most. See
 [what is proven and what is not](docs/what-is-proven.md), which is the honest
 inventory and the page to trust if anything here sounds more finished than it
 is.
@@ -289,12 +288,12 @@ in [docs/building-it.md](docs/building-it.md).
 Two laptops and a phone. A person, their daughter, a nurse.
 
 The daughter writes something. It appears on the nurse's screen. **Take the
-internet away and keep the local network** — it should carry on working. Take a
+internet away and keep the local network** — it carries on working. Take a
 device out of the room, change something, bring it back — it catches up.
 
-**⚠️ Not yet shown.** Nothing has been tried on two real machines, and whether
-two devices keep reaching each other with the internet gone is exactly what the
-first two-machine test is for. Until then that sentence is a claim.
+The first half of that was shown on two real machines on 14 September 2026.
+Taking a device away and bringing it back has not been tried on two machines
+yet.
 
 > There is no account and no company holding the record. If I am hit by a bus
 > tomorrow, nobody's circle depends on me.
