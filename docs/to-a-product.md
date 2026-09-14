@@ -876,6 +876,45 @@ decision.
 machines when there is time; do not ship it to anybody until upstream Holochain
 has it or the trade-off has been decided deliberately.
 
+### Captured, not planned: phones in the same room
+
+Ceri's idea, 14 September 2026: people with no internet connecting by
+proximity — a phone hotspot, or Bluetooth.
+
+**A phone's personal hotspot probably needs no new code.** Devices that join a
+hotspot are on a small local network even with no mobile data, which is the
+same kind of network as home wifi. If local discovery works on home wifi, a
+nurse's phone hotspot in a house with no broadband should do the same job.
+Worth trying straight after the home wifi test passes.
+
+**Bluetooth inside Holochain would be a new transport.** Holochain moves data
+over ordinary IP connections through its iroh transport; Bluetooth is not one.
+kitsune2 lets transports be swapped, so it is possible in principle, but it is
+specialist Rust work, different on Android and iPhone (both restrict Bluetooth
+heavily, especially in the background), and it would need maintaining through
+every Holochain upgrade. Speed is not the obstacle: an About Me record is a few
+pages of text. It belongs with the Holochain community rather than in Hearth.
+Related thinking upstream:
+[kitsune2 #593](https://github.com/holochain/kitsune2/issues/593), an
+experiment in store-and-forward for rarely connected peers.
+
+**The app itself can use Bluetooth — for introductions, not for the record.**
+Ceri's follow-up question was whether the app could take up the slack where
+Holochain cannot. Partly:
+
+- **Introducing devices: yes, and it fits.** Two phones touch, and over
+  Bluetooth — or a QR code — they swap "here is where to find me", doing the
+  job the internet bootstrap server does now. The sharing itself still travels
+  over a normal connection between them, shared wifi or a hotspot.
+- **Carrying the record around Holochain: no.** Every piece of a circle is
+  signed and checked against its rules by every device. Copies passed over
+  Bluetooth outside Holochain would skip the membrane, the checks and the
+  trail — a second, weaker sharing system beside the strong one. And as far as
+  is known Holochain gives an app no way to hand it somebody else's signed data
+  directly; confirm against the source before ruling that out completely.
+
+All of this waits for Hearth running on phones at all, which it does not yet.
+
 ### Separately: somebody always on
 
 An always-on member of the circle — an
