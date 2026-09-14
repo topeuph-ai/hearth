@@ -294,6 +294,40 @@ Before sending it to anybody, read the three Windows warnings in the
   need your own — and **changing those addresses after release splits the
   network in two**, so it is a decision to make before, not after.
 
+### One change Hearth makes to Kangaroo: one copy at a time
+
+**The desktop app is a clone of Kangaroo that is not kept in this repository,**
+so this change has to be made again by hand in a fresh clone, until it lives
+somewhere safer.
+
+Kangaroo with `systray: true` hides its window on close and keeps running, and
+has no single-instance lock — so opening the app again starts a second copy,
+which waits forever at "Starting lair keystore" because the first copy still
+holds the keys. Found on the first two-machine test.
+
+In `src/main/index.ts`, straight after
+`const KANGAROO_FILESYSTEM = KangarooFileSystem.connect(app, RUN_OPTIONS.profile);`:
+
+```ts
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  const window = MAIN_WINDOW ?? SPLASH_SCREEN_WINDOW;
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+});
+```
+
+After the filesystem is connected, because that is what points the data folder
+at the profile, and the lock is per data folder — so two profiles can still run
+side by side. Checked by starting the built app twice on one profile: the
+second copy exits by itself.
+
 ### After changing the zomes, clear the app's data
 
 **Kangaroo installs the app on first run only.** Rebuild with new code and it

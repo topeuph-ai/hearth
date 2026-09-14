@@ -148,12 +148,18 @@ exactly as it was. The longer explanation is in
 
 ## The one thing this project most needs
 
-**Two computers have run this — and kept working with the internet unplugged.**
+**Two computers have run this — and kept working with the internet unplugged,
+until they were restarted.**
 
 On 14 September 2026, a desktop and a laptop on the same home wifi, each with
 the 0.2.2 release: somebody joined a circle through its door, offered a
 suggestion and had it accepted. Then the broadband was unplugged, the record
 was changed on one machine, and the change arrived on the other.
+
+**Restarted with the internet still gone, they never found each other.**
+Holochain 0.7 forgets where other devices are when it stops, and relearns it
+from an internet server. Why, and what would fix it, is in
+[what is proven](docs/what-is-proven.md#two-machines-and-then-no-internet).
 
 Not yet tried: two machines in different places, finding each other across the
 internet. If you are somewhere else and have a Windows computer, that is the
@@ -291,7 +297,9 @@ The daughter writes something. It appears on the nurse's screen. **Take the
 internet away and keep the local network** — it carries on working. Take a
 device out of the room, change something, bring it back — it catches up.
 
-The first half of that was shown on two real machines on 14 September 2026.
+The first half of that was shown on two real machines on 14 September 2026 —
+for as long as nobody restarts. Restarting without the internet does not work
+yet.
 Taking a device away and bringing it back has not been tried on two machines
 yet.
 

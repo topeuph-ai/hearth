@@ -825,6 +825,71 @@ strand a record, and this cannot.
 
 ---
 
+## Finding each other without the internet
+
+**Found on the first two-machine test, 14 September 2026.** Two devices keep
+sharing when the internet goes, but restarted without it they never find each
+other. Stock Holochain 0.7 forgets its peers on stopping and relearns them
+from an internet bootstrap server; its addresses go through an internet relay;
+and it cannot look for devices on the local network. The reasoning, from the
+source, is in
+[what-is-proven.md](what-is-proven.md#two-machines-and-then-no-internet).
+
+This matters beyond the demonstration. A care home whose broadband fails
+keeps sharing until somebody restarts a laptop.
+
+### The answer already exists, as a field test
+
+**Lightningrod Labs — the team behind Moss — have built exactly this**, on
+Holochain 0.7.0: [holochain-0.7.0-mdns.2](https://github.com/lightningrodlabs/holochain/releases/tag/holochain-0.7.0-mdns.2),
+published 4 September 2026. In their words, "peers on the same LAN find and
+dial each other with the bootstrap server AND the relay unreachable". Each
+device announces itself on the local network and connects directly, with no
+server in the path. The announcement carries a fingerprint of the network,
+not its identity, so somebody else on the wifi learns that *some* Holochain
+app is present but not which one — which for a care record is the right
+answer. Its second fix was found in a two-machine field test, like ours.
+
+Where it stands, checked on GitHub rather than assumed:
+
+- **A field test, not a release.** Their own words: "Not a Holochain release
+  and not for general use", and it "network-partitions from stock Holochain
+  0.7 by design" — nodes running it cannot talk to nodes running ordinary
+  Holochain.
+- **Upstream is working towards it.** kitsune2 has an open issue,
+  [Design MDNS bootstrap with Iroh](https://github.com/holochain/kitsune2/issues/497),
+  and a Holochain core developer pointed to the Lightningrod Labs
+  implementation from it on 24 August 2026.
+- **Earlier Holochain had local discovery** through an mDNS library, and
+  Holochain's own issue about it ([#4527](https://github.com/holochain/holochain/issues/4527))
+  records that library as unmaintained and noisy on Windows. The new work uses
+  iroh's own local lookup instead.
+
+**What adopting it would take.** Every copy of Hearth would have to ship the
+same Holochain binary, because the field-test build cannot talk to stock
+Holochain. The desktop app can be pointed at a different binary, so that is a
+packaging change rather than a rewrite — but it means relying on a fork until
+upstream catches up, and it should be tried on the two machines before any
+decision.
+
+**Recommended:** watch the upstream issue; try the field-test build on the two
+machines when there is time; do not ship it to anybody until upstream Holochain
+has it or the trade-off has been decided deliberately.
+
+### Separately: somebody always on
+
+An always-on member of the circle — an
+[Edge Node](https://github.com/Holo-Host/edgenode), for instance, on a small
+box in the house — solves a different problem: changes reaching people when
+everybody else's device is switched off. On the internet it does nothing for a
+broadband cut. On the local network, beside a local bootstrap and relay server
+or local discovery, it would do both.
+
+**The trade-off to decide deliberately:** an always-on node holds the whole
+record and has to be let into the circle like any member. A box the family
+owns fits "no operator". A company running always-on nodes for many families
+would be holding their records, and would be an operator again.
+
 ## What this adds up to
 
 Roughly: **two hard problems (upgrades, encryption), two underestimated ones

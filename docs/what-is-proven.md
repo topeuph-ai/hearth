@@ -130,15 +130,46 @@ That is the thing a hosted service cannot do. Its devices only know how to
 talk to its server; with the internet gone, the people in the room stop
 sharing. Here they did not.
 
+**⚠️ But only while it was already running.** The same afternoon, both apps
+were restarted with the broadband still unplugged. Both opened, and they never
+found each other — left ten minutes, twice, with no error on either screen.
+
+Why, read in the Holochain 0.7.0 source rather than guessed:
+
+- **The list of where other devices are is kept in memory only.** Holochain
+  builds its networking on kitsune2's default setup, which uses
+  `MemPeerStoreFactory`. A restart forgets every peer, and the only way to
+  learn them again is to ask the bootstrap server — which is on the internet.
+- **Saving that list would not be enough.** Each entry is signed to expire
+  twenty minutes after it is made, and an expired one is refused. And a
+  device's address is *reach me through this relay server*, a server on the
+  internet; a direct path is only found once two devices are already talking.
+  That is why the connection made before the cable came out kept working, and
+  a fresh one after a restart could not be made.
+- **Stock Holochain 0.7 cannot look for devices on the local network.** The
+  transport's own documentation says there is no discovery service.
+
+So the accurate claim is: **Hearth keeps sharing through an internet cut while
+it is running. After a restart with no internet, devices cannot find each
+other** — not yet. What would change that is in
+[Finding each other without the internet](to-a-product.md#finding-each-other-without-the-internet).
+
+**A second fault, found in the same test and fixed.** Closing Hearth's window
+only hides it — it keeps running beside the clock so it can keep sharing — and
+opening it again started a second copy, which waited forever at "Starting lair
+keystore" because the first copy was still holding the keys. The desktop app
+now allows one copy per profile, and opening it again brings the window back.
+Checked by starting the built app twice: the second copy closed itself and
+nothing extra was left running. Not in a release yet.
+
 What this does **not** yet show, so nobody reads more into it:
 
 - **The two machines had already met online** before the internet went. Two
-  devices meeting for the very first time with no internet at all is untried.
+  devices meeting for the very first time with no internet at all is untried —
+  and after the restart result, expected to fail.
 - **Both were on one local network.** Two machines on different networks,
   with no internet between them, cannot reach each other and nothing claims
   they can.
-- **Nobody restarted the app while offline.** Whether a device finds the other
-  again after a restart with no internet is untried.
 - **Two machines, not twenty.** Nothing here is evidence about scale.
 
 ### It conforms to the standard it claims

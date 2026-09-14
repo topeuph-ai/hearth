@@ -20,7 +20,7 @@ removed them on purpose, and has to find social ones instead.
 | 1 | Why does everyone in the circle see everything? | **Open — a decision** |
 | 2 | Who has legitimate authority to act for the person? | Not a software question; stated, not solved |
 | 3 | What does "held by the person" actually mean? | Needs saying precisely |
-| 4 | What can Hearth do that RIX cannot? | **One of three shown** |
+| 4 | What can Hearth do that RIX cannot? | **One of three partly shown** |
 | 5 | What happens when the holder disappears? | Half-built |
 | 6 | What does an acknowledgement prove? | Answered below |
 | 7 | Should set-aside suggestions live forever? | **Decided and built** |
@@ -123,7 +123,9 @@ Three scenarios that could be *demonstrated*, not claimed:
    unplugged. A hosted service cannot: every change goes up to its server and
    back down. **✅ Shown 14 September 2026**, on two Windows machines on one
    home wifi with the broadband unplugged: a change on one arrived on the
-   other. The two had met online first; see
+   other. The two had met online first, and **after both were restarted with
+   the internet still gone they never found each other** — so this is shown
+   only for a cut that happens while the app is running. See
    [what-is-proven.md](what-is-proven.md#two-machines-and-then-no-internet)
    for exactly what it does and does not show.
 3. **A professional contributes without their organisation joining anybody's
