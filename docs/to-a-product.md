@@ -405,11 +405,10 @@ always been available by never endorsing anybody. What it adds is that refusing
 **reaches her**, so she can ask somebody else — which she does by pressing
 another name.
 
-### Decided, not built: two ways to remove somebody
+### Decided: two ways to remove somebody — one built
 
-Nothing in Hearth removes anybody from a circle today. Both of these are
-agreed and neither is built; the demo does not need them, and they are written
-down here so that the thinking is not lost.
+Both of these are agreed. Re-forming the circle is built; marking somebody as
+gone waits for the next version of the integrity zome.
 
 **Marking somebody as gone — the everyday one.** The holder writes a departure
 into the circle; every app that sees it stops listing that person, and *their
@@ -422,9 +421,9 @@ photograph. Somebody who sees it coming can make one, as they could with a
 paper file. And it does not stop the data continuing to arrive on their
 device, unseen — which is the reason the second option exists.
 
-**Re-forming the circle — the last resort.** A new circle without them, with
-the record carried across and the remaining members moved over by their own
-apps, which is buildable without touching the integrity zome. They are then
+**Re-forming the circle — the last resort. Built 14 September 2026.** A new
+circle without them, with the record carried across and the remaining members
+moved over by their own apps, without touching the integrity zome. They are then
 excluded by mathematics, and their copy is frozen on the day it happens.
 
 Why both, and in that order: a circle takes time to establish, and re-forming

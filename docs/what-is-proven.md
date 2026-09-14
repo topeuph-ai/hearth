@@ -44,7 +44,7 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**66 tests, run in CI on every push**, in
+**67 tests, run in CI on every push**, in
 [`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
 on the ordering rule. They are written as attacks rather than as feature checks.
 Among them:

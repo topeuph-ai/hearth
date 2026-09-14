@@ -1038,6 +1038,24 @@ pub enum Signal {
     /// They have said whether they are willing. Sent only to the holder,
     /// who is the one who has to appoint somebody else if they are not.
     Answered { by: AgentPubKey, willing: bool },
+    /// The holder has moved this circle somewhere new, and this is your way
+    /// in. Sent only to the people moving, and never to anybody left behind.
+    ///
+    /// See `tell_them_it_moved`, and the check in `recv_remote_signal` that
+    /// only the holder may send it.
+    Moved {
+        by: AgentPubKey,
+        /// An invitation to the new circle, signed over the recipient's own
+        /// key, as the one line of text the app passes around anyway.
+        invitation: String,
+        /// Why, in the holder's words. May be empty. Never sent to the person
+        /// the move leaves behind, because they are never sent anything.
+        reason: String,
+        /// What the holder's screen called the person removed. What the
+        /// people moving are told, rather than the mechanics of the move.
+        #[serde(default)]
+        removed: String,
+    },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -1093,14 +1111,90 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Knocked { by, .. }
         | Signal::Admitted { by }
         | Signal::Appointed { by, .. }
-        | Signal::Answered { by, .. } => by,
+        | Signal::Answered { by, .. }
+        | Signal::Moved { by, .. } => by,
     };
 
     if claimed != &caller {
         return Ok(());
     }
 
+    /*
+     * Only the holder can move a circle.
+     *
+     * Every other signal here is a nudge about something written in the
+     * circle, and the worst a false one can do is make the screen look again.
+     * This one is different: it takes somebody's app to a new network, carries
+     * the name of the person across, and switches the old circle off. Accepted
+     * from any member, it would let one of them lead everybody else into a
+     * circle of their own making.
+     *
+     * So it is refused unless the caller is the person whose circle this is,
+     * which is in the circle's identity and cannot be claimed. The interface
+     * checks the other half: that the new circle is hers too.
+     */
+    if let Signal::Moved { .. } = &signal {
+        match membrane()? {
+            Membrane::Founder(founder, _) if founder == caller => {}
+            _ => return Ok(()),
+        }
+    }
+
     emit_signal(signal)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MovedInput {
+    /// Who to tell, as base64 text.
+    pub to: String,
+    /// Their invitation to the new circle, as text.
+    pub invitation: String,
+    /// Why, in the holder's words. May be empty.
+    pub reason: String,
+    /// Who was removed, by name.
+    #[serde(default)]
+    pub removed: String,
+}
+
+/// Tell one member that this circle has moved, and hand them their way in.
+///
+/// Called on the **old** circle, which is the one place the holder and the
+/// people moving can still reach each other. Sent to one person at a time,
+/// so that nobody left behind is ever sent anything — not the invitation,
+/// not the reason, and not the fact that there was a move.
+///
+/// A signal, not an entry, for the same reason. An entry would sit in the old
+/// circle where the person removed can see that something was written.
+///
+/// A signal reaches only somebody online, and says nothing about whether it
+/// arrived. So the interface sends it again, every so often, until that person
+/// turns up in the new circle — which is the only proof of arrival there is.
+#[hdk_extern]
+pub fn tell_them_it_moved(input: MovedInput) -> ExternResult<()> {
+    let to = AgentPubKey::try_from(input.to.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+    let me = agent_info()?.agent_initial_pubkey;
+
+    // Their apps would drop it anyway. Saying so here turns a silent nothing
+    // into a sentence.
+    match membrane()? {
+        Membrane::Founder(founder, _) if founder == me => {}
+        _ => {
+            return Err(wasm_error!(
+                "Only the person who holds a circle can move it"
+            ))
+        }
+    }
+
+    send_remote_signal(
+        Signal::Moved {
+            by: me,
+            invitation: input.invitation,
+            reason: input.reason,
+            removed: input.removed,
+        },
+        vec![to],
+    )
 }
 
 // ---------------------------------------------------------------------------

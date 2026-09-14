@@ -695,6 +695,58 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     );
 }
 
+/// **Why the appointment has to travel with the invitation.**
+///
+/// The door checks the second agreement only against the appointment an
+/// invitation names. Take the name off and there is nothing to check it
+/// against, so the same forged invitation the test above refuses walks in.
+///
+/// That is the rule as written, not a fault in it: an invitation naming no
+/// appointment is the holder admitting somebody on her own, which is allowed
+/// and meant to be seen. The fault was in the app, whose waiting room packed
+/// invitations into a line of text and left the appointment out — so every
+/// invitation collected from a door arrived looking like that, including the
+/// honest ones two people had agreed to. This pins down what that cost.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invitation_that_loses_its_appointment_is_not_checked_for_a_second_yes() {
+    let (conductor, alice_cell, _ruth_lobby, dna, bob, _appointment) =
+        a_circle_that_asks_two_people().await;
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
+        .await;
+    assert!(
+        bundle.invitation.appointment.is_some(),
+        "the invitation leaves the zome naming the appointment"
+    );
+
+    let forged: Signature = conductor
+        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .await;
+
+    // What the waiting room used to hand over: both signatures, no appointment.
+    let stripped = Invitation {
+        signature: bundle.invitation.signature.clone(),
+        seconded: Some(forged),
+        appointment: None,
+    };
+
+    assert!(
+        join(&conductor, "bob", &bob, &dna, Some(&stripped))
+            .await
+            .is_ok(),
+        "with the appointment gone the second signature is never looked at, \
+         so the holder signing twice gets somebody in"
+    );
+}
+
 /// A circle that asks nobody carries on working exactly as it did.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_circle_with_no_second_yes_is_unchanged() {

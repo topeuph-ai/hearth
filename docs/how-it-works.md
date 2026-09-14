@@ -665,6 +665,35 @@ invitations and joining all exist and all live in the coordinator, so this is
 buildable without a migration — which makes it a very different proposition
 from most of what is left on this list.
 
+**Built, 14 September 2026.** As set out above, with these decisions of
+Ceri's:
+
+- **Acknowledgements and decided suggestions come across as history**, written
+  down on each device at the moment it moves: "Dr Patel read this before the
+  circle moved, on 3 September". A reading stays beside the record until the
+  record is next changed, as it would have in the old circle. Suggestions not
+  yet decided are offered again by the person who made them, in their own
+  name, because they are the only person who can sign them.
+- **The second person's agreement is carried across**, unless they are the
+  person removed. The holder's app asks the same person again in the new
+  circle, and if they had agreed in the old one, their app agrees again on
+  its own and tells them so. If they are the one removed, the holder is warned
+  before the move that she will need to ask somebody else.
+- **The people moved are told who was removed, by whom, and why** — "Margaret
+  has removed Dave Smythe from the circle", and the reason if she gave one.
+  Not that the circle moved: they cannot invite anybody, so a new door address
+  is nothing to them, and the move is only how removal works.
+
+Only the holder can send the message that moves people, and every member's
+own app refuses it from anybody else — tested against running conductors:
+another member was refused, the member moving received it, the member removed
+received nothing.
+
+The holder's app repeats the message once a minute, while it is open, to
+anybody not yet in the new circle. Somebody who never introduced themselves in
+the old circle is not moved, because nothing on the holder's device knows they
+are there.
+
 What it does **not** do, and nothing can: get back what they have already
 read.
 

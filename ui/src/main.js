@@ -13,7 +13,11 @@
  *    every time it appears below.
  */
 
-import { AppWebsocket, encodeHashToBase64 } from "@holochain/client";
+import {
+  AppWebsocket,
+  decodeHashFromBase64,
+  encodeHashToBase64,
+} from "@holochain/client";
 // Records arrive with their entries still packed. Holochain speaks msgpack on
 // the wire and does not unpack app entries for you.
 import { decode } from "@msgpack/msgpack";
@@ -80,7 +84,7 @@ function looksLikeARoomAddress(text) {
 }
 
 function invitationToToken(bundle) {
-  const seconded = bundle.invitation.seconded;
+  const { seconded, appointment } = bundle.invitation;
   return btoa(
     JSON.stringify({
       ...bundle,
@@ -90,6 +94,16 @@ function invitationToToken(bundle) {
         // to a circle that asks for one, is not a weak invitation — it is an
         // unfinished one.
         seconded: seconded ? bytesToBase64(seconded) : null,
+        /*
+         * Which appointment the second agreement was given under.
+         *
+         * Without it the door has nothing to check the second signature
+         * against, and lets the invitation in on the holder's signature alone
+         * — so every invitation collected from a waiting room arrived unchecked,
+         * even ones two people had genuinely agreed to. Absent (null) is still
+         * right for an invitation made before anybody was appointed.
+         */
+        appointment: appointment ? encodeHashToBase64(appointment) : null,
       },
     }),
   );
@@ -97,6 +111,7 @@ function invitationToToken(bundle) {
 
 function tokenToInvitation(token) {
   const parsed = JSON.parse(atob(token.trim()));
+  const { appointment } = parsed.invitation;
   return {
     ...parsed,
     invitation: {
@@ -104,6 +119,9 @@ function tokenToInvitation(token) {
       seconded: parsed.invitation.seconded
         ? base64ToBytes(parsed.invitation.seconded)
         : null,
+      // Tokens made before this was carried have no appointment at all, and
+      // still read — as the holder's own invitation, which is what they were.
+      appointment: appointment ? decodeHashFromBase64(appointment) : null,
     },
   };
 }
@@ -909,16 +927,26 @@ function sayWhichAnswersRunLong() {
   });
 }
 
-function renderReaders(records) {
+function renderReaders(records, earlier = []) {
   const section = $("readers");
   const list = $("readers-list");
   list.replaceChildren();
 
-  if (!records.length) {
+  if (!records.length && !earlier.length) {
     section.hidden = true;
     return;
   }
   section.hidden = false;
+
+  // Read before the circle moved, while the words were the same as now.
+  for (const item of earlier) {
+    const li = document.createElement("li");
+    li.textContent =
+      `${item.who} read this before the circle moved` +
+      (item.when ? `, on ${new Date(item.when).toLocaleDateString("en-GB")}` : "") +
+      `. Role claimed: ${item.role}`;
+    list.append(li);
+  }
 
   for (const r of records) {
     const entry = entryOf(r);
@@ -1081,6 +1109,18 @@ async function drawTheCircle() {
   $("check-again").hidden = amHolder || written;
 
 
+  sayItMovedIfItDid();
+
+  /*
+   * Who read it before the move, for as long as it is still the same words.
+   *
+   * An acknowledgement is of one version. The copy that opened this circle is
+   * the words they read, so their reading still stands beside it; the first
+   * change after the move makes it a different version, and it stops being
+   * shown, exactly as an acknowledgement in the old circle would have.
+   */
+  const unchangedSinceTheMove =
+    current?.record?.signed_action?.hashed?.content?.data?.type === "Create";
   renderReaders(
     written
       ? await orNothingYet(
@@ -1092,6 +1132,7 @@ async function drawTheCircle() {
           [],
         )
       : [],
+    written && unchangedSinceTheMove ? historyFor(circle.cellId)?.readers ?? [] : [],
   );
 
   await loadMembers();
@@ -1609,6 +1650,10 @@ const LOOK_AGAIN_EVERY = 20000;
 
 function watchForArrivals() {
   setInterval(async () => {
+    // Before the hidden check: somebody who moved a circle and then looked at
+    // another window still needs the stragglers told.
+    carryOnMoving().catch((error) => console.error(error));
+
     if (document.hidden) return;
 
     /*
@@ -1697,6 +1742,9 @@ async function start() {
     console.error("Could not look for an answer at a door.", error);
   }
 
+  // A move that was not finished when the app last closed.
+  carryOnMoving().catch((error) => console.error(error));
+
   watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
@@ -1741,6 +1789,14 @@ async function start() {
     if (payload?.kind === "Admitted") {
       announce("You have been let in.");
       await lookForMyAdmission();
+      return;
+    }
+    // From a circle that may not be on screen, and is about to not exist
+    // here at all. See followTheMove.
+    if (payload?.kind === "Moved") {
+      await followTheMove(signal?.value?.cell_id, payload).catch((error) =>
+        console.error("Could not follow a circle that moved.", error),
+      );
       return;
     }
 
@@ -1878,7 +1934,13 @@ function renderSuggestions() {
    * anything in it.
    */
   markSuggestionsOnTheRecord();
-  $("suggestions-section").hidden = suggestions.length === 0;
+
+  // What was decided before the circle moved, kept as history. See
+  // historyFor, and why these are words rather than the entries themselves.
+  const earlier = historyFor(circle?.cellId)?.suggestions ?? [];
+  for (const item of earlier) list.append(earlierSuggestionCard(item));
+
+  $("suggestions-section").hidden = suggestions.length === 0 && earlier.length === 0;
 }
 
 /*
@@ -2197,6 +2259,8 @@ async function readWhoAgrees() {
   // back to press something again.
   await deliverAnythingAgreed();
 
+  if (await carryTheAgreementAcross()) return;
+
   askTheQuestionIfItIsMine();
 }
 
@@ -2417,6 +2481,11 @@ function renderPeople() {
     // the whole of changing your mind.
     if (amHolder && key !== asText(me) && !theirs) {
       li.append(askThem(key, who));
+    }
+
+    // Removing somebody means moving everybody else. See moveTheCircle.
+    if (amHolder && key !== asText(me)) {
+      li.append(removeThem(key, who));
     }
 
     list.append(li);
@@ -2845,6 +2914,10 @@ async function loadCircles() {
     // A circle taken off this device is disabled, not deleted, so the
     // conductor still lists it. It should not be on her screen.
     .filter((c) => c.enabled !== false)
+    // A circle she has moved away from stays switched on until everybody has
+    // followed, because it is the only place she can still reach them. It is
+    // not somewhere she should be able to wander back into.
+    .filter((c) => !movingFrom(c.cell_id))
     // What this device calls it wins over the name the cell was made with,
     // which cannot be changed afterwards.
     .map((c) => ({
@@ -4261,4 +4334,589 @@ async function collectFrom(roomCell) {
       : `You are in ${label}'s circle.`,
   );
   await loadCircle();
+}
+
+// ---------------------------------------------------------------------------
+// Moving a circle: removing somebody by carrying everybody else across
+// ---------------------------------------------------------------------------
+//
+// Nothing can take a person out of a circle they are already in. There is no
+// operator to reach across and do it, and the network cannot tell one reader
+// from another. What can be done is a new circle without them.
+//
+// That used to mean everybody joining again by hand. Here it means one press:
+// the holder's app makes the new circle, copies the record, and hands every
+// remaining member an invitation through the old circle, where she can still
+// reach them. Their apps join, carry the name across, and switch the old one
+// off. Nobody types anything, and the person removed is sent nothing at all.
+//
+// Coordinator and interface only. The frozen integrity zome is untouched, so
+// this is also the machinery a future version will need to carry real circles
+// onto new rules. See docs/how-it-works.md, "When re-forming is the right
+// answer".
+
+const decodeCellId = ([dna, agent]) => [
+  decodeHashFromBase64(dna),
+  decodeHashFromBase64(agent),
+];
+const encodeCellId = (cellId) => [asText(cellId[0]), asText(cellId[1])];
+
+const historyKey = (cellId) => `hearth:history:${asText(cellId?.[0])}`;
+const movingKey = (cellId) => `hearth:moving:${asText(cellId?.[0])}`;
+const movedNoteKey = (cellId) => `hearth:moved-note:${asText(cellId?.[0])}`;
+const carryAgreementKey = (cellId) => `hearth:carry-agreement:${asText(cellId?.[0])}`;
+
+function readStored(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function store(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // A convenience, not a rule. The move itself does not depend on it.
+  }
+}
+
+/** Whether this device is part-way through moving everybody out of a circle. */
+const movingFrom = (cellId) => Boolean(readStored(movingKey(cellId)));
+
+/*
+ * What happened before the move, kept as history.
+ *
+ * Acknowledgements and suggestions are signed by the people who wrote them, on
+ * their own chains, in the old circle. A new circle cannot hold them as
+ * theirs — only they could sign them again, and a professional who read the
+ * record once is not going to be asked to read it twice because somebody else
+ * was removed.
+ *
+ * So each device writes down what it could see, in words, at the moment it
+ * moves: who read it and what they said they were, what was offered and what
+ * became of it. A record of what happened rather than the signed thing itself,
+ * and shown as exactly that. The originals are still in the old circle, which
+ * is switched off on this device and not deleted.
+ */
+const historyFor = (cellId) => (cellId ? readStored(historyKey(cellId)) : null);
+
+async function namesIn(cellId) {
+  const records = await orNothingYet(call("get_members", null, cellId), []);
+  const names = new Map();
+  for (const r of records) {
+    const entry = entryOf(r);
+    if (entry) names.set(asText(authorOf(r)), entry);
+  }
+  return names;
+}
+
+function nameFrom(names, key) {
+  if (key === asText(me)) return "You";
+  const who = names.get(key);
+  if (!who?.name?.trim()) return "Someone who was in the circle";
+  return who.relationship?.trim() ? `${who.name} (${who.relationship})` : who.name;
+}
+
+const writtenAt = (record) => {
+  const raw = record?.signed_action?.hashed?.content?.header?.timestamp;
+  return raw === undefined || raw === null ? null : Number(raw) / 1000;
+};
+
+/**
+ * Everything worth carrying out of a circle, read before it is switched off.
+ *
+ * Returns the history to keep, and this person's own suggestions that nobody
+ * has decided on yet. Those are theirs to sign again, so they are offered
+ * again in the new circle rather than frozen as history nobody can act on.
+ */
+async function historyOf(cellId, names) {
+  const readers = [];
+  const originals = await orNothingYet(call("get_circle_about_me", null, cellId), []);
+  if (originals[0]) {
+    const current = await orNothingYet(
+      call("get_current_about_me", originals[0], cellId),
+      null,
+    );
+    if (hasBeenWritten(entryOf(current?.record))) {
+      const acks = await orNothingYet(
+        call("get_acknowledgements", current.record.signed_action.hashed.hash, cellId),
+        [],
+      );
+      for (const r of acks) {
+        const entry = entryOf(r);
+        if (!entry) continue;
+        readers.push({
+          who: nameFrom(names, asText(authorOf(r))),
+          role: entry.role,
+          when: writtenAt(r),
+        });
+      }
+    }
+  }
+
+  const suggestions = [];
+  const unfinished = [];
+  for (const item of await orNothingYet(call("get_suggestions", null, cellId), [])) {
+    const entry = entryOf(item.suggestion);
+    if (!entry) continue;
+    const author = asText(authorOf(item.suggestion));
+    const outcome = entryOf(item.outcome);
+
+    if (!outcome) {
+      if (author === asText(me)) {
+        unfinished.push({ field: entry.field, text: entry.text, because: entry.because ?? "" });
+      }
+      continue;
+    }
+
+    const [, label] = FIELD_LABELS[entry.field] ?? [null, entry.field];
+    suggestions.push({
+      who: nameFrom(names, author),
+      label,
+      text: entry.text,
+      because: entry.because ?? "",
+      accepted: Boolean(outcome.accepted),
+      when: writtenAt(item.suggestion),
+    });
+  }
+
+  return { history: { readers, suggestions }, unfinished };
+}
+
+function earlierSuggestionCard(item) {
+  const li = document.createElement("li");
+  li.className = "suggestion";
+
+  const who = document.createElement("p");
+  who.className = "who";
+  who.textContent = `${item.who} suggested this for “${item.label}”, before the circle moved`;
+  li.append(who);
+
+  const text = document.createElement("p");
+  text.textContent = item.text;
+  li.append(text);
+
+  if (item.because?.trim()) {
+    const because = document.createElement("p");
+    because.className = "because";
+    because.textContent = item.because;
+    li.append(because);
+  }
+
+  const decided = document.createElement("p");
+  decided.className = "outcome";
+  decided.textContent = item.accepted ? "Added to the record." : "Set aside.";
+  li.append(decided);
+
+  return li;
+}
+
+// ---------------------------------------------------------------------------
+// The holder's side
+// ---------------------------------------------------------------------------
+
+let removing = null; // { key, who } while the question is on screen
+let movingNow = false;
+
+function removeThem(key, who) {
+  const actions = document.createElement("div");
+  actions.className = "actions";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "linky";
+  button.textContent = `Remove ${who} from the circle`;
+  button.addEventListener("click", () => {
+    removing = { key, who };
+    const whose = personName();
+    $("really-move-question").textContent = whose
+      ? `Remove ${who} from ${whose}'s circle?`
+      : `Remove ${who} from this circle?`;
+    $("really-move-whom").textContent = who;
+    $("really-move-seconder").hidden = whoAgrees?.agrees !== key;
+    $("move-reason").value = "";
+    $("really-move").showModal();
+    $("stay-together").focus();
+  });
+
+  actions.append(button);
+  return actions;
+}
+
+$("stay-together").addEventListener("click", () => {
+  removing = null;
+  $("really-move").close();
+});
+
+$("move-for-real").addEventListener("click", async () => {
+  const leaving = removing;
+  const reason = $("move-reason").value.trim();
+  $("really-move").close();
+  removing = null;
+  if (!leaving) return;
+
+  if (movingNow) {
+    announce("A move is already under way. Wait for it to finish first.");
+    return;
+  }
+
+  movingNow = true;
+  announce("Moving the circle. This can take a minute.");
+  try {
+    await moveTheCircle(leaving.key, leaving.who, reason);
+    announce(
+      `${leaving.who} has been removed. Everybody else is being moved across, ` +
+        `and nobody has to do anything.`,
+    );
+  } catch (error) {
+    problem(error);
+  } finally {
+    movingNow = false;
+  }
+});
+
+/**
+ * Make the new circle, copy the record into it, and hand everybody else a way in.
+ *
+ * The order matters in one place. Invitations are made before anybody is
+ * asked to agree to who joins in the new circle, because an invitation made
+ * afterwards would need that second agreement — and the people being carried
+ * across were agreed to already, in the circle they are leaving.
+ */
+async function moveTheCircle(removedKey, removedName, reason) {
+  const from = circle.cellId;
+  const entry = entryOf(record?.current?.record);
+  if (!entry) {
+    throw new Error(
+      "The record has not arrived on this device yet, so there is nothing to " +
+        "carry across. Try again in a moment.",
+    );
+  }
+
+  // Everything read before anything is made, while this circle is still the
+  // one on screen and everything below still describes it.
+  const label = labelFor(from, $("circle-heading").textContent.trim() || "Circle");
+  const everyone = new Map(members);
+  const agreeing = whoAgrees;
+  const mine = everyone.get(asText(me));
+  const oldRoom = roomFor(from);
+  const { history } = await historyOf(from, everyone);
+
+  const made = await call("create_circle", {
+    founder: asText(me),
+    name: label,
+    network_seed: crypto.randomUUID(),
+    requires_second_yes: circleAsksTwo,
+  });
+  const to = made.cell_id;
+  markAsOwnRecord(to, isOwnRecord(from));
+  setLabelFor(to, label);
+  store(historyKey(to), history);
+
+  // A new door. The old address leads to a room nobody answers any more.
+  try {
+    const room = { holder: asText(me), seed: crypto.randomUUID(), about: entry.display_name };
+    await call("enter_waiting_room", {
+      holder: room.holder,
+      network_seed: room.seed,
+      name: `${label} — door`,
+    });
+    rememberRoom(to, room);
+  } catch (error) {
+    console.error("Could not open a waiting room for the new circle.", error);
+  }
+
+  await call(
+    "create_about_me",
+    {
+      display_name: entry.display_name ?? "",
+      what_matters_to_me: entry.what_matters_to_me ?? "",
+      people_who_matter: entry.people_who_matter ?? "",
+      how_to_communicate_with_me: entry.how_to_communicate_with_me ?? "",
+      my_wellness: entry.my_wellness ?? "",
+      please_do_and_please_do_not: entry.please_do_and_please_do_not ?? "",
+      how_to_support_me: entry.how_to_support_me ?? "",
+      also_worth_knowing: entry.also_worth_knowing ?? "",
+      supported_to_write_this_by: entry.supported_to_write_this_by ?? "",
+    },
+    to,
+  );
+
+  if (mine?.name?.trim()) {
+    await call(
+      "introduce_myself",
+      { name: mine.name, relationship: mine.relationship ?? "" },
+      to,
+    );
+  }
+
+  const invitations = [];
+  for (const [key, who] of everyone) {
+    if (key === asText(me) || key === removedKey) continue;
+    const bundle = await call("invite", { invitee: key, name: who.name ?? "" }, to);
+    invitations.push({ key, name: who.name ?? "", token: invitationToToken(bundle) });
+  }
+
+  // Carried across, unless they are the one being removed. Their app agrees
+  // again on its own if they had agreed in the old circle.
+  if (agreeing && agreeing.agrees !== removedKey) {
+    await call("appoint", agreeing.agrees, to);
+  }
+
+  store(movingKey(from), {
+    from: encodeCellId(from),
+    to: encodeCellId(to),
+    reason,
+    removed: removedName,
+    invitations,
+  });
+
+  // The old door, closed on this device. Nobody is there to answer it.
+  if (oldRoom) {
+    const roomCell = (await waitingRoomCells()).find(
+      (r) => r.holder === oldRoom.holder && r.seed === oldRoom.seed,
+    );
+    if (roomCell) {
+      await call("leave_circle", roomCell.cellId[0]).catch((error) =>
+        console.error(error),
+      );
+    }
+    forgetRoom(from);
+  }
+
+  // Tell everybody now, rather than on the next tick.
+  lastTold.delete(asText(from[0]));
+  await carryOnMoving();
+
+  forgetTheCircle();
+  await loadCircles();
+  const item = circles.find((c) => asText(c.cellId[0]) === asText(to[0]));
+  if (item) await openCircle(item);
+}
+
+/*
+ * Keep telling the people who have not moved yet.
+ *
+ * A signal reaches only somebody whose app is open, and says nothing about
+ * whether it arrived. The only proof that somebody got the message is that
+ * they are in the new circle. So until they are, they are told again, once a
+ * minute, for as long as the holder's app is open.
+ *
+ * When everybody has arrived, the old circle is switched off here too. The
+ * person removed is left in a circle nobody else is in any more.
+ */
+const TELL_AGAIN_EVERY = 60_000;
+const lastTold = new Map(); // old circle dna -> when
+
+async function carryOnMoving() {
+  let keys;
+  try {
+    keys = Object.keys(localStorage).filter((k) => k.startsWith("hearth:moving:"));
+  } catch {
+    return;
+  }
+
+  for (const storageKey of keys) {
+    const plan = readStored(storageKey);
+    if (!plan?.from || !plan?.to) continue;
+
+    const dna = storageKey.slice("hearth:moving:".length);
+    if (Date.now() - (lastTold.get(dna) ?? 0) < TELL_AGAIN_EVERY) continue;
+    lastTold.set(dna, Date.now());
+
+    const from = decodeCellId(plan.from);
+    const to = decodeCellId(plan.to);
+
+    const arrived = await namesIn(to);
+    const stillToCome = plan.invitations.filter((i) => !arrived.has(i.key));
+
+    if (stillToCome.length === 0) {
+      await call("leave_circle", from[0]).catch((error) => console.error(error));
+      forgetWhatThisDeviceKnew(from);
+      store(storageKey, null);
+      lastTold.delete(dna);
+      continue;
+    }
+
+    for (const person of stillToCome) {
+      await call(
+        "tell_them_it_moved",
+        {
+          to: person.key,
+          invitation: person.token,
+          reason: plan.reason ?? "",
+          removed: plan.removed ?? "",
+        },
+        from,
+      ).catch((error) => console.error(error));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Everybody else's side
+// ---------------------------------------------------------------------------
+
+const following = new Set();
+
+/**
+ * The holder has moved this circle. Go with it.
+ *
+ * The zome has already refused this from anybody but the holder. What is
+ * checked here is the other half: that the circle being moved *to* is hers as
+ * well, so nobody can be led anywhere else.
+ */
+async function followTheMove(fromCellId, payload) {
+  if (!fromCellId) return;
+  const key = asText(fromCellId[0]);
+  if (following.has(key)) return;
+  following.add(key);
+
+  try {
+    const bundle = tokenToInvitation(payload.invitation);
+    if (bundle.founder !== asText(payload.by)) return;
+
+    const label = labelFor(fromCellId, bundle.about?.trim() || "Their circle");
+
+    // Read before the old circle is switched off, which is the last chance.
+    const names = await namesIn(fromCellId);
+    const mine = names.get(asText(me));
+    const agreeingThere = await orNothingYet(
+      call("who_agrees_here", null, fromCellId),
+      null,
+    );
+    const { history, unfinished } = await historyOf(fromCellId, names);
+
+    const here = await circleAlreadyHere(bundle);
+    let to;
+    if (here?.enabled) {
+      to = here.cellId;
+    } else if (here) {
+      to = (await call("rejoin_circle", here.cellId[0])).cell_id;
+    } else {
+      to = (
+        await call("join_circle", {
+          founder: bundle.founder,
+          name: label,
+          network_seed: bundle.network_seed,
+          invitation: bundle.invitation,
+          requires_second_yes: Boolean(bundle.requires_second_yes),
+          seconder: bundle.seconder ?? null,
+        })
+      ).cell_id;
+
+      if (mine?.name?.trim()) {
+        await call(
+          "introduce_myself",
+          { name: mine.name, relationship: mine.relationship ?? "" },
+          to,
+        );
+      }
+      for (const suggestion of unfinished) {
+        await call("suggest", suggestion, to).catch((error) => console.error(error));
+      }
+    }
+
+    setLabelFor(to, label);
+    markAsOwnRecord(to, false);
+    store(historyKey(to), history);
+    store(movedNoteKey(to), {
+      reason: payload.reason ?? "",
+      removed: payload.removed ?? "",
+      // Who did it, by the name they gave in the circle being left.
+      by: names.get(asText(payload.by))?.name?.trim() ?? "",
+    });
+    if (agreeingThere?.agrees === asText(me) && agreeingThere.willing === true) {
+      store(carryAgreementKey(to), true);
+    }
+
+    const wasOpen = asText(circle?.cellId?.[0]) === key;
+    await call("leave_circle", fromCellId[0]);
+    forgetWhatThisDeviceKnew(fromCellId);
+
+    if (wasOpen) forgetTheCircle();
+    await loadCircles();
+    if (wasOpen) {
+      const item = circles.find((c) => asText(c.cellId[0]) === asText(to[0]));
+      if (item) await openCircle(item);
+    }
+
+    announce(
+      label === "Their circle"
+        ? "A circle you are in has moved, and you have been moved with it."
+        : `${label}'s circle has moved, and you have been moved with it.`,
+    );
+  } finally {
+    following.delete(key);
+  }
+}
+
+/*
+ * Said once, to somebody whose app moved them.
+ *
+ * The holder is not shown it: she did it. Everybody else is told that it
+ * happened and, where she gave one, why — in her words, and said to be hers.
+ */
+function sayItMovedIfItDid() {
+  const note = circle ? readStored(movedNoteKey(circle.cellId)) : null;
+  $("moved-note").hidden = !note;
+  if (!note) return;
+
+  /*
+   * Who was removed, by whom, and why — not that the circle moved.
+   *
+   * The move is how removal works, and nobody but the holder has anything to
+   * do with it: they cannot invite, so a new door address is nothing to them.
+   * The first version said "This circle has moved to a new private space",
+   * which described the machinery and left out the one thing that had
+   * actually happened to the people in it.
+   */
+  const by = note.by?.trim() || "The person who holds this circle";
+  const removed = note.removed?.trim() || "somebody";
+  $("moved-note-text").textContent = `${by} has removed ${removed} from the circle.`;
+
+  const reason = note.reason?.trim();
+  $("moved-note-reason").hidden = !reason;
+  $("moved-note-reason").textContent = reason ? `The reason given: “${reason}”` : "";
+}
+
+$("moved-note-done").addEventListener("click", () => {
+  if (circle) store(movedNoteKey(circle.cellId), null);
+  $("moved-note").hidden = true;
+});
+
+/**
+ * Agree again, on their behalf, to what they had already agreed to.
+ *
+ * Only for somebody who had said yes to agreeing to who joins in the old
+ * circle, only to the same holder asking the same thing, and only once. They
+ * are told it was carried across, and can still change their mind the same
+ * way as always. Returns true when it answered, so the question is not put
+ * on screen for a moment first.
+ */
+async function carryTheAgreementAcross() {
+  if (!circle || !readStored(carryAgreementKey(circle.cellId))) return false;
+  if (!whoAgrees) return false; // Not arrived yet. Looked for on every re-read.
+
+  const cellId = circle.cellId;
+  store(carryAgreementKey(cellId), null);
+  if (whoAgrees.agrees !== asText(me) || whoAgrees.willing !== null) return false;
+
+  await call(
+    "answer_appointment",
+    { appointment: whoAgrees.appointment, willing: true },
+    cellId,
+  );
+  announce(
+    "You had agreed to who joins in the circle before it moved, so that has " +
+      "been carried across.",
+  );
+  // Not awaited: this runs inside a re-read, and waiting for the next one
+  // from inside it would wait for itself.
+  loadCircle();
+  return true;
 }

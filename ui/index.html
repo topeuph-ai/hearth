@@ -679,6 +679,18 @@
             the page said why they could not simply change it — or who would
             see what they offered, or what would happen to it.
           -->
+          <!--
+            Said once, to somebody whose app moved them while they were away.
+            The move itself needed nothing from them; this is only so a changed
+            door address or a missing name is not a mystery.
+          -->
+          <div id="moved-note" class="notice" hidden>
+            <p id="moved-note-text">This circle has moved to a new private space.</p>
+            <p id="moved-note-reason" hidden></p>
+            <div class="actions">
+              <button type="button" id="moved-note-done" class="secondary">OK</button>
+            </div>
+          </div>
           <p id="members-can-suggest" class="notice" hidden>
             You cannot change what is written here, but you can offer a
             suggestion about any part of it.
@@ -1333,6 +1345,48 @@
               <button type="button" id="stay-here">No, take me back</button>
               <button type="button" id="leave-for-real" class="secondary">
                 Yes, remove it
+              </button>
+            </div>
+          </dialog>
+
+          <!--
+          Removing somebody, which means moving everybody else.
+
+          Nothing can take a person out of a circle they are already in: the
+          network has no operator to do it. What can be done is a new circle
+          without them, with the record and everybody else carried across by
+          their own apps. This box says what will happen before it happens, and
+          "No" is the focused, obvious answer, as it is for leaving.
+          -->
+          <dialog id="really-move">
+            <h3 id="really-move-question">
+              Remove this person from the circle?
+            </h3>
+            <p>
+              Hearth will make a new circle, copy the record into it, and move
+              everybody else across. Nobody has to do anything.
+              <span id="really-move-whom">They</span> will not be told, and will
+              not be able to see anything written from now on.
+            </p>
+            <p id="really-move-seconder" class="notice" hidden>
+              They are the person who agrees to who joins. After the move, you
+              will need to ask somebody else.
+            </p>
+            <p class="hint">
+              What they have already seen cannot be taken back. Anybody not
+              using Hearth right now moves the next time they open it while you
+              have it open too. The door address changes, so any invitation not
+              yet used will need sending again.
+            </p>
+            <label for="move-reason">Why? (optional)</label>
+            <p class="hint" id="move-reason-hint">
+              Everybody who moves will see this. The person removed never will.
+            </p>
+            <textarea id="move-reason" rows="3"></textarea>
+            <div class="actions">
+              <button type="button" id="stay-together">No, take me back</button>
+              <button type="button" id="move-for-real" class="secondary">
+                Yes, remove them
               </button>
             </div>
           </dialog>

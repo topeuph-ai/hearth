@@ -381,6 +381,12 @@ hr.before-leaving {
  * browser's words, on top of a care record, is the one moment the app stops
  * looking like itself.
  */
+#really-move textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#really-move,
 #really-leave {
   max-width: 30rem;
   border: 2px solid var(--line);
@@ -390,10 +396,12 @@ hr.before-leaving {
   background: var(--paper);
 }
 
+#really-move::backdrop,
 #really-leave::backdrop {
   background: rgba(0, 0, 0, 0.45);
 }
 
+#really-move h3,
 #really-leave h3 {
   margin-top: 0;
 }
