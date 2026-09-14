@@ -21,6 +21,8 @@ import {
 // Records arrive with their entries still packed. Holochain speaks msgpack on
 // the wire and does not unpack app entries for you.
 import { decode } from "@msgpack/msgpack";
+import QRCode from "qrcode";
+import jsQR from "jsqr";
 
 /*
  * Identifiers are bytes inside Holochain and text everywhere a person can see
@@ -75,6 +77,10 @@ function looksLikeAnInvitation(text) {
  * they have broken it, which they have not.
  */
 function looksLikeARoomAddress(text) {
+  // The new shape says what it is, and is worth recognising even when it
+  // has a mistake in it — so the mistake can be pointed at, rather than the
+  // whole thing being called unreadable.
+  if (/^\s*hearth/i.test(text)) return true;
   try {
     const parsed = JSON.parse(atob(text.trim()));
     return typeof parsed?.door === "string" && typeof parsed?.seed === "string";
@@ -207,6 +213,17 @@ function show(...ids) {
     "problem",
   ]) {
     $(id).hidden = !ids.includes(id);
+  }
+  // The camera goes off with the screen that asked for it. A problem screen
+  // shown over a failed join is the one exception: they will come back to it.
+  // Guarded because a screen can be shown before the camera code further down
+  // this file has run, and then there is no camera to stop.
+  if (!ids.includes("join") && !ids.includes("problem")) {
+    try {
+      stopScanning();
+    } catch {
+      // Nothing was scanning.
+    }
   }
 }
 
@@ -2732,6 +2749,7 @@ $("join-form").addEventListener("submit", async (event) => {
      * to.
      */
     if (looksLikeARoomAddress(pasted)) {
+      // AddressMistake says which row to look at; let it reach the screen.
       const room = addressToRoom(pasted);
       const name = $("joiner-name").value.trim();
       const relationship = $("joiner-relationship").value.trim();
@@ -3269,7 +3287,7 @@ function anInvitationToSend() {
     "",
     "To get in:",
     "1. Open Hearth and press \u201CJoin a circle\u201D.",
-    "2. Paste the address above into the box.",
+    "2. Paste or type the address above into the box. Capitals and spaces do not matter.",
     `3. Put in your name and how you are connected to ${whom}.`,
     "4. Press \u201CAsk to join\u201D, then wait.",
     "",
@@ -3679,24 +3697,281 @@ function pendingCard(item, amSeconder) {
 // cannot write to it — that is the membrane working, not a gap. The room is
 // somewhere they can write, and it holds nothing but questions and answers.
 
-/**
- * A room's address, as one line of text.
+/*
+ * A room's address, in a shape a person can carry.
  *
- * Deliberately not shaped like an invitation. It is public, it is the same for
- * everybody, and it lets somebody ask rather than enter — so it should not
- * look like the thing that does let people in.
+ * It used to be about two hundred characters of mixed-case base64 on one
+ * line, and it failed Ceri's first offline test three ways. With the
+ * internet off there was no email to send it by. Written down or typed in,
+ * it was too long to get right. And one wrong character anywhere was simply
+ * refused, with nothing to say where.
+ *
+ * So, now:
+ *
+ * - **About a hundred characters, in short rows**, from a 32-letter alphabet
+ *   with no look-alikes: no O beside 0, no I or L beside 1, and capitals do
+ *   not matter. An O typed for a 0 is read as the 0 it was meant to be.
+ * - **Every row checks itself.** Two characters at the end of each row are
+ *   worked out from the rest of it, so a wrong letter, or two letters
+ *   swapped, is caught — and the person is told which row to look at.
+ * - **A QR code beside it**, so most of the time nobody types anything.
+ * - **No name in it.** The old address carried the person's full name in
+ *   readable form to everybody it was passed to. Nothing needs it before
+ *   somebody is let in, and the invitation they collect then carries it.
+ *
+ * What goes in: the holder's key and the room's seed, which are exactly what
+ * the room is built from. It cannot honestly be shorter — the key alone is
+ * thirty-nine bytes — without a way to look a short code up, which is
+ * written down in docs/to-a-product.md.
+ *
+ * Old addresses are still read, so none already sent stops working.
  */
+const ADDRESS_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const ADDRESS_VERSION = 1;
+const ADDRESS_ROW = 16;
+
+function bytesToCode(bytes) {
+  let out = "";
+  let bits = 0;
+  let value = 0;
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += ADDRESS_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += ADDRESS_ALPHABET[(value << (5 - bits)) & 31];
+  return out;
+}
+
+function codeToBytes(code, length) {
+  const bytes = [];
+  let bits = 0;
+  let value = 0;
+  for (const char of code) {
+    value = ((value << 5) | ADDRESS_ALPHABET.indexOf(char)) & 0xffff;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Uint8Array.from(bytes.slice(0, length));
+}
+
+/*
+ * Two check characters for one row.
+ *
+ * Every position is weighted differently and the total is taken modulo 1021,
+ * a prime just under 32 × 32. So changing any one character always changes
+ * the total, and so does swapping two neighbours. The row's own number is
+ * part of it too, so two whole rows written down in the wrong order are
+ * caught as well.
+ */
+function rowCheck(row, rowNumber) {
+  let total = 17 * (rowNumber + 1);
+  [...row].forEach((char, i) => {
+    total += (i + 1) * ADDRESS_ALPHABET.indexOf(char);
+  });
+  const c = total % 1021;
+  return ADDRESS_ALPHABET[c >> 5] + ADDRESS_ALPHABET[c & 31];
+}
+
+const uuidToBytes = (uuid) =>
+  Uint8Array.from(uuid.replace(/-/g, "").match(/../g).map((h) => parseInt(h, 16)));
+
+const bytesToUuid = (bytes) => {
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const isUuid = (text) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(text);
+
+/** A mistake the reader of an address can be pointed at. */
+class AddressMistake extends Error {
+  constructor(row, rows) {
+    super(
+      rows > 1
+        ? `Row ${row} of the address has a mistake in it. Check that row letter ` +
+            `by letter against the one you were given — the rows before it are fine.`
+        : "The address has a mistake in it. Check it letter by letter.",
+    );
+    this.row = row;
+  }
+}
+
 function roomToAddress(room) {
-  return btoa(JSON.stringify({ door: room.holder, seed: room.seed, about: room.about }));
+  // A seed this app did not make itself cannot be packed, so it keeps the
+  // old shape rather than being turned into something that will not work.
+  if (!isUuid(room.seed)) {
+    return btoa(JSON.stringify({ door: room.holder, seed: room.seed }));
+  }
+
+  const key = decodeHashFromBase64(room.holder);
+  const packed = new Uint8Array(1 + key.length + 16);
+  packed[0] = ADDRESS_VERSION;
+  packed.set(key, 1);
+  packed.set(uuidToBytes(room.seed), 1 + key.length);
+
+  const code = bytesToCode(packed);
+  const rows = [];
+  for (let i = 0; i < code.length; i += ADDRESS_ROW) {
+    const row = code.slice(i, i + ADDRESS_ROW);
+    rows.push(row + rowCheck(row, rows.length));
+  }
+
+  // Groups of four within a row, so a finger or an eye can keep its place.
+  return [
+    "HEARTH",
+    ...rows.map((row) => row.match(/.{1,4}/g).join(" ")),
+  ].join("\n");
 }
 
 function addressToRoom(text) {
+  if (/^\s*hearth/i.test(text)) {
+    const code = text
+      .toUpperCase()
+      .replace(/^\s*HEARTH/, "")
+      .replace(/[\s-]/g, "")
+      .replace(/O/g, "0")
+      .replace(/[IL]/g, "1");
+
+    // 1 + 39 + 16 bytes, and the two check characters on every row.
+    const dataLength = Math.ceil(((1 + 39 + 16) * 8) / 5);
+    const rowCount = Math.ceil(dataLength / ADDRESS_ROW);
+    const expected = dataLength + rowCount * 2;
+
+    const unreadable = [...code].findIndex((c) => !ADDRESS_ALPHABET.includes(c));
+    let data = "";
+    for (let r = 0; r < rowCount; r++) {
+      const start = r * (ADDRESS_ROW + 2);
+      const width = Math.min(ADDRESS_ROW, dataLength - r * ADDRESS_ROW);
+      const row = code.slice(start, start + width);
+      const check = code.slice(start + width, start + width + 2);
+      const broken =
+        (unreadable >= 0 && unreadable < start + width + 2) ||
+        row.length !== width ||
+        check !== rowCheck(row, r);
+      if (broken) throw new AddressMistake(r + 1, rowCount);
+      data += row;
+    }
+    if (code.length !== expected) {
+      throw new Error(
+        code.length > expected
+          ? "The address has something extra on the end. Check the last row."
+          : "The address is missing something at the end. Check the last row.",
+      );
+    }
+
+    const packed = codeToBytes(data, 1 + 39 + 16);
+    if (packed[0] !== ADDRESS_VERSION) {
+      throw new Error("This address was made by a newer Hearth. Update Hearth and try again.");
+    }
+    return {
+      holder: encodeHashToBase64(packed.slice(1, 40)),
+      seed: bytesToUuid(packed.slice(40, 56)),
+      about: "",
+    };
+  }
+
   const parsed = JSON.parse(atob(text.trim()));
   if (typeof parsed?.door !== "string" || typeof parsed?.seed !== "string") {
     throw new Error("not a waiting room address");
   }
   return { holder: parsed.door, seed: parsed.seed, about: parsed.about ?? "" };
 }
+
+/*
+ * The address as a picture, for a camera.
+ *
+ * Drawn from the same text, so scanning it and typing it arrive at exactly
+ * the same place. Nothing leaves the device to draw it.
+ */
+function drawAddressCode(canvas, address) {
+  QRCode.toCanvas(canvas, address, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    width: 240,
+    color: { dark: "#1b1b1b", light: "#ffffff" },
+  }).catch((error) => {
+    console.error("Could not draw the address as a code.", error);
+    canvas.hidden = true;
+  });
+}
+
+/*
+ * Reading a code with the camera, on the joining screen.
+ *
+ * The camera is only switched on when somebody presses the button, and off
+ * again the moment a code is read, the button is pressed again, or they
+ * leave the screen. Every frame is read on this device; nothing is sent
+ * anywhere.
+ */
+let scanning = null; // { stream, frame }
+
+function stopScanning() {
+  if (!scanning) return;
+  cancelAnimationFrame(scanning.frame);
+  for (const track of scanning.stream.getTracks()) track.stop();
+  scanning = null;
+  $("scan-video").srcObject = null;
+  $("scan-area").hidden = true;
+  $("scan-code").textContent = "Scan a code with the camera";
+}
+
+async function startScanning() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+  } catch (error) {
+    console.error(error);
+    announce(
+      "The camera could not be opened. If this computer has no camera, type " +
+        "the address instead — capitals and spaces do not matter.",
+    );
+    return;
+  }
+
+  const video = $("scan-video");
+  video.srcObject = stream;
+  await video.play();
+  $("scan-area").hidden = false;
+  $("scan-code").textContent = "Stop the camera";
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  scanning = { stream, frame: 0 };
+
+  const look = () => {
+    if (!scanning) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const found = jsQR(image.data, image.width, image.height);
+      if (found?.data && looksLikeARoomAddress(found.data)) {
+        stopScanning();
+        $("invitation-in").value = found.data;
+        $("invitation-in").dispatchEvent(new Event("input"));
+        announce("Address read. Now put in your name.");
+        $("joiner-name").focus();
+        return;
+      }
+    }
+    scanning.frame = requestAnimationFrame(look);
+  };
+  scanning.frame = requestAnimationFrame(look);
+}
+
+$("scan-code").addEventListener("click", () =>
+  scanning ? stopScanning() : startScanning(),
+);
 
 /*
  * Which room belongs to which circle, remembered per device.
@@ -3803,7 +4078,11 @@ async function loadTheDoor() {
 
   theDoorIsHere = true;
   showCircleMode();
-  $("door-address-output").textContent = roomToAddress(room);
+  const address = roomToAddress(room);
+  if ($("door-address-output").textContent !== address) {
+    $("door-address-output").textContent = address;
+    drawAddressCode($("door-address-qr"), address);
+  }
 
   let roomCell;
   try {
@@ -4948,7 +5227,7 @@ async function carryTheAgreementAcross() {
   loadCircle();
   return true;
 }
-
+
 // ---------------------------------------------------------------------------
 // How much fits in one section
 // ---------------------------------------------------------------------------

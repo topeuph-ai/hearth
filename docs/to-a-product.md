@@ -915,6 +915,66 @@ Holochain cannot. Partly:
 
 All of this waits for Hearth running on phones at all, which it does not yet.
 
+### When the internet goes: a page that says so
+
+Ceri's idea, 14 September 2026, captured and not built. When the app notices
+it cannot reach the internet servers, it says so, and offers to keep sharing
+by hotspot.
+
+What an app is allowed to do differs by device:
+
+- **Windows** can open the Mobile hotspot settings page directly, so this
+  works in the desktop app as it is.
+- **Android** can open the hotspot or network settings, and also offers apps
+  a *local-only hotspot* they can start themselves, with a network name and
+  password the app makes up — a good fit for this.
+- **iPhone** gives apps no supported way to switch on Personal Hotspot or to
+  jump to its settings page, so there the page gives plain instructions.
+
+So: "The internet seems to be down. Keep sharing using a hotspot?" → **Yes** →
+the settings open where the device allows it, and the words explain where it
+does not. Where the app starts a local-only hotspot itself, it shows a QR code
+so the others join by scanning rather than typing a password.
+
+Somebody has to be the hotspot, and their battery pays for it — usually the
+professional's phone, or whoever is staying.
+
+Waits for local discovery to work on the two machines, and for Hearth on phones.
+
+### Addresses people can actually carry
+
+**Found on the first offline test, 14 September 2026.** With the internet off
+there was no email to send the door address by, so it had to be typed; it was
+about two hundred characters of mixed-case letters, one wrong character was
+refused with nothing to say where, and a lower-case l could not be told from a
+capital L.
+
+**Built the same day:**
+
+- **A QR code beside the address** on the invite page, and a **"Scan a code
+  with the camera"** button on the joining screen. Somebody in the room points
+  their camera at the holder's screen, and nothing is typed. The camera is on
+  only while scanning, and every frame is read on the device.
+- **A shorter address that checks itself.** About a hundred characters, in six
+  short rows, beginning `HEARTH`, from a 32-character alphabet with no
+  look-alikes — no letter L, I or O at all, and capitals do not matter. A typed
+  O is read as 0, and a typed L or I as 1. Two characters at the end of each row
+  are worked out from the rest of it, so a wrong letter or two swapped letters
+  is caught and the screen says **which row** to check.
+  `ui/scripts/addresses-survive-mistakes.mjs` runs in CI and tries every wrong
+  letter in every position.
+- **No name in the address.** The old one carried the person's full name in
+  readable form to everybody it was passed to. Nothing needed it before
+  somebody is let in.
+- Addresses already sent in the old shape still work.
+
+**Not built: at most 16 characters**, Ceri's number for anything typed by
+hand. It cannot be done by packing: the address must contain the holder's key,
+which is thirty-nine bytes before anything else. A 16-character code has to be
+a *nickname* devices look up — over the local network once local discovery
+works, or through a change to the rules in the migration batch. Written down
+for both.
+
 ### Separately: somebody always on
 
 An always-on member of the circle — an

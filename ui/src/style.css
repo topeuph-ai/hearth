@@ -503,6 +503,28 @@ li {
   margin: 1.5rem 0;
 }
 
+.address-code {
+  display: block;
+  margin-top: 1rem;
+  border-radius: 6px;
+}
+
+#door-address-output {
+  white-space: pre;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+}
+
+#scan-video {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  margin-top: 0.75rem;
+  border-radius: 6px;
+  background: #000;
+}
+
 output {
   display: block;
   margin-top: 1rem;

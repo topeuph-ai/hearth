@@ -388,11 +388,23 @@
               the wrong box. With one box there is no wrong box, and the whole
               class of mistake stops existing rather than being explained.
             -->
-            <label for="invitation-in">Paste what they sent you</label>
+            <label for="invitation-in">The address of the circle</label>
             <p id="invitation-in-hint" class="hint">
-              One long line: the address of the circle. Paste the whole of it,
-              with nothing before or after.
+              Scan the code on their screen, or paste or type the address. It
+              starts with HEARTH. Capitals, spaces and line breaks do not
+              matter, and if you make a mistake, you will be told which row
+              to check.
             </p>
+            <div class="actions">
+              <button type="button" id="scan-code" class="secondary">
+                Scan a code with the camera
+              </button>
+            </div>
+            <div id="scan-area" hidden>
+              <video id="scan-video" muted playsinline
+                aria-label="What the camera sees"></video>
+              <p class="hint">Hold the code steady in front of the camera.</p>
+            </div>
             <textarea
               id="invitation-in"
               name="invitation-in"
@@ -1435,6 +1447,19 @@
           </p>
 
           <h3>The address</h3>
+          <!--
+            The same address twice: as a code for a camera, and as rows of
+            letters for anybody without one. With the internet down there is
+            no email to send it by, and pointing a phone or a laptop at this
+            screen needs none.
+          -->
+          <p class="hint">
+          Somebody in the same room can scan this code with their own Hearth.
+          Otherwise, send or read out the letters under it — capitals and
+          spaces do not matter.
+          </p>
+          <canvas id="door-address-qr" class="address-code" role="img"
+            aria-label="The same address, as a code to scan"></canvas>
           <output id="door-address-output"></output>
           <div class="actions">
           <button type="button" id="copy-door-address" class="secondary">

@@ -147,6 +147,16 @@ jobs:
         working-directory: ui
         run: node scripts/every-button-does-something.mjs
 
+      # A door address is typed, written down and read out. On the first
+      # offline test one wrong character was refused with nothing to say
+      # where. Every address must read back to its room, and every wrong
+      # letter or swapped pair must be caught in the row it is in.
+      - name: Door addresses survive mistakes
+        working-directory: ui
+        run: |
+          npm ci --ignore-scripts
+          node scripts/addresses-survive-mistakes.mjs
+
       # The frozen integrity zome must not move.
       #
       # A circle is the hash of this wasm, so any change to it strands every
