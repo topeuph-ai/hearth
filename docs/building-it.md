@@ -294,6 +294,30 @@ Before sending it to anybody, read the three Windows warnings in the
   need your own — and **changing those addresses after release splits the
   network in two**, so it is a decision to make before, not after.
 
+### ⚠️ Turn Kangaroo's auto-updates off, or it offers somebody else's app
+
+**Found 15 September 2026, and the most serious trap on this page.** Kangaroo
+ships with `autoUpdates: true`, and with no `publish` section of our own the
+packaged app's update feed is Kangaroo's own GitHub releases —
+`dist/win-unpacked/resources/app-update.yml` said `owner: holochain`,
+`repo: kangaroo-electron`.
+
+That repository has test releases, including **"Test Release 0.2.5 (Holochain
+0.4.4-rc.0)"**. Once Hearth reached 0.2.x, every install on both test machines
+was offered "a new compatible version of Hearth 0.2.5". Ceri pressed Deny every
+time. Accepting would have installed Holochain's test app in place of Hearth —
+and it means whoever controls that repository could push updates to Hearth
+users.
+
+**Fixed: `autoUpdates: false` in `kangaroo.config.ts`.** Releases 0.2.0 to
+0.2.3 still have it on and will keep offering it until replaced; tell anybody
+with them to press Deny.
+
+Proper updates later need a `publish` section pointing at
+`topeuph-ai/hearth`, the `latest.yml` electron-builder produces attached to
+each release, and ideally signed installers. Until then, people update by
+downloading the new installer.
+
 ### One change Hearth makes to Kangaroo: one copy at a time
 
 **The desktop app is a clone of Kangaroo that is not kept in this repository,**
