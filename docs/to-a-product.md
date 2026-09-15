@@ -620,6 +620,53 @@ as a foreground service, and iOS became plausible when 0.7.0 added the `wasmi`
 interpreted backend. **Neither has been tried here.** "A route exists" and "it
 runs" are different claims, and only one of them is worth anything.
 
+### The Tauri plugin: the likeliest app route, and a licence to wait for
+
+**Checked 15 September 2026**, after Paul d'Aoust of Holochain posted that
+Holochain has forked darksoil's Tauri plugin and updated it for 0.7.0, but is
+"still waiting for darksoil to consent to us distributing".
+
+- **What it is.** darksoil studio's
+  [`tauri-plugin-holochain`](https://github.com/darksoil-studio/tauri-plugin-holochain)
+  packages a Holochain app for desktop and Android. darksoil's own page lists
+  desktop as supported, Android as experimental, iPhone as "coming soon".
+- **It is source-available, not open source.** The repository has no licence,
+  only "Copyright (C) 2024 Darksoil Studio Limited". Without a licence the code
+  can be read but not redistributed, or redistributed changed, without
+  darksoil's permission — which is why Holochain is waiting. darksoil say they
+  are raising funds to make it open source.
+- **No 0.7 version is public.** darksoil's branches stop at Holochain 0.6.1,
+  and so do the public copies by Lightningrod Labs, Unyt and others. Holochain's
+  0.7 fork was not found in public, which fits the message.
+
+**What it means for Hearth.** Nothing today: the desktop app is built with
+Kangaroo, which already runs 0.7. But a permitted 0.7 version would be the
+likeliest route to **Hearth on Android**, which the hotspot, QR-scanning and
+"phones in the same room" ideas all wait for.
+
+**Do not build on it until the terms are clear.** What matters is not whether
+Holochain may share its copy but whether *Hearth* could ship an app built on it.
+Hearth is Apache-2.0 and NLnet funds open source; a dependency that needs a
+company's permission to distribute would sit badly with both. Wait for a proper
+open-source licence, or explicit terms that allow it.
+
+Watched by the monthly check (see below).
+
+### ⚠️ What distributing Holochain inside the app asks of us
+
+Noticed on the same day, not yet looked into. `holochain/kangaroo-electron`,
+which Hearth's installer is built from, has no licence file in its repository,
+and its loading screen says "Licensed under the Cryptographic Autonomy License
+v1.0". Holochain itself is released under that licence, and GitHub reports the
+repository's licence as not recognised (`NOASSERTION`).
+
+The Cryptographic Autonomy License is not an ordinary permissive licence: it
+was written for peer-to-peer software and puts obligations on people who
+distribute it. **Before Hearth reaches real users or funders, somebody needs to
+read what it asks of an app that ships Holochain inside its installer, and what
+Kangaroo's own terms are.** Hearth's own code being Apache-2.0 does not settle
+it.
+
 ---
 
 ## 5. The outer ring
