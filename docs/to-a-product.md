@@ -652,20 +652,16 @@ open-source licence, or explicit terms that allow it.
 
 Watched by the monthly check (see below).
 
-### ⚠️ What distributing Holochain inside the app asks of us
+### What distributing Holochain inside the app asks of us
 
-Noticed on the same day, not yet looked into. `holochain/kangaroo-electron`,
-which Hearth's installer is built from, has no licence file in its repository,
-and its loading screen says "Licensed under the Cryptographic Autonomy License
-v1.0". Holochain itself is released under that licence, and GitHub reports the
-repository's licence as not recognised (`NOASSERTION`).
-
-The Cryptographic Autonomy License is not an ordinary permissive licence: it
-was written for peer-to-peer software and puts obligations on people who
-distribute it. **Before Hearth reaches real users or funders, somebody needs to
-read what it asks of an app that ships Holochain inside its installer, and what
-Kangaroo's own terms are.** Hearth's own code being Apache-2.0 does not settle
-it.
+**Read 17 September 2026 and written up in [licensing.md](licensing.md).**
+Holochain, the HDK and the HDI are all under the Cryptographic Autonomy
+License 1.0, with no Combined Work Exception, so publishing the installer and
+the webhapp carries its conditions. They suit this project — the licence's
+demand is that you never stand between a person and their own data — and two
+things are outstanding: the built app carries no Holochain notices, and nothing
+tells people where its source is. Kangaroo itself still has no licence file,
+which is worth asking them to fix.
 
 ---
 

@@ -260,6 +260,7 @@ Read the first one before the others.
 | | |
 |---|---|
 | [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [licensing.md](docs/licensing.md) | What licence Hearth is under, and what shipping Holochain inside the app asks of us |
 | [hard-questions.md](docs/hard-questions.md) | The questions a sceptical reviewer would ask, and the honest answer to each — including where the answer is not software |
 | [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
@@ -310,7 +311,14 @@ yet.
 
 ## Licence
 
-Apache License 2.0. See [LICENSE](LICENSE).
+**Hearth's own code is Apache License 2.0.** See [LICENSE](LICENSE).
+
+**The installer also contains Holochain and lair-keystore**, which are licensed
+under the [Cryptographic Autonomy License 1.0](https://opensource.org/license/cal-1-0).
+Their source is at <https://github.com/holochain/holochain>, and Hearth's rules
+are built with Holochain's HDK, which is under the same licence. What that
+asks of anybody distributing Hearth is set out in
+[docs/licensing.md](docs/licensing.md).
 
 Built by one person who is not a software engineer, with AI assistance, and the
 design decisions are his. [What that means in

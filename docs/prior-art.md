@@ -168,6 +168,48 @@ preserving decentralisation" is named as open research — should be treated as
 
 ---
 
+## The Holo Ventures essay, September 2026
+
+["Decent Infrastructure in an Authoritarian World: Building the Walk Away
+Stack"](https://decent.holoventures.io/), Cameron Burgess and others, Holo
+Ventures with The Holochain Foundation, 16 September 2026. A positioning and
+funding essay rather than a technical paper. Four things in it matter here.
+
+**Nothing in their world is about care.** Their own list of applications —
+Your Own AI, Volla, HummHive, Coasys, Acorn, Requests & Offers, hREA,
+Nondominium, Flowsta, and earlier-stage energy and land projects — contains no
+health record, no care record, and nothing about vulnerable people. Hearth is
+not competing with anything on Holochain; it is filling an empty seat.
+
+**Holochain apps already ship on phone hardware.** They list Volla, a phone
+manufacturer, as production: "Holochain apps shipping on production phone
+hardware". Worth finding out how, given that the route we know about — the
+Tauri plugin — is waiting on a licence. See
+[to-a-product.md](to-a-product.md#the-tauri-plugin-the-likeliest-app-route-and-a-licence-to-wait-for).
+
+**Two sentences worth borrowing.** Their argument for why structure beats
+promises is the one this project makes about operators, put better:
+
+> "governance you can renegotiate is not the same as architecture you can't"
+
+> "you can run Holochain without us"
+
+The second is the platform's own answer to "what happens when the people who
+built this disappear", which is a question Hearth gets asked about itself.
+
+**Holo hosting is now live**, as paid always-on hosting on other people's
+hardware. It is a third answer to availability, beside a co-holder and an edge
+node, and it carries the same trade-off: a host holds the record and must be a
+member of the circle. A family's own box fits "no operator"; a company running
+them for many families is an operator by another name.
+
+**One caution about citing it.** Much of the essay defends the HOT token: a
+roughly 99% fall in price, the launch missed in 2019, hardware not delivered.
+It is candid about all of it, and that candour is not the point — the point is
+that handing this essay to an NHS or council reviewer drags cryptocurrency into
+a conversation about care records. Cite the architecture; do not cite the
+essay.
+
 ## Still worth doing
 
 - **Search for person-centred rather than IoT-centred Holochain health work.**
