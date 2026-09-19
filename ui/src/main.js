@@ -838,6 +838,12 @@ function renderRecord(current) {
     group.className = "record-field";
     group.append(dt, dd);
 
+    // Photos, sound and video beside this section, filled in by showMedia.
+    const media = document.createElement("div");
+    media.className = "media-here";
+    media.dataset.mediaFor = key;
+    group.append(media);
+
     /*
      * Longer than the box, and a way to see the rest.
      *
@@ -878,6 +884,13 @@ function renderRecord(current) {
       change.textContent = "Change this";
       change.addEventListener("click", () => changeOneSection(index));
       group.append(change);
+
+      const photo = document.createElement("button");
+      photo.type = "button";
+      photo.className = "linky change-one";
+      photo.textContent = "Add a photo";
+      photo.addEventListener("click", () => pickAPhoto(key));
+      group.append(photo);
     } else {
       /*
        * And for everybody else, the same place to start from.
@@ -1111,6 +1124,9 @@ async function drawTheCircle() {
 
   record = haveIt ? { original, current } : null;
   renderRecord(haveIt ? current : null);
+  // Not awaited: pictures arrive after the words, and the words should not
+  // wait for them.
+  showMedia().catch((error) => console.error("Could not show media.", error));
 
   $("no-record-empty").hidden = beenThroughOnce || !amHolder;
   $("no-record-waiting").hidden = beenThroughOnce || amHolder;
@@ -3090,6 +3106,8 @@ function forgetTheCircle() {
   // Who was removed from this circle means nothing in the next one.
   gone = new Map();
   removedMembers = new Map();
+  // Nor do its pictures.
+  forgetMedia();
   knocking = [];
   lastWaitingCount = 0;
   stopChiming();
@@ -5564,4 +5582,209 @@ function someoneRemoved(key, entry) {
   li.append(actions);
 
   return li;
+}
+
+// ---------------------------------------------------------------------------
+// Photos beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// Photos first, then sound, then video: the order Ceri chose, easiest first.
+// The rules underneath already allow all three. See docs/multimedia.md.
+
+/** The section key the record uses -> the name the zome uses. */
+const SECTION_FOR_KEY = Object.fromEntries(
+  Object.entries(FIELD_LABELS).map(([name, [key]]) => [key, name]),
+);
+
+/** Longest side of a photo, in pixels, after shrinking. */
+const PHOTO_LONGEST_SIDE = 1600;
+/** One piece, as the rules allow. */
+const MOST_BYTES_IN_A_PIECE = 3_000_000;
+
+let photoFor = null; // the section key a photo is being added to
+let photoBytes = null; // the shrunk photo, waiting for "Add the photo"
+let photoPreviewUrl = null;
+
+function pickAPhoto(key) {
+  photoFor = key;
+  $("photo-file").value = "";
+  $("photo-file").click();
+}
+
+/*
+ * Shrink the photo here, before anything is written.
+ *
+ * Every member's device holds a copy of every photo, so a twelve-megapixel
+ * phone picture written as it is would cost everybody several megabytes for a
+ * picture shown a few inches wide. About 1600 pixels on the longest side is
+ * sharp on any screen this will be read on, and a few hundred kilobytes.
+ */
+async function shrinkPhoto(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, PHOTO_LONGEST_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+
+  for (const quality of [0.85, 0.7, 0.55]) {
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (blob && blob.size <= MOST_BYTES_IN_A_PIECE) {
+      return new Uint8Array(await blob.arrayBuffer());
+    }
+  }
+  throw new Error("That photo is too large even after shrinking it.");
+}
+
+$("photo-file").addEventListener("change", async () => {
+  const file = $("photo-file").files?.[0];
+  if (!file || !photoFor) return;
+  try {
+    photoBytes = await shrinkPhoto(file);
+  } catch (error) {
+    console.error(error);
+    announce(
+      "That picture could not be opened. Photos saved as JPEG or PNG work " +
+        "best — some phones save a kind this cannot read.",
+    );
+    return;
+  }
+  if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+  photoPreviewUrl = URL.createObjectURL(new Blob([photoBytes], { type: "image/jpeg" }));
+  $("photo-preview").src = photoPreviewUrl;
+  $("photo-words").value = "";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[photoFor]] ?? [null, "this section"];
+  $("add-photo-question").textContent = `Add this photo to “${label}”?`;
+  $("add-photo").showModal();
+  $("photo-words").focus();
+});
+
+function putThePhotoDown() {
+  $("add-photo").close();
+  photoBytes = null;
+  photoFor = null;
+}
+
+$("cancel-photo").addEventListener("click", putThePhotoDown);
+
+$("save-photo").addEventListener("click", () =>
+  whileWorking($("save-photo"), "Adding…", async () => {
+    const bytes = photoBytes;
+    const section = SECTION_FOR_KEY[photoFor];
+    const inWords = $("photo-words").value.trim();
+    if (!bytes || !section) return;
+
+    const piece = await call("add_media_piece", bytes, circle.cellId);
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Photo",
+        mime_type: "image/jpeg",
+        file_name: $("photo-file").files?.[0]?.name ?? "",
+        in_words: inWords,
+        seconds: 0,
+        pieces: [piece],
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putThePhotoDown();
+    announce("Photo added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);
+
+/*
+ * Draw what is beside each section.
+ *
+ * Pieces are fetched once and kept for as long as the circle is open, as
+ * pictures in memory. The twenty-second re-read redraws only when the list
+ * has actually changed, so a photo does not flicker every time it looks.
+ */
+const pieceUrls = new Map(); // entry hash text -> object URL
+let shownMedia = ""; // what is drawn now, to skip redrawing the same thing
+
+async function urlForMedia(media) {
+  const key = media.pieces.map(asText).join(",");
+  if (pieceUrls.has(key)) return pieceUrls.get(key);
+  const parts = [];
+  for (const piece of media.pieces) {
+    parts.push(await call("get_media_piece", piece, circle.cellId));
+  }
+  const url = URL.createObjectURL(new Blob(parts, { type: media.mime_type }));
+  pieceUrls.set(key, url);
+  return url;
+}
+
+async function showMedia() {
+  if (!circle) return;
+  const inThisCircle = asText(circle.cellId[0]);
+  const all = await orNothingYet(call("get_media", null, circle.cellId), null);
+  if (!all || asText(circle?.cellId?.[0]) !== inThisCircle) return;
+
+  const fingerprint = all.map((m) => asText(m.item)).join(",");
+  const boxes = document.querySelectorAll(".media-here");
+  // Nothing new, and the boxes still hold what was drawn: leave them.
+  if (fingerprint === shownMedia && [...boxes].some((b) => b.childElementCount)) return;
+  shownMedia = fingerprint;
+
+  for (const box of boxes) box.replaceChildren();
+
+  for (const here of all) {
+    const [key] = FIELD_LABELS[here.media.section] ?? [];
+    const box = document.querySelector(`.media-here[data-media-for="${key}"]`);
+    if (!box || here.media.kind !== "Photo") continue;
+
+    const figure = document.createElement("figure");
+    figure.className = "media";
+    const img = document.createElement("img");
+    // The words are the picture for anybody who cannot see it.
+    img.alt = here.media.in_words || "A photo, with no description given";
+    figure.append(img);
+
+    if (here.media.in_words) {
+      const caption = document.createElement("figcaption");
+      caption.textContent = here.media.in_words;
+      figure.append(caption);
+    }
+
+    if (isHolder()) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "linky";
+      remove.textContent = "Remove this photo";
+      remove.addEventListener("click", () => {
+        if (!confirm("Remove this photo from the record?")) return;
+        whileWorking(remove, "Removing…", async () => {
+          await call("remove_media", here.item, circle.cellId);
+          announce("Photo removed.");
+          shownMedia = "";
+          await showMedia();
+        }).catch(problem);
+      });
+      figure.append(remove);
+    }
+
+    box.append(figure);
+
+    // The picture itself arrives after the frame; a piece not here yet is not
+    // an error, just not here yet.
+    urlForMedia(here.media)
+      .then((url) => {
+        img.src = url;
+      })
+      .catch(() => {
+        img.alt = "This photo has not arrived on this device yet.";
+      });
+  }
+}
+
+/** Put down the pictures of a circle that is no longer open. */
+function forgetMedia() {
+  for (const url of pieceUrls.values()) URL.revokeObjectURL(url);
+  pieceUrls.clear();
+  shownMedia = "";
 }

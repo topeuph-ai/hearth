@@ -503,6 +503,47 @@ li {
   margin: 1.5rem 0;
 }
 
+/* Photos beside a section. */
+.media-here figure.media {
+  margin: 0.75rem 0 0;
+}
+
+.media-here figure.media img {
+  display: block;
+  max-width: 100%;
+  max-height: 22rem;
+  border-radius: 6px;
+}
+
+.media-here figcaption {
+  margin-top: 0.35rem;
+  font-size: 0.95rem;
+}
+
+#photo-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 18rem;
+  margin: 0.5rem 0 1rem;
+  border-radius: 6px;
+}
+
+#add-photo {
+  max-width: 32rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+#add-photo::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#add-photo textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .address-code {
   display: block;
   margin-top: 1rem;

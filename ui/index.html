@@ -1163,6 +1163,32 @@
             <h3>Who has read it</h3>
             <ul id="readers-list"></ul>
           </section>
+
+          <!--
+            Adding a photo beside a section (migration batch, item 7).
+
+            The picture is shrunk on this device before anything is written,
+            and shown here first, so what is saved is what she saw. "In words"
+            is suggested and never required: it is what a screen reader says,
+            and what somebody who cannot see the picture is told.
+          -->
+          <input type="file" id="photo-file" accept="image/*" hidden />
+          <dialog id="add-photo">
+            <h3 id="add-photo-question">Add this photo?</h3>
+            <img id="photo-preview" alt="" />
+            <label for="photo-words">What this shows, in words (optional)</label>
+            <p class="hint">
+              For anybody who cannot see the picture. For example: "Me with my
+              daughter Ruth at the allotment."
+            </p>
+            <textarea id="photo-words" rows="2"></textarea>
+            <div class="actions">
+              <button type="button" id="save-photo">Add the photo</button>
+              <button type="button" id="cancel-photo" class="secondary">
+                Not this one
+              </button>
+            </div>
+          </dialog>
         </div>
 
 

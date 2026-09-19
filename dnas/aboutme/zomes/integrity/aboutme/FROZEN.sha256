@@ -102,5 +102,5 @@
 # Circles made with those are unreachable to builds from this branch until the
 # app can carry them across. Nothing is released until it can.
 
-linux    0f22663eb374d83b19a8f0342d62a68c6858744776ba6db3ca67e34aab079c5d
+linux    3fa7d5fcd9d0aa980593a49cc1528b4b5b89366bb409f7ed5a122894fe67b7bc
 windows  894cfca7404bcb0ed900ab666ae68d0691ab7dfe41f08f665e52b06aadb324d4
