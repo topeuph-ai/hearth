@@ -127,6 +127,26 @@ person saved it: nobody re-compresses it on the way to anybody else.
 3. **Video.** Record or choose, shrunk to 480p and two minutes; split into
    pieces; put back together to play; never plays by itself.
 
+## Captured, not built: speech to text
+
+Ceri's idea, 19 September 2026, after trying sound: fill in "what this says,
+in words" automatically from the recording.
+
+- **The easy way is the wrong way.** The browser's own speech recognition
+  (`webkitSpeechRecognition` in Chromium) sends the recording to Google's
+  servers to be transcribed. A person's voice talking about their own care,
+  sent to a company nobody in the circle chose — that is exactly the kind of
+  third party this project exists not to have, and it would need the DPIA
+  rewritten.
+- **The acceptable way runs on the device.** An open speech-to-text model
+  such as OpenAI's Whisper, in a small version, can run in the app itself,
+  works with the internet off, and sends nothing anywhere. The cost is a
+  download of tens of megabytes, and it would need testing on an older laptop
+  for speed.
+- **It would suggest, never decide.** The words it produces go into the box
+  for the holder to check and correct — a person's own account of themselves
+  should not be written by a machine without them reading it.
+
 ## What has to come first
 
 - **The migration batch has to start**, because media cannot be built without

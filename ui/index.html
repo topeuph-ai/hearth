@@ -1234,6 +1234,45 @@
               </button>
             </div>
           </dialog>
+
+          <!--
+            Adding video beside a section.
+
+            480p and two minutes, Ceri's numbers: sharp enough on a phone, a
+            laptop or a large screen, and small enough to live on every
+            member's device. Recorded here at that size, or chosen from a file
+            and shrunk to it if it is bigger. Never played by itself.
+          -->
+          <input type="file" id="video-file" accept="video/*" hidden />
+          <dialog id="add-video">
+            <h3 id="add-video-question">Add video?</h3>
+            <p class="hint">
+              Record up to two minutes here, or choose a video you already
+              have. A longer or larger video cannot be added; a large one is
+              made smaller first, which takes as long as the video lasts.
+            </p>
+            <div class="actions">
+              <button type="button" id="record-video">Start recording</button>
+              <button type="button" id="choose-video" class="secondary">
+                Choose a video file
+              </button>
+            </div>
+            <p id="video-status" class="hint" aria-live="polite"></p>
+            <video id="video-live" muted playsinline hidden></video>
+            <video id="video-preview" controls preload="metadata" playsinline hidden></video>
+            <label for="video-words">What this shows and says, in words (optional)</label>
+            <p class="hint">
+              For anybody who cannot see or hear it. What matters in it, not
+              every word.
+            </p>
+            <textarea id="video-words" rows="3"></textarea>
+            <div class="actions">
+              <button type="button" id="save-video" disabled>Add the video</button>
+              <button type="button" id="cancel-video" class="secondary">
+                Not this one
+              </button>
+            </div>
+          </dialog>
         </div>
 
 

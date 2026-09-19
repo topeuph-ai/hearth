@@ -898,6 +898,13 @@ function renderRecord(current) {
       sound.textContent = "Add sound";
       sound.addEventListener("click", () => pickASound(key));
       group.append(sound);
+
+      const video = document.createElement("button");
+      video.type = "button";
+      video.className = "linky change-one";
+      video.textContent = "Add video";
+      video.addEventListener("click", () => pickAVideo(key));
+      group.append(video);
     } else {
       /*
        * And for everybody else, the same place to start from.
@@ -5745,7 +5752,7 @@ async function showMedia() {
     const box = document.querySelector(`.media-here[data-media-for="${key}"]`);
     if (!box) continue;
     const kind = here.media.kind;
-    if (kind !== "Photo" && kind !== "Sound") continue;
+    if (kind !== "Photo" && kind !== "Sound" && kind !== "Video") continue;
 
     const figure = document.createElement("figure");
     figure.className = "media";
@@ -5762,20 +5769,24 @@ async function showMedia() {
        * Sound, and it never plays by itself. Somebody opening a record on a
        * busy ward has not chosen to have it heard by everybody near them.
        */
-      audio = document.createElement("audio");
+      // A video player for video, a sound player for sound. Both are held in
+      // `audio` below, because everything done to them is the same.
+      audio = document.createElement(kind === "Video" ? "video" : "audio");
       audio.controls = true;
       audio.preload = "metadata";
+      if (kind === "Video") audio.setAttribute("playsinline", "");
+      const noun = kind === "Video" ? "Video" : "Sound";
       audio.setAttribute(
         "aria-label",
         here.media.in_words
-          ? `Sound: ${here.media.in_words}`
-          : "Sound, with no words given",
+          ? `${noun}: ${here.media.in_words}`
+          : `${noun}, with no words given`,
       );
       figure.append(audio);
       if (here.media.seconds) {
         const length = document.createElement("p");
         length.className = "hint";
-        length.textContent = `${lengthInWords(here.media.seconds)} of sound.`;
+        length.textContent = `${lengthInWords(here.media.seconds)} of ${noun.toLowerCase()}.`;
         figure.append(length);
       }
     }
@@ -5786,7 +5797,7 @@ async function showMedia() {
       figure.append(caption);
     }
 
-    const what = kind === "Photo" ? "photo" : "sound";
+    const what = kind === "Photo" ? "photo" : kind === "Video" ? "video" : "sound";
 
     if (isHolder()) {
       const remove = document.createElement("button");
@@ -5797,7 +5808,7 @@ async function showMedia() {
         if (!confirm(`Remove this ${what} from the record?`)) return;
         whileWorking(remove, "Removing…", async () => {
           await call("remove_media", here.item, circle.cellId);
-          announce(kind === "Photo" ? "Photo removed." : "Sound removed.");
+          announce(`${what[0].toUpperCase()}${what.slice(1)} removed.`);
           shownMedia = "";
           await showMedia();
         }).catch(problem);
@@ -6046,6 +6057,322 @@ $("save-sound").addEventListener("click", () =>
     );
     putTheSoundDown();
     announce("Sound added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);
+
+// ---------------------------------------------------------------------------
+// Video beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// 480p and two minutes, Ceri's numbers. At about 900 kilobits a second that
+// is roughly thirteen megabytes for two minutes: five pieces of three, well
+// inside the rules' ten pieces and thirty megabytes.
+
+const VIDEO_HEIGHT = 480;
+const VIDEO_BITS_PER_SECOND = 900_000;
+const MOST_BYTES_IN_A_VIDEO = 30_000_000;
+const VIDEO_TYPES_KEPT_AS_THEY_ARE = ["video/webm", "video/mp4"];
+
+let videoFor = null;
+let videoBytes = null;
+let videoType = null;
+let videoSeconds = 0;
+let videoName = "";
+let videoUrl = null;
+let filming = null; // { recorder, stream, started, timer, kind }
+
+function showTheVideo(bytes, type, seconds, name) {
+  if (bytes.length > MOST_BYTES_IN_A_VIDEO) {
+    $("video-status").textContent =
+      "That video is still too large. Try a shorter one, or record it here.";
+    return;
+  }
+  videoBytes = bytes;
+  videoType = type;
+  videoSeconds = seconds;
+  videoName = name;
+  if (videoUrl) URL.revokeObjectURL(videoUrl);
+  videoUrl = URL.createObjectURL(new Blob([bytes], { type }));
+  $("video-live").hidden = true;
+  $("video-preview").src = videoUrl;
+  $("video-preview").hidden = false;
+  $("save-video").disabled = false;
+  const mb = (bytes.length / 1_000_000).toFixed(1);
+  $("video-status").textContent =
+    `${lengthInWords(seconds)}, ${mb} megabytes. Play it back to check it before adding it.`;
+}
+
+function pickAVideo(key) {
+  videoFor = key;
+  videoBytes = null;
+  $("video-preview").hidden = true;
+  $("video-preview").removeAttribute("src");
+  $("video-live").hidden = true;
+  $("save-video").disabled = true;
+  $("video-status").textContent = "";
+  $("video-words").value = "";
+  $("record-video").textContent = "Start recording";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[key]] ?? [null, "this section"];
+  $("add-video-question").textContent = `Add video to “${label}”?`;
+  $("add-video").showModal();
+  $("record-video").focus();
+}
+
+function stopFilming() {
+  if (!filming) return;
+  clearInterval(filming.timer);
+  if (filming.recorder.state !== "inactive") filming.recorder.stop();
+  for (const track of filming.stream.getTracks()) track.stop();
+  if (filming.source) filming.source.pause();
+}
+
+/** The best WebM this device can record. */
+function aVideoRecordingType() {
+  for (const type of ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"]) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
+}
+
+/*
+ * Record a stream at 480p and hand back the bytes. Used both for the camera
+ * and for shrinking a chosen file, which is the same job: something plays,
+ * and this writes it down smaller.
+ */
+function recordStream(stream, { onTick, onDone, kind, source }) {
+  const type = aVideoRecordingType();
+  const recorder = new MediaRecorder(stream, {
+    mimeType: type || undefined,
+    videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+    audioBitsPerSecond: 48_000,
+  });
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size) chunks.push(e.data);
+  });
+  recorder.addEventListener("stop", async () => {
+    const seconds = Math.max(1, Math.round((Date.now() - filming.started) / 1000));
+    filming = null;
+    const bytes = new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer());
+    onDone(bytes, Math.min(seconds, MOST_SECONDS_OF_MEDIA));
+  });
+  filming = { recorder, stream, started: Date.now(), timer: 0, kind, source };
+  recorder.start(1000);
+  const tick = () => {
+    const seconds = Math.round((Date.now() - filming.started) / 1000);
+    onTick(seconds);
+    if (seconds >= MOST_SECONDS_OF_MEDIA) stopFilming();
+  };
+  tick();
+  filming.timer = setInterval(tick, 1000);
+}
+
+$("record-video").addEventListener("click", async () => {
+  if (filming) {
+    stopFilming();
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { height: { ideal: VIDEO_HEIGHT }, width: { ideal: 854 }, facingMode: "user" },
+      audio: true,
+    });
+  } catch (error) {
+    console.error(error);
+    $("video-status").textContent =
+      "The camera could not be opened. Check it is connected and that Hearth " +
+      "is allowed to use it, or choose a video file instead.";
+    return;
+  }
+
+  // What the camera sees while recording, silent so it does not echo.
+  $("video-preview").hidden = true;
+  $("video-live").srcObject = stream;
+  $("video-live").hidden = false;
+  await $("video-live").play().catch(() => {});
+  $("save-video").disabled = true;
+
+  recordStream(stream, {
+    kind: "camera",
+    onTick: (seconds) => {
+      $("record-video").textContent = `Stop recording (${lengthInWords(seconds)})`;
+      if (seconds >= MOST_SECONDS_OF_MEDIA) {
+        $("video-status").textContent = "Two minutes is the most. It has stopped itself.";
+      }
+    },
+    onDone: (bytes, seconds) => {
+      $("video-live").srcObject = null;
+      $("record-video").textContent = "Record again";
+      if (!bytes.length) {
+        $("video-status").textContent = "Nothing was recorded. Try again.";
+        return;
+      }
+      showTheVideo(bytes, "video/webm", seconds, "recording.webm");
+    },
+  });
+});
+
+$("choose-video").addEventListener("click", () => {
+  stopFilming();
+  $("video-file").value = "";
+  $("video-file").click();
+});
+
+/** A video element playing a file, ready to be read. */
+function videoFrom(url) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.addEventListener("loadedmetadata", () => resolve(video), { once: true });
+    video.addEventListener("error", () => reject(new Error("unreadable")), { once: true });
+    video.src = url;
+  });
+}
+
+/*
+ * Make a chosen video smaller, by playing it into a 480p canvas and recording
+ * that. It takes as long as the video lasts, and says so. The sound comes from
+ * the video itself; the player is kept silent so it is not heard while it
+ * works.
+ */
+function shrinkVideo(video, name) {
+  const scale = Math.min(1, VIDEO_HEIGHT / video.videoHeight);
+  const canvas = document.createElement("canvas");
+  // Even numbers: some encoders refuse odd sizes.
+  canvas.width = Math.round((video.videoWidth * scale) / 2) * 2;
+  canvas.height = Math.round((video.videoHeight * scale) / 2) * 2;
+  const draw = canvas.getContext("2d");
+
+  const tracks = [...canvas.captureStream(25).getVideoTracks()];
+  try {
+    tracks.push(...video.captureStream().getAudioTracks());
+  } catch {
+    // No sound track to take; the video is kept without sound.
+  }
+  const stream = new MediaStream(tracks);
+
+  video.volume = 0;
+  const paint = () => {
+    if (!filming || video.paused || video.ended) return;
+    draw.drawImage(video, 0, 0, canvas.width, canvas.height);
+    requestAnimationFrame(paint);
+  };
+
+  $("save-video").disabled = true;
+  $("record-video").disabled = true;
+  recordStream(stream, {
+    kind: "shrinking",
+    source: video,
+    onTick: (seconds) => {
+      const total = Math.round(video.duration);
+      $("video-status").textContent =
+        `Making it smaller: ${lengthInWords(Math.min(seconds, total))} of ` +
+        `${lengthInWords(total)}. It takes as long as the video lasts.`;
+    },
+    onDone: (bytes) => {
+      $("record-video").disabled = false;
+      URL.revokeObjectURL(video.src);
+      showTheVideo(bytes, "video/webm", Math.max(1, Math.round(video.duration)), name);
+    },
+  });
+  video.addEventListener("ended", stopFilming, { once: true });
+  video.play().then(paint).catch((error) => {
+    console.error(error);
+    stopFilming();
+    $("video-status").textContent = "That video could not be played. Try another.";
+  });
+}
+
+$("video-file").addEventListener("change", async () => {
+  const file = $("video-file").files?.[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  let video;
+  try {
+    video = await videoFrom(url);
+  } catch {
+    URL.revokeObjectURL(url);
+    $("video-status").textContent =
+      "That video could not be opened. MP4 and WebM videos work best.";
+    return;
+  }
+
+  if (!Number.isFinite(video.duration) || video.duration > MOST_SECONDS_OF_MEDIA + 0.5) {
+    URL.revokeObjectURL(url);
+    $("video-status").textContent =
+      "That is longer than two minutes. Two minutes is the most, so the " +
+      "people reading this will watch all of it.";
+    return;
+  }
+
+  // Small enough and 480p or less already: kept exactly as it is.
+  if (
+    VIDEO_TYPES_KEPT_AS_THEY_ARE.includes(file.type) &&
+    file.size <= MOST_BYTES_IN_A_VIDEO &&
+    video.videoHeight <= VIDEO_HEIGHT
+  ) {
+    URL.revokeObjectURL(url);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    showTheVideo(bytes, file.type, Math.max(1, Math.round(video.duration)), file.name);
+    return;
+  }
+
+  shrinkVideo(video, file.name);
+});
+
+function putTheVideoDown() {
+  stopFilming();
+  if ($("add-video").open) $("add-video").close();
+  $("video-live").srcObject = null;
+  $("record-video").disabled = false;
+  videoBytes = null;
+  videoFor = null;
+}
+
+$("cancel-video").addEventListener("click", putTheVideoDown);
+// Closed with Escape: the camera goes off too.
+$("add-video").addEventListener("close", () => {
+  stopFilming();
+  $("video-live").srcObject = null;
+});
+
+$("save-video").addEventListener("click", () =>
+  whileWorking($("save-video"), "Adding…", async () => {
+    const bytes = videoBytes;
+    const section = SECTION_FOR_KEY[videoFor];
+    if (!bytes || !section) return;
+
+    // In pieces, one at a time, saying how far it has got.
+    const count = Math.ceil(bytes.length / MOST_BYTES_IN_A_PIECE);
+    const pieces = [];
+    for (let i = 0; i < count; i++) {
+      $("video-status").textContent = `Saving part ${i + 1} of ${count}…`;
+      const part = bytes.slice(i * MOST_BYTES_IN_A_PIECE, (i + 1) * MOST_BYTES_IN_A_PIECE);
+      pieces.push(await call("add_media_piece", part, circle.cellId));
+    }
+
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Video",
+        mime_type: videoType,
+        file_name: videoName,
+        in_words: $("video-words").value.trim(),
+        seconds: videoSeconds,
+        pieces,
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putTheVideoDown();
+    announce("Video added.");
     shownMedia = "";
     await showMedia();
   }).catch(problem),

@@ -529,7 +529,8 @@ li {
 }
 
 #add-photo,
-#add-sound {
+#add-sound,
+#add-video {
   max-width: 32rem;
   border: 2px solid var(--line);
   border-radius: 12px;
@@ -537,12 +538,14 @@ li {
 }
 
 #add-photo::backdrop,
-#add-sound::backdrop {
+#add-sound::backdrop,
+#add-video::backdrop {
   background: rgba(0, 0, 0, 0.45);
 }
 
 #add-photo textarea,
-#add-sound textarea {
+#add-sound textarea,
+#add-video textarea {
   width: 100%;
   box-sizing: border-box;
 }
@@ -815,4 +818,16 @@ legend {
   width: 1.4rem;
   height: 1.4rem;
   accent-color: var(--accent);
+}
+
+#video-live,
+#video-preview,
+.media-here video {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  max-height: 22rem;
+  margin: 0.5rem 0;
+  border-radius: 6px;
+  background: #000;
 }
