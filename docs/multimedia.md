@@ -127,6 +127,14 @@ person saved it: nobody re-compresses it on the way to anybody else.
 3. **Video.** Record or choose, shrunk to 480p and two minutes; split into
    pieces; put back together to play; never plays by itself.
 
+## Captured: the writing pages carry a lot of text
+
+Ceri, 19 September 2026, when asking for a line on the first writing page
+saying photos, sound and video can be added afterwards (done): each page
+already has a good deal of explanation, so it may need condensing. Not done —
+the wording is his to judge, so it waits for a walkthrough of the pages with
+him.
+
 ## Captured, not built: speech to text
 
 Ceri's idea, 19 September 2026, after trying sound: fill in "what this says,
