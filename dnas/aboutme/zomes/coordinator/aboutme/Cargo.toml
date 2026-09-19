@@ -14,3 +14,4 @@ yaml_serde = { workspace = true }
 serde = { workspace = true }
 aboutme_integrity = { path = "../../integrity/aboutme" }
 holochain_serialized_bytes = { workspace = true }
+serde_bytes = "0.11"

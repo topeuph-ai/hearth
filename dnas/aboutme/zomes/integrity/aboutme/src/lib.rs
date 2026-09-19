@@ -325,6 +325,87 @@ pub struct Departure {
     pub removed: bool,
 }
 
+/// What kind of media an item is.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKind {
+    Photo,
+    Sound,
+    Video,
+}
+
+/// A photo, a sound recording or a video, beside one section of the record
+/// (migration batch, item 7).
+///
+/// The About Me guidance asks for exactly this: "Ideally this information is
+/// also available in a multimedia format e.g. video, particularly when a
+/// person has difficulties expressing themselves." See docs/multimedia.md.
+///
+/// **Designed for all three at once**, although photos are built first,
+/// because every change to this file costs every circle a move.
+///
+/// The file itself is not in here. It is in one or more [`MediaPiece`]s,
+/// named by hash in order, because Holochain's limit is four megabytes an
+/// entry and two minutes of video is more than that. A hash names exactly one
+/// piece of content, so whoever reads the pieces back knows they are the ones
+/// the holder wrote.
+///
+/// Only the holder adds media, as only she writes the record. It is part of
+/// the person's account of themselves.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct MediaItem {
+    /// Which section it sits beside.
+    pub section: AboutMeField,
+    pub kind: MediaKind,
+    /// The standard's "MIME type": `image/jpeg`, `audio/webm`, `video/webm`...
+    pub mime_type: String,
+    /// The standard's "filename". What the file was called; shown, never
+    /// trusted.
+    pub file_name: String,
+    /// "What this says in words", suggested and never required: the text
+    /// alternative, written by somebody who knows what the clip says.
+    pub in_words: String,
+    /// How long a recording is, as the recording device said. 0 for a photo.
+    /// A claim — nothing here can play a file to check it — but a limit on
+    /// the claim still stops an honest app from going over.
+    pub seconds: u32,
+    /// The pieces, in order.
+    pub pieces: Vec<EntryHash>,
+    /// All the pieces together, in bytes.
+    pub size: u64,
+}
+
+/// One piece of a media file: at most three megabytes of it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct MediaPiece {
+    #[serde(with = "serde_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// A piece is at most this, leaving room under Holochain's four megabytes.
+const MOST_BYTES_IN_A_PIECE: usize = 3_000_000;
+/// Ceri's two minutes, for sound and video.
+const MOST_SECONDS: u32 = 120;
+
+/// What each kind may be: which file types, and at most how big.
+///
+/// A photo is shrunk to about 1600 pixels before it is written, a few hundred
+/// kilobytes. Two minutes of speech is well under a megabyte. Two minutes of
+/// video at 480p, Ceri's choice, is roughly ten to twenty megabytes; thirty is
+/// the ceiling, in ten pieces.
+fn media_rules(kind: MediaKind) -> (&'static [&'static str], usize, u64) {
+    match kind {
+        MediaKind::Photo => (&["image/jpeg", "image/png", "image/webp"], 1, 3_000_000),
+        MediaKind::Sound => (
+            &["audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4"],
+            1,
+            3_000_000,
+        ),
+        MediaKind::Video => (&["video/webm", "video/mp4"], 10, 30_000_000),
+    }
+}
+
 /// Which part of the record a suggestion is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
@@ -388,6 +469,8 @@ pub enum EntryTypes {
     Consent(Consent),
     // The migration batch.
     Departure(Departure),
+    MediaItem(MediaItem),
+    MediaPiece(MediaPiece),
 }
 
 #[hdk_link_types]
@@ -422,6 +505,8 @@ pub enum LinkTypes {
     /// Anchor -> Departure, so every app in the circle finds who has been
     /// removed, and the person removed finds out too.
     CircleToDeparture,
+    /// Anchor -> MediaItem, so every reader finds the photos, sound and video.
+    CircleToMedia,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -1116,6 +1201,22 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Only the holder publishes media, and only her own.
+        LinkTypes::CircleToMedia => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may add media");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only publish your own media");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Only the holder records who has gone, and only her own decisions.
         LinkTypes::CircleToDeparture => {
             if !is_the_person(author)? {
@@ -1377,6 +1478,62 @@ fn validate_consent(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// A media item: the holder's, of a type its kind allows, and no bigger than
+/// its kind allows.
+///
+/// The pieces are not fetched here. Each piece is checked for size when it is
+/// written, and a piece is named by the hash of its content, so it cannot be
+/// swapped for another afterwards. Fetching thirty megabytes of video on every
+/// device that checks the item would cost everybody for no extra certainty.
+fn validate_media_item(
+    item: &MediaItem,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may add a photo, sound or video");
+    }
+    let (types, most_pieces, most_bytes) = media_rules(item.kind);
+    if !types.contains(&item.mime_type.as_str()) {
+        return invalid("That kind of file cannot be added here");
+    }
+    if item.pieces.is_empty() || item.pieces.len() > most_pieces {
+        return invalid("That file is in more pieces than its kind allows");
+    }
+    if item.size == 0 || item.size > most_bytes {
+        return invalid("That file is larger than its kind allows");
+    }
+    match item.kind {
+        MediaKind::Photo if item.seconds != 0 => {
+            return invalid("A photo has no length");
+        }
+        MediaKind::Sound | MediaKind::Video if item.seconds > MOST_SECONDS => {
+            return invalid("A recording can be up to two minutes long");
+        }
+        _ => {}
+    }
+    if name_too_long(&item.file_name) || name_too_long(&item.mime_type) {
+        return invalid("A file name can be up to 200 characters");
+    }
+    if too_long(&item.in_words) {
+        return invalid("What it says in words can be up to 500 words");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A piece of a media file: the holder's, and at most three megabytes.
+fn validate_media_piece(
+    piece: &MediaPiece,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may add a photo, sound or video");
+    }
+    if piece.bytes.is_empty() || piece.bytes.len() > MOST_BYTES_IN_A_PIECE {
+        return invalid("A piece of a file is at most three megabytes");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// Only the holder removes somebody, and never herself.
 ///
 /// A holder removing herself would leave a circle nobody may write in, with
@@ -1594,6 +1751,8 @@ fn validate_create(
         EntryTypes::Appointment(a) => validate_appointment(&a, author),
         EntryTypes::Consent(c) => validate_consent(&c, author),
         EntryTypes::Departure(d) => validate_departure(&d, author),
+        EntryTypes::MediaItem(m) => validate_media_item(&m, author),
+        EntryTypes::MediaPiece(p) => validate_media_piece(&p, author),
     }
 }
 
@@ -1803,6 +1962,12 @@ fn validate_update(
             // removed, and when, stays where everybody can see it.
             EntryTypes::Departure(_) => {
                 invalid("A removal cannot be changed; write another decision")
+            }
+            // Replace a photo by removing it and adding another. A file that
+            // changes under the same name is how a reader ends up looking at
+            // something other than what they think they are.
+            EntryTypes::MediaItem(_) | EntryTypes::MediaPiece(_) => {
+                invalid("A photo, sound or video cannot be changed; remove it and add another")
             }
     }
 }

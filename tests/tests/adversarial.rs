@@ -3361,3 +3361,114 @@ async fn the_holder_cannot_remove_herself() {
         .await;
     assert!(refused.is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Photos, sound and video (migration batch, item 7)
+// ---------------------------------------------------------------------------
+
+use aboutme_integrity::{AboutMeField, MediaKind};
+
+fn a_photo(pieces: Vec<EntryHash>, size: u64) -> aboutme::AddMediaInput {
+    aboutme::AddMediaInput {
+        section: AboutMeField::PeopleWhoMatter,
+        kind: MediaKind::Photo,
+        mime_type: "image/jpeg".to_string(),
+        file_name: "ruth-and-me.jpg".to_string(),
+        in_words: "Me with my daughter Ruth at the allotment".to_string(),
+        seconds: 0,
+        pieces,
+        size,
+    }
+}
+
+/// The holder adds a photo, and it reads back exactly as it went in.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_add_a_photo_and_read_it_back() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let picture: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
+
+    let piece: EntryHash = conductor
+        .call(&zome(&alice_cell), "add_media_piece", aboutme::Bytes(picture.clone()))
+        .await;
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "add_media", a_photo(vec![piece.clone()], 50_000))
+        .await;
+
+    let here: Vec<aboutme::MediaHere> =
+        conductor.call(&zome(&alice_cell), "get_media", ()).await;
+    assert_eq!(here.len(), 1);
+    assert_eq!(here[0].media.pieces, vec![piece.clone()]);
+
+    let back: aboutme::Bytes = conductor
+        .call(&zome(&alice_cell), "get_media_piece", piece)
+        .await;
+    assert_eq!(back.0, picture, "the photo comes back byte for byte");
+
+    let _: () = conductor
+        .call(&zome(&alice_cell), "remove_media", here[0].item.clone())
+        .await;
+    let after: Vec<aboutme::MediaHere> =
+        conductor.call(&zome(&alice_cell), "get_media", ()).await;
+    assert!(after.is_empty(), "a removed photo does not come back on her own screen");
+}
+
+/// Media is part of the person's account of themselves: only the holder adds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_add_media() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+    let refused: Result<EntryHash, _> = conductor
+        .call_fallible(&zome(&bob_cell), "add_media_piece", aboutme::Bytes(vec![1; 1000]))
+        .await;
+    assert!(refused.is_err(), "a member cannot put files on everybody's device");
+}
+
+/// A piece is at most three megabytes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_piece_over_three_megabytes_is_refused() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let refused: Result<EntryHash, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "add_media_piece",
+            aboutme::Bytes(vec![7; 3_000_001]),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// Each kind has its own limits: types, length, pieces.
+#[tokio::test(flavor = "multi_thread")]
+async fn media_is_held_to_the_limits_of_its_kind() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let piece: EntryHash = conductor
+        .call(&zome(&alice_cell), "add_media_piece", aboutme::Bytes(vec![3; 1000]))
+        .await;
+
+    // A photo that says it is a video file.
+    let mut wrong_type = a_photo(vec![piece.clone()], 1000);
+    wrong_type.mime_type = "video/webm".to_string();
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", wrong_type)
+        .await;
+    assert!(refused.is_err(), "a photo is an image file");
+
+    // A recording longer than two minutes.
+    let mut too_long = a_photo(vec![piece.clone()], 1000);
+    too_long.kind = MediaKind::Sound;
+    too_long.mime_type = "audio/webm".to_string();
+    too_long.seconds = 121;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", too_long)
+        .await;
+    assert!(refused.is_err(), "two minutes at most");
+
+    // A video in more pieces than thirty megabytes needs.
+    let mut too_many = a_photo(vec![piece; 11], 11_000);
+    too_many.kind = MediaKind::Video;
+    too_many.mime_type = "video/webm".to_string();
+    too_many.seconds = 60;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", too_many)
+        .await;
+    assert!(refused.is_err(), "ten pieces at most");
+}

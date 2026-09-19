@@ -10,6 +10,7 @@ dependencies = [
  "hdk",
  "holochain_serialized_bytes",
  "serde",
+ "serde_bytes",
  "yaml_serde",
 ]
 
@@ -21,6 +22,7 @@ dependencies = [
  "holo_hash",
  "holochain_serialized_bytes",
  "serde",
+ "serde_bytes",
 ]
 
 [[package]]

@@ -2247,6 +2247,176 @@ fn appointment_path() -> ExternResult<TypedPath> {
 }
 
 // ---------------------------------------------------------------------------
+// Photos, sound and video (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// A file goes in as pieces of at most three megabytes, one call each, and
+// then the item that names them in order. One call per piece keeps a
+// two-minute video from having to squeeze through a single message.
+//
+// Shrinking happens on the device that records it, before any of this is
+// called: a photo to about 1600 pixels, video to 480p. See docs/multimedia.md.
+
+const MEDIA_ANCHOR: &str = "media";
+
+fn media_path() -> ExternResult<TypedPath> {
+    anchored(MEDIA_ANCHOR, LinkTypes::CircleToMedia)
+}
+
+/// Raw bytes, sent and received as bytes rather than a list of numbers.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Bytes(#[serde(with = "serde_bytes")] pub Vec<u8>);
+
+/// Write one piece of a file, and say which hash names it.
+#[hdk_extern]
+pub fn add_media_piece(bytes: Bytes) -> ExternResult<EntryHash> {
+    let piece = MediaPiece { bytes: bytes.0 };
+    let hash = hash_entry(&piece)?;
+    create_entry(EntryTypes::MediaPiece(piece))?;
+    Ok(hash)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AddMediaInput {
+    pub section: AboutMeField,
+    pub kind: MediaKind,
+    pub mime_type: String,
+    #[serde(default)]
+    pub file_name: String,
+    #[serde(default)]
+    pub in_words: String,
+    #[serde(default)]
+    pub seconds: u32,
+    pub pieces: Vec<EntryHash>,
+    pub size: u64,
+}
+
+/// Put a photo, sound or video beside a section, once its pieces are written.
+#[hdk_extern]
+pub fn add_media(input: AddMediaInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::MediaItem(MediaItem {
+        section: input.section,
+        kind: input.kind,
+        mime_type: input.mime_type,
+        file_name: input.file_name.trim().to_string(),
+        in_words: input.in_words.trim().to_string(),
+        seconds: input.seconds,
+        pieces: input.pieces,
+        size: input.size,
+    }))?;
+
+    let path = media_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToMedia,
+        (),
+    )?;
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just added"))
+}
+
+/// One photo, sound or video, as a reader needs it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MediaHere {
+    /// What to pass to `remove_media`.
+    pub item: ActionHash,
+    pub added: Timestamp,
+    pub media: MediaItem,
+}
+
+/// Everything beside the record now, oldest first.
+///
+/// Only the holder's, checked again here because validation already refuses
+/// anybody else's and a list is the place a mistake would show.
+#[hdk_extern]
+pub fn get_media(_: ()) -> ExternResult<Vec<MediaHere>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(media_path()?.path_entry_hash()?, LinkTypes::CircleToMedia)?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    /*
+     * Mine too, so the holder sees a photo the moment she adds it — minus any
+     * she has removed. Removing takes away the link the list is read from, but
+     * her own chain still holds the item, and without this a removed photo
+     * would come straight back on her own screen.
+     */
+    let removed: std::collections::HashSet<ActionHash> =
+        query(ChainQueryFilter::new().action_type(ActionType::Delete))?
+            .into_iter()
+            .filter_map(|r| match &r.action().data {
+                ActionData::Delete(d) => Some(d.deletes_address.clone()),
+                _ => None,
+            })
+            .collect();
+    let mine: Vec<Record> = on_my_own_chain(UnitEntryTypes::MediaItem)?
+        .into_iter()
+        .filter(|r| !removed.contains(r.action_address()))
+        .collect();
+    and_my_own(&mut found, mine);
+    oldest_first(&mut found);
+
+    Ok(found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder && !removed.contains(r.action_address()))
+        .filter_map(|r| {
+            let media = r.entry().to_app_option::<MediaItem>().ok().flatten()?;
+            Some(MediaHere {
+                item: r.action_address().clone(),
+                added: r.action().timestamp(),
+                media,
+            })
+        })
+        .collect())
+}
+
+/// One piece of a file, by the hash that names it.
+#[hdk_extern]
+pub fn get_media_piece(hash: EntryHash) -> ExternResult<Bytes> {
+    let record = get(hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("That piece has not arrived on this device yet"))?;
+    let piece = record
+        .entry()
+        .to_app_option::<MediaPiece>()
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .ok_or_else(|| wasm_error!("That is not a piece of a file"))?;
+    Ok(Bytes(piece.bytes))
+}
+
+/// Take a photo, sound or video away from beside the record.
+///
+/// The link the list is read from goes, and the item is marked deleted.
+/// Every member's device still holds what it already received, as with
+/// everything in a circle; this stops it being shown.
+#[hdk_extern]
+pub fn remove_media(item: ActionHash) -> ExternResult<()> {
+    let links = get_links(
+        LinkQuery::try_new(media_path()?.path_entry_hash()?, LinkTypes::CircleToMedia)?,
+        GetStrategy::Local,
+    )?;
+    for link in links {
+        if link.target.clone().into_action_hash().as_ref() == Some(&item) {
+            delete_link(link.create_link_hash, GetOptions::default())?;
+        }
+    }
+    delete_entry(item)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Who has been removed (migration batch, item 4)
 // ---------------------------------------------------------------------------
 //
