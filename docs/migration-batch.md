@@ -102,6 +102,20 @@ it is a second person, and that it is visible.
 | 8. Coded values | **Built** — an empty optional space; saving keeps any codes a record has |
 | 6, 7, 9 | Not started |
 
+**Captured, 19 September 2026, not decided: media in suggestions (7b).**
+Ceri's idea: any member may attach a photo, sound or video to a suggestion,
+and the holder decides whether it goes beside the section — as with text
+suggestions. Possible, and it fits what is built: the holder's item can name
+pieces a member wrote, because pieces are named by the hash of their content.
+
+It needs a limit every device checks, because anything a member sends is
+copied to every device **even if the holder sets it aside** — nothing written
+in a circle can be unwritten. Counted from the member's own chain, like the
+knock limit, so every device reaches the same answer. Example numbers to
+decide: **at most 3 media suggestions per member per 7 days, and 20 MB in
+total.** It changes the frozen rules (today only the holder may write media),
+so it belongs in this batch or costs a migration later.
+
 **A wording to confirm.** What the removed person's app says when it takes
 the circle off their device: *"You are no longer in Margaret Smythe's circle.
 The person who holds it has removed you, so it has been taken off this
