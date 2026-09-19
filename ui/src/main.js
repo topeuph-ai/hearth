@@ -2332,6 +2332,9 @@ function sayWhoIsNew() {
  */
 let whoAgrees = null;
 
+/** The holder has asked to choose somebody else, though someone agreed. */
+let choosingAnotherToAgree = false;
+
 async function readWhoAgrees() {
   whoAgrees = await call("who_agrees_here", null, circle.cellId);
   seconderHere = whoAgrees?.agrees ?? null;
@@ -2541,7 +2544,10 @@ function renderPeople() {
 
   // Only the holder appoints, and only where there is somebody to appoint.
   const amHolder = isHolder();
-  $("appoint-hint").hidden = !amHolder || members.size < 2;
+  // And the invitation to press a name goes quiet once somebody has agreed.
+  const somebodyAgreed =
+    Boolean(whoAgrees) && whoAgrees.willing !== false && !choosingAnotherToAgree;
+  $("appoint-hint").hidden = !amHolder || members.size < 2 || somebodyAgreed;
 
   for (const [key, entry] of members) {
     const li = document.createElement("li");
@@ -2569,8 +2575,36 @@ function renderPeople() {
     // Asking somebody else replaces whoever is asked now, so the person
     // already asked needs no button of their own — pressing another name is
     // the whole of changing your mind.
-    if (amHolder && key !== asText(me) && !theirs) {
+    /*
+     * Only while the role is open.
+     *
+     * "Ask Ronnie Smythe instead", beside every name, after Dave had already
+     * said yes, read as though the role were still up for grabs — and it
+     * offered a way to take it off somebody who had just agreed, one press
+     * away, on a page she visits for other reasons. Once somebody has agreed,
+     * the choice is behind one quiet link under their name, for the day it is
+     * really needed.
+     */
+    const roleIsOpen =
+      !whoAgrees || whoAgrees.willing === false || choosingAnotherToAgree;
+    if (amHolder && key !== asText(me) && !theirs && roleIsOpen) {
       li.append(askThem(key, who));
+    }
+
+    if (amHolder && theirs && whoAgrees.willing !== false && !choosingAnotherToAgree) {
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "linky";
+      change.textContent = "Ask somebody else instead";
+      change.addEventListener("click", () => {
+        choosingAnotherToAgree = true;
+        renderPeople();
+        announce("Choose who to ask instead, from the names below.");
+      });
+      actions.append(change);
+      li.append(actions);
     }
 
     // Removing somebody: the ordinary way, or by moving everybody else.
@@ -2670,6 +2704,7 @@ function askThem(key, who) {
   button.addEventListener("click", () =>
     whileWorking(button, "Asking…", async () => {
       await call("appoint", key, circle.cellId);
+      choosingAnotherToAgree = false;
       announce(`${who} has been asked. Nobody new can join until they agree.`);
       await loadCircle();
     }).catch(problem),
@@ -3113,6 +3148,7 @@ function forgetTheCircle() {
   // Who this circle asked, and who it asked to agree. Carried into the next
   // circle these would be somebody else's answers on somebody else's screen.
   whoAgrees = null;
+  choosingAnotherToAgree = false;
   seconderHere = null;
   theDoorIsHere = false;
   circleAsksTwo = false;
@@ -6689,6 +6725,18 @@ function renderSuccession() {
 
   // The checker, and — if the checker has not answered — everybody else.
   const amChecker = succession.checker === mine;
+
+  // Chosen to check, and nothing has happened: said, so it is not a surprise
+  // on the day.
+  if (!amHolder && amChecker && !active) {
+    show.push(
+      aLine(
+        `${holderName} has chosen you to check on them, in person or by phone, ` +
+          `if anybody ever says they can no longer look after this circle. ` +
+          `There is nothing to do unless that happens.`,
+      ),
+    );
+  }
   if (active && !amHolder && takeover.successor !== mine && !takeover.checkerAnswered) {
     if (amChecker || takeover.othersMayAnswer) {
       show.push(
