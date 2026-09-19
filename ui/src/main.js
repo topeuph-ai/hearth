@@ -1194,6 +1194,7 @@ async function drawTheCircle() {
 
   await loadMembers();
   await loadSuggestions();
+  await readSuccession();
 }
 
 /*
@@ -3120,8 +3121,11 @@ function forgetTheCircle() {
   // Who was removed from this circle means nothing in the next one.
   gone = new Map();
   removedMembers = new Map();
-  // Nor do its pictures.
+  // Nor do its pictures, or who might take it over.
   forgetMedia();
+  succession = null;
+  $("taking-over-banner").hidden = true;
+  $("succession").hidden = true;
   knocking = [];
   lastWaitingCount = 0;
   stopChiming();
@@ -5189,6 +5193,20 @@ async function followTheMove(fromCellId, payload) {
     const bundle = tokenToInvitation(payload.invitation);
     if (bundle.founder !== asText(payload.by)) return;
 
+    /*
+     * Moved by somebody other than the holder: only a successor whose taking
+     * over stands. The zome has checked who; this checks when — the waiting
+     * period, and the check on her — which each device answers for itself.
+     */
+    const oldHolder = asText(
+      await orNothingYet(call("who_holds_this", null, fromCellId), null),
+    );
+    if (oldHolder && oldHolder !== asText(payload.by)) {
+      const state = await orNothingYet(call("get_succession", null, fromCellId), null);
+      const takeover = state ? decideTakeover(state) : null;
+      if (!takeover?.ready || takeover.successor !== asText(payload.by)) return;
+    }
+
     const label = labelFor(fromCellId, bundle.about?.trim() || "Their circle");
 
     // Read before the old circle is switched off, which is the last chance.
@@ -5285,8 +5303,11 @@ function sayItMovedIfItDid() {
    * actually happened to the people in it.
    */
   const by = note.by?.trim() || "The person who holds this circle";
-  const removed = note.removed?.trim() || "somebody";
-  $("moved-note-text").textContent = `${by} has removed ${removed} from the circle.`;
+  const removed = note.removed?.trim();
+  // Moved with nobody removed: a successor taking over.
+  $("moved-note-text").textContent = removed
+    ? `${by} has removed ${removed} from the circle.`
+    : `${by} now holds this circle.`;
 
   const reason = note.reason?.trim();
   $("moved-note-reason").hidden = !reason;
@@ -6388,3 +6409,343 @@ $("save-video").addEventListener("click", () =>
     await showMedia();
   }).catch(problem),
 );
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// Ceri's rules, 19 September 2026: anybody in the circle may be named; a
+// waiting period everybody can see, in which the holder can say "I'm still
+// here"; the holder can change or remove the successor at any time; and a
+// checker she names, asked first, with anybody else able to answer if the
+// checker cannot.
+//
+// Who may write each step is checked by every device. When — the waiting
+// period, and when others may answer — is decided here, by every copy of
+// Hearth. In the demo the waits are minutes, so it can be walked in one
+// sitting; in the released app they are fourteen days and seven.
+
+const DAY = 24 * 60 * 60 * 1000;
+const WAIT_BEFORE_TAKING_OVER = import.meta.env.DEV ? 2 * 60 * 1000 : 14 * DAY;
+const OTHERS_MAY_ANSWER_AFTER = import.meta.env.DEV ? 60 * 1000 : 7 * DAY;
+
+let succession = null; // what get_succession said, for the circle on screen
+
+/** Microseconds from the zome to milliseconds for the clock. */
+const msOf = (timestamp) => Number(timestamp) / 1000;
+
+function whenInWords(ms) {
+  const when = new Date(ms);
+  return import.meta.env.DEV
+    ? when.toLocaleTimeString("en-GB")
+    : when.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+}
+
+/**
+ * Where a taking-over stands, from what the circle says and the clock.
+ *
+ * The checker's word decides if they have given it. If they have not, the
+ * first answer from anybody else — given once others may answer — decides.
+ * A "she can carry on" stops it; a "she cannot" lets it go ahead once the
+ * waiting period is over.
+ */
+function decideTakeover(state, now = Date.now()) {
+  const claim = state?.claim;
+  if (!claim) return null;
+  const started = msOf(claim.at);
+  const othersFrom = started + OTHERS_MAY_ANSWER_AFTER;
+  const readyFrom = started + WAIT_BEFORE_TAKING_OVER;
+
+  const byChecker = claim.checks.filter((c) => c.by === state.checker).pop() ?? null;
+  const byOthers = claim.checks.find(
+    (c) => c.by !== state.checker && msOf(c.at) >= othersFrom,
+  );
+  const decisive = byChecker ?? byOthers ?? null;
+
+  const out = {
+    successor: claim.by,
+    claim: claim.claim,
+    started,
+    othersFrom,
+    readyFrom,
+    stopped: claim.still_here,
+    checkedFine: Boolean(decisive?.holder_can_carry_on),
+    checkedCannot: Boolean(decisive && !decisive.holder_can_carry_on),
+    checkerAnswered: Boolean(byChecker),
+    othersMayAnswer: !byChecker && now >= othersFrom,
+    ready: false,
+  };
+  out.ready = !out.stopped && out.checkedCannot && now >= readyFrom;
+  return out;
+}
+
+async function readSuccession() {
+  if (!circle) return;
+  const state = await orNothingYet(call("get_succession", null, circle.cellId), null);
+  if (!state) return;
+  succession = state;
+  renderSuccession();
+}
+
+const nameOf = (key) => members.get(key)?.name?.trim() || "Somebody";
+
+function aButton(text, secondary, onPress) {
+  const b = document.createElement("button");
+  b.type = "button";
+  if (secondary) b.className = "secondary";
+  b.textContent = text;
+  b.addEventListener("click", () => onPress(b));
+  return b;
+}
+
+function aLine(text, className) {
+  const p = document.createElement("p");
+  if (className) p.className = className;
+  p.textContent = text;
+  return p;
+}
+
+function renderSuccession() {
+  const body = $("succession-body");
+  const banner = $("taking-over-banner");
+  /*
+   * Held still while somebody is using it. The circle is read again every
+   * twenty seconds, and redrawing the lists would put back the old choice
+   * underneath somebody half-way through making a new one.
+   */
+  if (body.contains(document.activeElement) || banner.contains(document.activeElement)) {
+    return;
+  }
+  body.replaceChildren();
+  banner.replaceChildren();
+  if (!succession) {
+    $("succession").hidden = true;
+    banner.hidden = true;
+    return;
+  }
+
+  const mine = asText(me);
+  const amHolder = isHolder();
+  const holderName = nameOf(holder);
+  const takeover = decideTakeover(succession);
+  const active = takeover && !takeover.stopped && !takeover.checkedFine;
+
+  // ---- Somebody is taking over: everybody sees it, at the top of the record.
+  if (active) {
+    const who = nameOf(takeover.successor);
+    banner.append(
+      aLine(
+        amHolder
+          ? `${who} has said you can no longer look after this circle, and has started to take it over.`
+          : `${who} has said ${holderName} can no longer look after this circle, and has started to take it over.`,
+      ),
+    );
+    if (amHolder) {
+      banner.append(
+        aLine("If you can still look after it, press this. It stops it at once."),
+      );
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("I'm still here", false, (b) =>
+          whileWorking(b, "Saying so…", async () => {
+            await call("still_here", takeover.claim, circle.cellId);
+            announce("Done. Nobody can take this circle over from you.");
+            await readSuccession();
+          }).catch(problem),
+        ),
+      );
+      banner.append(row);
+    } else {
+      banner.append(
+        aLine(
+          takeover.checkedCannot
+            ? `Somebody has checked, and says ${holderName} cannot carry on. ${who} can take over from ${whenInWords(takeover.readyFrom)}.`
+            : `Nothing changes until somebody has checked on ${holderName}, and not before ${whenInWords(takeover.readyFrom)}.`,
+          "hint",
+        ),
+      );
+    }
+  }
+  banner.hidden = !active;
+
+  // ---- The section on the People page.
+  const show = [];
+
+  // The holder names who takes over, and who checks.
+  if (amHolder) {
+    show.push(
+      aLine(
+        "Somebody to take over if you ever cannot look after this circle, and " +
+          "somebody who lives near you or can phone you, to check first. " +
+          "Nothing happens unless the person you name starts it, everybody in " +
+          "the circle sees if they do, and you can stop it by saying you are " +
+          "still here.",
+        "hint",
+      ),
+    );
+    const others = [...members.keys()].filter((k) => k !== mine);
+    if (others.length === 0) {
+      show.push(aLine("There is nobody else in the circle to name yet.", "hint"));
+    } else {
+      const choose = (id, label, current) => {
+        const field = document.createElement("div");
+        field.className = "field";
+        const l = document.createElement("label");
+        l.htmlFor = id;
+        l.textContent = label;
+        const select = document.createElement("select");
+        select.id = id;
+        select.append(new Option("Nobody", ""));
+        for (const k of others) select.append(new Option(nameOf(k), k, false, k === current));
+        field.append(l, select);
+        return field;
+      };
+      show.push(choose("successor-choice", "Who takes over", succession.successor));
+      show.push(choose("checker-choice", "Who checks on you first", succession.checker));
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("Save", false, (b) =>
+          whileWorking(b, "Saving…", async () => {
+            const successor = $("successor-choice").value || null;
+            const checker = $("checker-choice").value || null;
+            if (successor && successor === checker) {
+              announce("The person who checks has to be somebody other than the one who takes over.");
+              return;
+            }
+            await call("name_successor", { successor, checker }, circle.cellId);
+            announce(successor ? "Saved." : "Nobody is named to take over now.");
+            await readSuccession();
+          }).catch(problem),
+        ),
+      );
+      show.push(row);
+    }
+  }
+
+  // The successor, named and not yet started.
+  if (!amHolder && succession.successor === mine && !active) {
+    show.push(
+      aLine(
+        `${holderName} has named you to take over this circle if they can no ` +
+          `longer look after it.`,
+      ),
+    );
+    show.push(
+      aLine(
+        `Only start if that has happened. Everybody in the circle will see it, ` +
+          `${holderName} can stop it by saying they are still here, and ` +
+          `somebody has to check on them before you can take over.`,
+        "hint",
+      ),
+    );
+    const row = document.createElement("div");
+    row.className = "actions";
+    row.append(
+      aButton("Start taking over", true, (b) => {
+        if (!confirm(`Tell everybody that ${holderName} can no longer look after this circle?`)) return;
+        whileWorking(b, "Starting…", async () => {
+          await call("start_taking_over", null, circle.cellId);
+          announce("Started. Everybody in the circle can see it.");
+          await readSuccession();
+        }).catch(problem);
+      }),
+    );
+    show.push(row);
+  }
+
+  // The successor, started: where it stands, and the last step when it is time.
+  if (active && takeover.successor === mine) {
+    if (takeover.ready) {
+      show.push(
+        aLine(
+          `Somebody has checked, ${holderName} has not said they are still ` +
+            `here, and the waiting is over. You can take over now: Hearth will ` +
+            `make a new circle with you holding it, and move everybody across.`,
+        ),
+      );
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("Take over the circle", false, (b) => {
+          if (!confirm("Make a new circle that you hold, and move everybody into it?")) return;
+          whileWorking(b, "Taking over…", () => takeOver(holderName)).catch(problem);
+        }),
+      );
+      show.push(row);
+    } else {
+      show.push(
+        aLine(
+          takeover.checkedCannot
+            ? `Somebody has checked. You can take over from ${whenInWords(takeover.readyFrom)}.`
+            : `Waiting for somebody to check on ${holderName}. You can take over ` +
+                `no sooner than ${whenInWords(takeover.readyFrom)}.`,
+          "hint",
+        ),
+      );
+    }
+  }
+
+  // The checker, and — if the checker has not answered — everybody else.
+  const amChecker = succession.checker === mine;
+  if (active && !amHolder && takeover.successor !== mine && !takeover.checkerAnswered) {
+    if (amChecker || takeover.othersMayAnswer) {
+      show.push(
+        aLine(
+          amChecker
+            ? `You are the person asked to check on ${holderName}. Please see ` +
+                `them, or phone them, and then say:`
+            : `The person asked to check has not answered. If you can see or ` +
+                `phone ${holderName}, please do, and then say:`,
+        ),
+      );
+      const answer = (canCarryOn) => (b) =>
+        whileWorking(b, "Saying so…", async () => {
+          await call(
+            "check_on_holder",
+            { claim: takeover.claim, holder_can_carry_on: canCarryOn },
+            circle.cellId,
+          );
+          announce("Thank you. Everybody in the circle can see your answer.");
+          await readSuccession();
+        }).catch(problem);
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton(`${holderName} can carry on`, false, answer(true)),
+        aButton(`${holderName} cannot carry on`, true, answer(false)),
+      );
+      show.push(row);
+    } else {
+      show.push(
+        aLine(
+          `The person ${holderName} chose to check on them is asked first. If ` +
+            `they have not answered by ${whenInWords(takeover.othersFrom)}, you ` +
+            `can.`,
+          "hint",
+        ),
+      );
+    }
+  }
+
+  if (takeover?.stopped) {
+    show.push(aLine(`${holderName} has said they are still here, so nobody is taking over.`, "hint"));
+  } else if (takeover?.checkedFine) {
+    show.push(aLine(`Somebody has checked, and ${holderName} can carry on, so nobody is taking over.`, "hint"));
+  }
+
+  body.append(...show);
+  $("succession").hidden = show.length === 0;
+}
+
+/** The last step: a new circle the successor holds, and everybody moved. */
+async function takeOver(holderName) {
+  const mineName = members.get(asText(me))?.name?.trim() || "The person named";
+  await moveTheCircle(
+    null,
+    "",
+    `${holderName} can no longer look after this circle, so ${mineName} has taken it over.`,
+  );
+  announce("You hold this circle now. Everybody is being moved across.");
+}

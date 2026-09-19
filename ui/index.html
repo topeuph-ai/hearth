@@ -711,6 +711,13 @@
               <button type="button" id="moved-note-done" class="secondary">OK</button>
             </div>
           </div>
+          <!--
+            Somebody has started taking over this circle. Shown at the top of
+            the record, to everybody, because it is the one thing in the
+            circle nobody should find out about late — least of all the
+            holder, whose "I'm still here" is the answer to it.
+          -->
+          <div id="taking-over-banner" class="notice" hidden></div>
           <p id="members-can-suggest" class="notice" hidden>
             You cannot change what is written here, but you can offer a
             suggestion about any part of it.
@@ -1399,6 +1406,18 @@
             for anything that cannot be undone by pressing it again: say the
             name, say the act, and put space around it.
           -->
+          <!--
+            If the holder can no longer look after the circle.
+
+            The holder names somebody to take over and somebody to check on
+            her. The successor and the checker each see what is theirs to do.
+            Built by renderSuccession.
+          -->
+          <section id="succession" hidden>
+            <h3>If <span class="about-whose">their</span> circle needs a new holder</h3>
+            <div id="succession-body"></div>
+          </section>
+
           <hr class="before-leaving" />
 
           <details id="leave-details">
