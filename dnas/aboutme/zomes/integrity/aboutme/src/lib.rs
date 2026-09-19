@@ -1309,6 +1309,67 @@ fn validate_outcome(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// The rules for a new entry, wherever it arrives.
+fn validate_create(app_entry: EntryTypes, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+    match app_entry {
+        EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, author),
+        EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, author),
+        EntryTypes::Suggestion(s) => validate_suggestion(&s),
+        EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, author),
+        EntryTypes::Member(m) => validate_member(&m),
+        EntryTypes::ProposedMember(p) => validate_proposed_member(&p, author),
+        EntryTypes::Endorsement(e) => validate_endorsement(&e, author),
+        EntryTypes::Knock(k) => validate_knock(&k),
+        EntryTypes::Admission(a) => validate_admission(&a, author),
+        EntryTypes::Appointment(a) => validate_appointment(&a, author),
+        EntryTypes::Consent(c) => validate_consent(&c, author),
+    }
+}
+
+/// Only the author of an entry may delete it. Without this, any member could
+/// erase the person's own record.
+fn validate_delete(action: &TypedAction<DeleteData>) -> ExternResult<ValidateCallbackResult> {
+    let deleted = must_get_action(action.deletes_address.clone())?;
+    if deleted.action().author() != action.author() {
+        return invalid("Only the author of a record may delete it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the agent who made a link may remove it.
+fn validate_delete_link(
+    original_author: &AgentPubKey,
+    action: &TypedAction<DeleteLinkData>,
+) -> ExternResult<ValidateCallbackResult> {
+    if original_author != action.author() {
+        return invalid("Only the agent who created a link may remove it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/*
+ * One set of rules, applied wherever a write arrives.
+ *
+ * Holochain does not ask one machine whether a write is allowed. It hands
+ * the same write to three kinds of machine, each holding a different part of
+ * it: the one that files the whole record, the one that holds the entry, and
+ * the one that keeps the author's own list of what they have done. Each of
+ * them asks this function, separately.
+ *
+ * Until the migration batch, only some of those questions were answered. A
+ * new entry was checked where the entry is held, but not where the record is
+ * filed; and an *update* was checked as an update but not where its new
+ * content is stored, nor where the record is filed. Those fell through to a
+ * catch-all that said yes. No attack was found through it, but a forged
+ * update could have been refused in one place and held as good in another —
+ * and anything that reads a record by its hash reads it from the place that
+ * said yes. The same shape of gap, in link creation, was once found by review
+ * and not by tests.
+ *
+ * So every write now goes through the same rules wherever it lands, and the
+ * catch-all is gone: every kind of operation is named below, so a new kind
+ * in a future Holochain is a compile error here rather than a silent yes.
+ */
 #[hdk_extern]
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match op.flattened::<EntryTypes, LinkTypes>()? {
@@ -1318,20 +1379,92 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             action,
         }) => check_membrane_as_far_as(action.author(), &membrane_proof, true),
 
-        FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => match app_entry {
-            EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, action.author()),
-            EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, action.author()),
-            EntryTypes::Suggestion(s) => validate_suggestion(&s),
-            EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, action.author()),
-            EntryTypes::Member(m) => validate_member(&m),
-            EntryTypes::ProposedMember(p) => validate_proposed_member(&p, action.author()),
-            EntryTypes::Endorsement(e) => validate_endorsement(&e, action.author()),
-            EntryTypes::Knock(k) => validate_knock(&k),
-            EntryTypes::Admission(a) => validate_admission(&a, action.author()),
-            EntryTypes::Appointment(a) => validate_appointment(&a, action.author()),
-            EntryTypes::Consent(c) => validate_consent(&c, action.author()),
-        },
-        FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
+        // A new entry: the same rules where the record is filed and where the
+        // entry is held.
+        FlatOp::CreateRecord(OpRecord::CreateEntry { app_entry, action })
+        | FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => {
+            validate_create(app_entry, action.author())
+        }
+
+        // An update: the same rules as an update, wherever its new content
+        // lands.
+        FlatOp::CreateRecord(OpRecord::UpdateEntry { app_entry, action })
+        | FlatOp::CreateEntry(OpEntry::UpdateEntry { app_entry, action })
+        | FlatOp::Update(OpUpdate::Entry { app_entry, action }) => {
+            validate_update(app_entry, &action)
+        }
+
+        FlatOp::CreateRecord(OpRecord::DeleteEntry { action })
+        | FlatOp::Delete(OpDelete { action }) => validate_delete(&action),
+
+        FlatOp::CreateRecord(OpRecord::CreateLink { link_type, action })
+        | FlatOp::Link(OpLink::CreateLink {
+            link_type, action, ..
+        }) => validate_create_link(&link_type, &action),
+
+        FlatOp::Link(OpLink::DeleteLink {
+            original_action,
+            action,
+            ..
+        }) => validate_delete_link(original_action.author(), &action),
+        FlatOp::CreateRecord(OpRecord::DeleteLink { action }) => {
+            let original = must_get_action(action.link_add_address.clone())?;
+            validate_delete_link(original.action().author(), &action)
+        }
+
+        // This app has no private entries, so anything claiming to be one is
+        // not something this app wrote.
+        FlatOp::CreateRecord(OpRecord::CreatePrivateEntry { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdatePrivateEntry { .. })
+        | FlatOp::Update(OpUpdate::PrivateEntry { .. })
+        | FlatOp::AgentActivity(OpActivity::CreatePrivateEntry { .. })
+        | FlatOp::AgentActivity(OpActivity::UpdatePrivateEntry { .. }) => {
+            invalid("This app has no private entries")
+        }
+
+        // A member's identity is the key they joined with. Replacing it inside
+        // a circle would let one person's history become somebody else's.
+        FlatOp::CreateRecord(OpRecord::UpdateAgent { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateAgent { .. })
+        | FlatOp::Update(OpUpdate::Agent { .. })
+        | FlatOp::AgentActivity(OpActivity::UpdateAgent { .. }) => {
+            invalid("A member's key cannot be replaced inside a circle")
+        }
+
+        // The author's own list of what they have done. It carries only the
+        // kind of each write, never its content, so the content rules are
+        // checked where the content is — above. What is left here is
+        // Holochain's own bookkeeping.
+        FlatOp::AgentActivity(_) => Ok(ValidateCallbackResult::Valid),
+
+        // Holochain's own bookkeeping: joining, opening and closing a chain,
+        // the capability grant that lets members send each other signals.
+        // Nothing app-specific rides on these.
+        FlatOp::CreateRecord(OpRecord::CreateAgent { .. })
+        | FlatOp::CreateRecord(OpRecord::CreateCapClaim { .. })
+        | FlatOp::CreateRecord(OpRecord::CreateCapGrant { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdateCapClaim { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdateCapGrant { .. })
+        | FlatOp::CreateRecord(OpRecord::Dna { .. })
+        | FlatOp::CreateRecord(OpRecord::OpenChain { .. })
+        | FlatOp::CreateRecord(OpRecord::CloseChain { .. })
+        | FlatOp::CreateRecord(OpRecord::InitZomesComplete { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateAgent { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateCapGrant { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateCapClaim { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateCapGrant { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateCapClaim { .. })
+        | FlatOp::Update(OpUpdate::CapClaim { .. })
+        | FlatOp::Update(OpUpdate::CapGrant { .. }) => Ok(ValidateCallbackResult::Valid),
+    }
+}
+
+/// The rules for changing an entry, wherever the change arrives.
+fn validate_update(
+    app_entry: EntryTypes,
+    action: &TypedAction<UpdateData>,
+) -> ExternResult<ValidateCallbackResult> {
+    match app_entry {
             EntryTypes::AboutMe(about_me) => {
                 // Only the original author may revise an About Me.
                 // Every peer holding this checks it independently, so there
@@ -1395,38 +1528,6 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             EntryTypes::Consent(_) => {
                 invalid("An answer cannot be changed; answer again")
             }
-        },
-
-        FlatOp::Link(OpLink::CreateLink {
-            link_type, action, ..
-        }) => validate_create_link(&link_type, &action),
-
-        // Only the agent who made a link may remove it.
-        FlatOp::Link(OpLink::DeleteLink {
-            original_action,
-            action,
-            ..
-        }) => {
-            if original_action.author() != action.author() {
-                return invalid("Only the agent who created a link may remove it");
-            }
-            Ok(ValidateCallbackResult::Valid)
-        }
-
-        // Only the author of an entry may delete it. Without this, any member
-        // could erase the person's own record.
-        FlatOp::Delete(OpDelete { action }) => {
-            let deleted = must_get_action(action.deletes_address.clone())?;
-            if deleted.action().author() != action.author() {
-                return invalid("Only the author of a record may delete it");
-            }
-            Ok(ValidateCallbackResult::Valid)
-        }
-
-        // Everything left is Holochain's own bookkeeping (chain opens and
-        // closes, init markers, agent activity). Nothing app-specific rides on
-        // these, so there is nothing for this app to rule on.
-        _ => Ok(ValidateCallbackResult::Valid),
     }
 }
 
