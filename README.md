@@ -158,7 +158,13 @@ was changed on one machine, and the change arrived on the other.
 
 **Restarted with the internet still gone, they never found each other.**
 Holochain 0.7 forgets where other devices are when it stops, and relearns it
-from an internet server. Why, and what would fix it, is in
+from an internet server.
+
+**On 19 September a field-test build fixed that.** With a version of Holochain
+that looks for devices on the local network, both machines were restarted with
+the broadband unplugged and found each other in about a minute — the laptop had
+joined by scanning a QR code off the other screen. That build is not for
+general use yet, so released Hearth still has the limit. The whole story is in
 [what is proven](docs/what-is-proven.md#two-machines-and-then-no-internet).
 
 Not yet tried: two machines in different places, finding each other across the
@@ -299,8 +305,9 @@ internet away and keep the local network** — it carries on working. Take a
 device out of the room, change something, bring it back — it catches up.
 
 The first half of that was shown on two real machines on 14 September 2026 —
-for as long as nobody restarts. Restarting without the internet does not work
-yet.
+for as long as nobody restarts. Restarting without the internet was shown to
+work on 19 September with a field-test build of Holochain, and will reach
+released Hearth when official Holochain has local discovery.
 Taking a device away and bringing it back has not been tried on two machines
 yet.
 

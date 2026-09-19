@@ -149,9 +149,43 @@ Why, read in the Holochain 0.7.0 source rather than guessed:
 - **Stock Holochain 0.7 cannot look for devices on the local network.** The
   transport's own documentation says there is no discovery service.
 
-So the accurate claim is: **Hearth keeps sharing through an internet cut while
-it is running. After a restart with no internet, devices cannot find each
-other** — not yet. What would change that is in
+So the accurate claim for Hearth as released is: **it keeps sharing through an
+internet cut while it is running. After a restart with no internet, devices
+cannot find each other.**
+
+### ✅ Restarting with no internet: solved in a field test, 19 September 2026
+
+The same two Windows machines, each running **"Hearth LAN test"** — Hearth
+built with the Lightningrod Labs field-test Holochain,
+[holochain-0.7.0-mdns.2](https://github.com/lightningrodlabs/holochain/releases/tag/holochain-0.7.0-mdns.2),
+with its local-network discovery switched on
+([download](https://github.com/topeuph-ai/hearth/releases/tag/lan-field-test-1),
+marked not for general use).
+
+- **The laptop joined by scanning the QR code** on the desktop's screen with
+  its camera — the first use of the scanner, and nothing was typed.
+- Both apps were **quit fully, the broadband was unplugged, and both were
+  started again.** They found each other in **about a minute**, and a change
+  made on one arrived on the other.
+- **They found each other faster offline than online.** Not measured, and not
+  explained from the source; the likely reason is that on the local network
+  they connect directly, where online the first contact goes through the
+  bootstrap and relay servers.
+- **Norton 360 asked about nothing** on the desktop during the test. It had
+  flagged the installer itself as new and rarely seen, which is a reputation
+  warning about any unsigned build, not a finding.
+
+Getting there took three attempts, and the first two tested nothing: the test
+app was not installed on one machine the first time, and the second time the
+test app itself could not start, because of a packaging fault now written up
+in [building-it.md](building-it.md). Recorded so the result is read as one
+clean run, not three.
+
+**What this does and does not change.** It shows the fix works on this
+hardware, for Hearth, in a real house. It does **not** change what Hearth
+ships: the field-test Holochain cannot talk to ordinary Holochain, and its
+authors say it is not for general use. Hearth moves onto local discovery when
+official Holochain has it — see
 [Finding each other without the internet](to-a-product.md#finding-each-other-without-the-internet).
 
 **A second fault, found in the same test and fixed.** Closing Hearth's window
@@ -165,8 +199,8 @@ nothing extra was left running. Not in a release yet.
 What this does **not** yet show, so nobody reads more into it:
 
 - **The two machines had already met online** before the internet went. Two
-  devices meeting for the very first time with no internet at all is untried —
-  and after the restart result, expected to fail.
+  devices meeting for the very first time with no internet at all is untried,
+  even with the field-test build.
 - **Both were on one local network.** Two machines on different networks,
   with no internet between them, cannot reach each other and nothing claims
   they can.

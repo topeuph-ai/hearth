@@ -124,8 +124,10 @@ Three scenarios that could be *demonstrated*, not claimed:
    back down. **✅ Shown 14 September 2026**, on two Windows machines on one
    home wifi with the broadband unplugged: a change on one arrived on the
    other. The two had met online first, and **after both were restarted with
-   the internet still gone they never found each other** — so this is shown
-   only for a cut that happens while the app is running. See
+   the internet still gone they never found each other** — until 19 September,
+   when a field-test build of Holochain with local-network discovery found the
+   other machine in about a minute after an offline restart. Released Hearth
+   waits for official Holochain to have it. See
    [what-is-proven.md](what-is-proven.md#two-machines-and-then-no-internet)
    for exactly what it does and does not show.
 3. **A professional contributes without their organisation joining anybody's

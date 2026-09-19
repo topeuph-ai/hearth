@@ -915,9 +915,16 @@ packaging change rather than a rewrite — but it means relying on a fork until
 upstream catches up, and it should be tried on the two machines before any
 decision.
 
-**Recommended:** watch the upstream issue; try the field-test build on the two
-machines when there is time; do not ship it to anybody until upstream Holochain
-has it or the trade-off has been decided deliberately.
+**✅ Tried on the two machines, 19 September 2026, and it works.** Both
+restarted with the broadband unplugged, and they found each other in about a
+minute — faster than online. Details in
+[what-is-proven.md](what-is-proven.md#-restarting-with-no-internet-solved-in-a-field-test-19-september-2026).
+
+**Recommended now:** do not ship it to anybody yet; watch the upstream issue
+(the monthly check does); and move Hearth onto local discovery when official
+Holochain has it. Shipping the fork before then is a deliberate choice to
+make, not a default — every copy of Hearth would have to use it, and Hearth
+would depend on a fork its authors call not for general use.
 
 ### Captured, not planned: phones in the same room
 
