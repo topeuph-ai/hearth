@@ -266,6 +266,7 @@ Read the first one before the others.
 | | |
 |---|---|
 | [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [multimedia.md](docs/multimedia.md) | Photos, sound and video in the record: what the standards ask, what was decided, and how it would be built |
 | [licensing.md](docs/licensing.md) | What licence Hearth is under, and what shipping Holochain inside the app asks of us |
 | [hard-questions.md](docs/hard-questions.md) | The questions a sceptical reviewer would ask, and the honest answer to each — including where the answer is not software |
 | [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
