@@ -827,6 +827,24 @@ fn validate_about_me(
     if about_me.display_name.trim().is_empty() {
         return invalid("About Me must have a display name");
     }
+    if name_too_long(&about_me.display_name)
+        || name_too_long(&about_me.supported_to_write_this_by)
+    {
+        return invalid("A name here can be up to 200 characters");
+    }
+    for section in [
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+    ] {
+        if too_long(section) {
+            return invalid("Each part of the record holds up to 500 words");
+        }
+    }
     Ok(ValidateCallbackResult::Valid)
 }
 
@@ -1055,6 +1073,9 @@ fn validate_acknowledgement(
     if action.action().author() == author {
         return invalid("An agent cannot acknowledge their own About Me");
     }
+    if name_too_long(&ack.role) {
+        return invalid("What you say you are can be up to 200 characters");
+    }
 
     let entry_hash = action
         .action()
@@ -1097,11 +1118,56 @@ fn who_this_room_serves() -> ExternResult<Option<AgentPubKey>> {
 /// The check moved to the app, where it is a courtesy rather than a rule.
 /// Nothing was lost by that: an empty name was never dangerous, only
 /// useless, and the person it inconveniences is the one who wrote it.
-fn validate_knock(_knock: &Knock) -> ExternResult<ValidateCallbackResult> {
+fn validate_knock(knock: &Knock) -> ExternResult<ValidateCallbackResult> {
     if who_this_room_serves()?.is_none() {
         return invalid("Knocking only means something in a circle's waiting room");
     }
+    // Nobody can read a sealed knock but the holder, but everybody can see
+    // how big it is.
+    if knock.for_the_holder.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_KNOCK
+        || knock.for_me.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_KNOCK
+    {
+        return invalid("A knock is a name and a few words, and this is far more than that");
+    }
     Ok(ValidateCallbackResult::Valid)
+}
+
+/*
+ * One person, knocking again and again at one door.
+ *
+ * Counted from their own chain, up to the knock being checked: a fixed piece
+ * of history, so every device reaches the same count. Everything a person
+ * other than the holder writes in a waiting room is counted, because the only
+ * thing they can meaningfully write there is a knock — which keeps this from
+ * depending on how entry types are numbered.
+ *
+ * Ten is far more than anybody honestly needs. Somebody who knocked, was not
+ * answered, and knocked again a few times is fine; somebody who knocks a
+ * thousand times is not, and every one of those would sit on the holder's
+ * device.
+ */
+fn knocked_too_often(
+    action: &TypedAction<CreateData>,
+) -> ExternResult<Option<ValidateCallbackResult>> {
+    let author = action.author();
+    if who_this_room_serves()?.as_ref() == Some(author) {
+        return Ok(None);
+    }
+    let Some(before) = action.header.prev_action.clone() else {
+        return Ok(None);
+    };
+    let earlier = must_get_agent_activity(author.clone(), ChainFilter::new(before))?
+        .into_iter()
+        .filter(|a| matches!(a.action.hashed.content.entry_type(), Some(EntryType::App(_))))
+        .count();
+    if earlier >= MOST_KNOCKS_BY_ONE_PERSON {
+        return Ok(Some(ValidateCallbackResult::Invalid(
+            "You have asked at this door many times already. The person who holds \
+             the circle will see the requests you have made."
+                .to_string(),
+        )));
+    }
+    Ok(None)
 }
 
 /// Only the holder of the circle answers knocks at its door.
@@ -1120,6 +1186,9 @@ fn validate_admission(
     };
     if &holder != author {
         return invalid("Only the person whose circle this is may answer a knock");
+    }
+    if admission.invitation.chars().count() > MOST_CHARACTERS_IN_AN_INVITATION {
+        return invalid("That is far longer than any invitation");
     }
 
     // It must answer a real knock, so an admission cannot be left floating and
@@ -1213,6 +1282,9 @@ fn validate_proposed_member(
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may propose somebody");
     }
+    if name_too_long(&proposed.name) {
+        return invalid("A name here can be up to 200 characters");
+    }
 
     if !verify_signature(
         author.clone(),
@@ -1273,6 +1345,9 @@ fn validate_member(member: &Member) -> ExternResult<ValidateCallbackResult> {
     if member.name.trim().is_empty() {
         return invalid("Tell the circle what you are called");
     }
+    if name_too_long(&member.name) || name_too_long(&member.relationship) {
+        return invalid("Your name and how you are connected can be up to 200 characters each");
+    }
     Ok(ValidateCallbackResult::Valid)
 }
 
@@ -1281,6 +1356,9 @@ fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallback
     // offer something; the holder decides what goes in.
     if suggestion.text.trim().is_empty() {
         return invalid("A suggestion needs something in it");
+    }
+    if too_long(&suggestion.text) || too_long(&suggestion.because) {
+        return invalid("A suggestion, and why, can be up to 500 words each");
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -1309,8 +1387,52 @@ fn validate_outcome(
     Ok(ValidateCallbackResult::Valid)
 }
 
+// ---------------------------------------------------------------------------
+// How much anybody may write
+// ---------------------------------------------------------------------------
+//
+// Everything written in a circle is copied to every member's device, and
+// every change stores another whole copy. Holochain's own limit is four
+// megabytes an entry — roughly a thousand pages — so without these, one
+// confused or unkind member could fill other people's disks with a single
+// paste, or bury a door under knocks.
+//
+// The app already keeps to them. These make every device refuse a copy that
+// does not.
+
+/// Ceri's number for one section of the record, or one suggestion.
+const MOST_WORDS: usize = 500;
+/// A backstop for text with few spaces: five hundred words of ordinary prose
+/// is three or four thousand characters, so this never stops honest writing.
+const MOST_CHARACTERS: usize = 8_000;
+/// A name, a relationship, a role.
+const MOST_CHARACTERS_IN_A_NAME: usize = 200;
+/// A sealed knock is a name and a relationship, encrypted.
+const MOST_BYTES_IN_A_KNOCK: usize = 4_096;
+/// An invitation, as text.
+const MOST_CHARACTERS_IN_AN_INVITATION: usize = 4_096;
+/// Somebody asking to be let in, again and again, at one door.
+const MOST_KNOCKS_BY_ONE_PERSON: usize = 10;
+
+fn too_long(text: &str) -> bool {
+    text.split_whitespace().count() > MOST_WORDS || text.chars().count() > MOST_CHARACTERS
+}
+
+fn name_too_long(text: &str) -> bool {
+    text.chars().count() > MOST_CHARACTERS_IN_A_NAME
+}
+
 /// The rules for a new entry, wherever it arrives.
-fn validate_create(app_entry: EntryTypes, author: &AgentPubKey) -> ExternResult<ValidateCallbackResult> {
+fn validate_create(
+    app_entry: EntryTypes,
+    action: &TypedAction<CreateData>,
+) -> ExternResult<ValidateCallbackResult> {
+    let author = action.author();
+    if let EntryTypes::Knock(_) = &app_entry {
+        if let Some(refusal) = knocked_too_often(action)? {
+            return Ok(refusal);
+        }
+    }
     match app_entry {
         EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, author),
         EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, author),
@@ -1383,7 +1505,7 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
         // entry is held.
         FlatOp::CreateRecord(OpRecord::CreateEntry { app_entry, action })
         | FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => {
-            validate_create(app_entry, action.author())
+            validate_create(app_entry, &action)
         }
 
         // An update: the same rules as an update, wherever its new content

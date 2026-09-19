@@ -3077,3 +3077,126 @@ async fn knocking_without_saying_who_you_are_is_refused() {
         "a knock with nobody's name on it tells the holder nothing she can act on"
     );
 }
+
+// ---------------------------------------------------------------------------
+// How much anybody may write (migration batch, item 3)
+// ---------------------------------------------------------------------------
+//
+// Everything written in a circle is copied to every member's device. The app
+// keeps to these limits already; these tests are about a copy that does not,
+// so every call below goes straight to the zome with nothing in between.
+
+fn words(n: usize) -> String {
+    vec!["word"; n].join(" ")
+}
+
+/// Five hundred words a section, and not one more.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_section_holds_five_hundred_words_and_no_more() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let mut fits = an_about_me("Alice Bell");
+    fits.what_matters_to_me = words(500);
+    let fitted: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", fits)
+        .await;
+    assert!(fitted.is_ok(), "five hundred words is the limit, not over it");
+
+    let mut over = an_about_me("Alice Bell");
+    over.my_wellness = words(501);
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", over)
+        .await;
+    assert!(
+        refused.is_err(),
+        "one section of one person's record is copied to every device in the circle"
+    );
+}
+
+/// A wall of text with no spaces in it is still too long.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_without_spaces_cannot_dodge_the_limit() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let mut wall = an_about_me("Alice Bell");
+    wall.also_worth_knowing = "x".repeat(8_001);
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", wall)
+        .await;
+    assert!(
+        refused.is_err(),
+        "one word eight thousand characters long is not a way round five hundred words"
+    );
+}
+
+/// A suggestion is held to the same limit as the section it is about.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suggestion_holds_five_hundred_words_and_no_more() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "suggest",
+            aboutme_integrity::Suggestion {
+                field: aboutme_integrity::AboutMeField::WhatMattersToMe,
+                text: words(501),
+                because: String::new(),
+            },
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "any member may suggest, so any member could otherwise fill everybody's disk"
+    );
+}
+
+/// A name is a name.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_name_is_not_a_place_to_write_an_essay() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "B".repeat(201),
+                relationship: "her nephew".to_string(),
+            },
+        )
+        .await;
+    assert!(refused.is_err(), "a name can be up to two hundred characters");
+}
+
+/// Ten knocks by one person at one door, and no more.
+///
+/// Every knock sits on the holder's device. Somebody who knocks a few times
+/// because nobody answered is fine; somebody who knocks a thousand times is
+/// filling her disk and burying the people she is waiting for.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_person_cannot_bury_a_door_in_knocks() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .expect("a waiting room is open");
+
+    for n in 1..=10 {
+        let knocked: Result<Record, _> = conductor
+            .call_fallible(&zome(&ronnie_cell), "knock", a_knock())
+            .await;
+        assert!(knocked.is_ok(), "knock {n} of ten should be allowed");
+    }
+
+    let eleventh: Result<Record, _> = conductor
+        .call_fallible(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+    assert!(
+        eleventh.is_err(),
+        "an eleventh knock by the same person at the same door is refused"
+    );
+}
