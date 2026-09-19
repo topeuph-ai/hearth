@@ -102,7 +102,7 @@ it is a second person, and that it is visible.
 | 8. Coded values | **Built** — an empty optional space; saving keeps any codes a record has |
 | 7. Photos, sound and video | **Built, and walked in the demo on 19 September.** Photos shrunk to ~1600 px; sound recorded or chosen, up to two minutes; video recorded at 480p or chosen and shrunk to 480p in Hearth — a 4K phone video came out at 480p quickly, and a second member received it at once. Each with an optional "in words" box; nothing plays by itself. Four tests on the rules |
 | 9. A successor | **Built.** Naming a successor and a checker, starting, "I'm still here", checking in person, and taking over by moving the circle. Every device checks who may do each; the 14-day wait and 7-day "others may answer" are honoured by the app (minutes in the demo). Found in the demo walkthrough and fixed: a check was read back as a "still here" and dropped. Six tests |
-| 6. Encryption | Not started — needs its own design note first |
+| 6. Encryption | **Design note written**, [encryption.md](encryption.md), with three decisions for Ceri. Not built |
 
 **Tests on the branch, 19 September 2026: 86, all passing.**
 
