@@ -2659,19 +2659,31 @@ pub fn get_succession(_: ()) -> ExternResult<SuccessionState> {
 
     let mut still_here = false;
     let mut checks = Vec::new();
+    /*
+     * CheckedOn is tried before StillHere, and the order is the fix for a
+     * real fault.
+     *
+     * Reading an entry "as" a type only asks whether its fields fit, and a
+     * check — a claim and a yes-or-no — fits the shape of "still here" (just a
+     * claim) with a field to spare, which is ignored. Asked the other way
+     * round first, every check was taken for a "still here" from somebody
+     * who is not the holder, and quietly dropped: the first check ever given,
+     * in the demo, vanished. "Still here" cannot pass for a check, because it
+     * has no yes-or-no to read.
+     */
     for r in answers {
         let by = r.action().author().clone();
-        if let Some(s) = r.entry().to_app_option::<StillHere>().ok().flatten() {
-            if s.claim == claim_hash && by == holder {
-                still_here = true;
-            }
-        } else if let Some(c) = r.entry().to_app_option::<CheckedOn>().ok().flatten() {
+        if let Some(c) = r.entry().to_app_option::<CheckedOn>().ok().flatten() {
             if c.claim == claim_hash && by != successor && by != holder {
                 checks.push(Check {
                     by: by.to_string(),
                     at: r.action().timestamp(),
                     holder_can_carry_on: c.holder_can_carry_on,
                 });
+            }
+        } else if let Some(s) = r.entry().to_app_option::<StillHere>().ok().flatten() {
+            if s.claim == claim_hash && by == holder {
+                still_here = true;
             }
         }
     }

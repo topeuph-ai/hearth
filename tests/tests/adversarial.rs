@@ -3587,3 +3587,47 @@ async fn nobody_checks_on_the_holder_but_a_second_person() {
         .await;
     assert!(by_holder.is_err(), "she answers with I'm still here");
 }
+
+/// A check by a third person is seen — by everybody, including whoever gave it.
+///
+/// The first check ever given, in the demo, vanished: reading answers back
+/// took a check for a "still here" from the wrong person and dropped it. This
+/// is the test that would have caught it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_on_the_holder_is_seen() {
+    let (conductor, alice_cell, ruth_cell, dave_cell, _) =
+        a_circle_with_both_people_in_it().await;
+    let dave = dave_cell.agent_pubkey().clone();
+    let ruth = ruth_cell.agent_pubkey().clone();
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "name_successor",
+            aboutme::NameSuccessorInput {
+                successor: Some(dave.to_string()),
+                checker: Some(ruth.to_string()),
+            },
+        )
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&dave_cell), "start_taking_over", ())
+        .await;
+    let _: Record = conductor
+        .call(
+            &zome(&ruth_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: false,
+            },
+        )
+        .await;
+
+    let state: aboutme::SuccessionState =
+        conductor.call(&zome(&ruth_cell), "get_succession", ()).await;
+    let seen = state.claim.expect("the claim stands");
+    assert_eq!(seen.checks.len(), 1, "the check is there");
+    assert!(!seen.checks[0].holder_can_carry_on);
+    assert!(!seen.still_here, "and it was not mistaken for 'still here'");
+}
