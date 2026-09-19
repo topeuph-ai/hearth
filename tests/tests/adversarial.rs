@@ -3472,3 +3472,118 @@ async fn media_is_held_to_the_limits_of_its_kind() {
         .await;
     assert!(refused.is_err(), "ten pieces at most");
 }
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+
+fn naming(successor: Option<&AgentPubKey>) -> aboutme::NameSuccessorInput {
+    aboutme::NameSuccessorInput {
+        successor: successor.map(|k| k.to_string()),
+        checker: None,
+    }
+}
+
+/// The holder names a successor; the successor starts; the holder says she is
+/// still here — and every step is where the circle can see it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_successor_can_start_and_the_holder_can_stop_it() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "still_here", claim.action_address().clone())
+        .await;
+    let state: aboutme::SuccessionState =
+        conductor.call(&zome(&alice_cell), "get_succession", ()).await;
+    let seen = state.claim.expect("the claim is where she can see it");
+    assert_eq!(seen.by, bob.to_string());
+    assert!(seen.still_here, "and so is her answer");
+}
+
+/// Only the holder names a successor.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_name_themselves_successor() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "name_successor",
+            naming(Some(bob_cell.agent_pubkey())),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// The holder cannot be her own successor.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_succeed_herself() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "name_successor",
+            naming(Some(alice_cell.agent_pubkey())),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// Nobody can start taking over who was not named.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_person_named_can_start_taking_over() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    // Named: nobody.
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(None))
+        .await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+    assert!(refused.is_err(), "Bob was never named");
+}
+
+/// The successor cannot also be the one who checks on her, and she cannot
+/// check on herself: the point is a second person.
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_checks_on_the_holder_but_a_second_person() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+
+    let by_successor: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: false,
+            },
+        )
+        .await;
+    assert!(by_successor.is_err(), "the successor cannot vouch for his own claim");
+
+    let by_holder: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: true,
+            },
+        )
+        .await;
+    assert!(by_holder.is_err(), "she answers with I'm still here");
+}

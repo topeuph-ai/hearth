@@ -1187,13 +1187,36 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
      * checks the other half: that the new circle is hers too.
      */
     if let Signal::Moved { .. } = &signal {
-        match membrane()? {
-            Membrane::Founder(founder, _) if founder == caller => {}
-            _ => return Ok(()),
+        if !may_move_this_circle(&caller)? {
+            return Ok(());
         }
     }
 
     emit_signal(signal)
+}
+
+/// Whether this agent may move this circle: its holder, or a successor whose
+/// taking over stands.
+///
+/// For a successor that means: named by the holder in the newest naming, a
+/// claim by them under it, no "I'm still here" from the holder, and at least
+/// one person — neither of them — having checked and said she cannot carry
+/// on. The waiting period is checked by the app as well, because time is a
+/// question each device answers for itself; see `get_succession`.
+fn may_move_this_circle(agent: &AgentPubKey) -> ExternResult<bool> {
+    let Membrane::Founder(founder, _) = membrane()? else {
+        return Ok(false);
+    };
+    if &founder == agent {
+        return Ok(true);
+    }
+    let state = get_succession(())?;
+    let Some(claim) = state.claim else {
+        return Ok(false);
+    };
+    Ok(claim.by == agent.to_string()
+        && !claim.still_here
+        && claim.checks.iter().any(|c| !c.holder_can_carry_on))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1230,13 +1253,11 @@ pub fn tell_them_it_moved(input: MovedInput) -> ExternResult<()> {
 
     // Their apps would drop it anyway. Saying so here turns a silent nothing
     // into a sentence.
-    match membrane()? {
-        Membrane::Founder(founder, _) if founder == me => {}
-        _ => {
-            return Err(wasm_error!(
-                "Only the person who holds a circle can move it"
-            ))
-        }
+    if !may_move_this_circle(&me)? {
+        return Err(wasm_error!(
+            "Only the person who holds a circle, or a successor whose taking \
+             over stands, can move it"
+        ));
     }
 
     send_remote_signal(
@@ -2414,6 +2435,255 @@ pub fn remove_media(item: ActionHash) -> ExternResult<()> {
     }
     delete_entry(item)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// The holder names somebody to take over if she cannot, and somebody to check
+// on her. The successor may start; the holder can stop it with "I'm still
+// here"; the checker — or, if the checker cannot, anybody else — checks on her
+// and says whether she can carry on. After the waiting period, with a "she
+// cannot" and no "still here", the successor moves the circle and holds the
+// new one.
+
+const SUCCESSION_ANCHOR: &str = "succession";
+
+fn succession_path() -> ExternResult<TypedPath> {
+    anchored(SUCCESSION_ANCHOR, LinkTypes::CircleToSuccession)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NameSuccessorInput {
+    /// Who, as text, or nobody.
+    #[serde(default)]
+    pub successor: Option<String>,
+    /// Who checks on her, as text, or nobody.
+    #[serde(default)]
+    pub checker: Option<String>,
+}
+
+fn key_from(text: &Option<String>) -> ExternResult<Option<AgentPubKey>> {
+    text.as_deref()
+        .map(|t| {
+            AgentPubKey::try_from(t.trim())
+                .map_err(|_| wasm_error!("That is not an identifier this circle can read"))
+        })
+        .transpose()
+}
+
+fn file_under_succession(action_hash: &ActionHash) -> ExternResult<()> {
+    let path = succession_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToSuccession,
+        (),
+    )?;
+    Ok(())
+}
+
+/// Name who takes over, and who checks. Naming nobody removes them.
+#[hdk_extern]
+pub fn name_successor(input: NameSuccessorInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Succession(Succession {
+        successor: key_from(&input.successor)?,
+        checker: key_from(&input.checker)?,
+    }))?;
+    file_under_succession(&action_hash)?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the naming just written"))
+}
+
+/// The successor starts taking over.
+#[hdk_extern]
+pub fn start_taking_over(_: ()) -> ExternResult<Record> {
+    let state = get_succession(())?;
+    let naming = state
+        .naming
+        .ok_or_else(|| wasm_error!("Nobody has been named to take over this circle"))?;
+    let action_hash = create_entry(EntryTypes::SuccessionClaim(SuccessionClaim { naming }))?;
+    file_under_succession(&action_hash)?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+/// The holder: "I'm still here."
+#[hdk_extern]
+pub fn still_here(claim: ActionHash) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::StillHere(StillHere {
+        claim: claim.clone(),
+    }))?;
+    create_link(claim, action_hash.clone(), LinkTypes::ClaimToAnswer, ())?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckInput {
+    pub claim: ActionHash,
+    pub holder_can_carry_on: bool,
+}
+
+/// Somebody has checked on her, and says whether she can carry on.
+#[hdk_extern]
+pub fn check_on_holder(input: CheckInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::CheckedOn(CheckedOn {
+        claim: input.claim.clone(),
+        holder_can_carry_on: input.holder_can_carry_on,
+    }))?;
+    create_link(
+        input.claim,
+        action_hash.clone(),
+        LinkTypes::ClaimToAnswer,
+        (),
+    )?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+/// One check on the holder.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Check {
+    pub by: String,
+    pub at: Timestamp,
+    pub holder_can_carry_on: bool,
+}
+
+/// Somebody taking over, and what has been said about it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClaimState {
+    pub claim: ActionHash,
+    pub by: String,
+    pub at: Timestamp,
+    /// Whether the holder has said she is still here.
+    pub still_here: bool,
+    pub checks: Vec<Check>,
+}
+
+/// Who is named, and whether anybody is taking over.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SuccessionState {
+    /// The newest naming by the holder, if any.
+    pub naming: Option<ActionHash>,
+    pub successor: Option<String>,
+    pub checker: Option<String>,
+    /// The newest claim by the person named now, under a naming that still
+    /// names them. A claim by somebody the holder has since un-named is void.
+    pub claim: Option<ClaimState>,
+}
+
+fn with_my_own(links: Vec<Link>, mine: Vec<Record>) -> ExternResult<Vec<Record>> {
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, mine);
+    oldest_first(&mut found);
+    Ok(found)
+}
+
+#[hdk_extern]
+pub fn get_succession(_: ()) -> ExternResult<SuccessionState> {
+    let empty = SuccessionState {
+        naming: None,
+        successor: None,
+        checker: None,
+        claim: None,
+    };
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(empty);
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(
+            succession_path()?.path_entry_hash()?,
+            LinkTypes::CircleToSuccession,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut mine = on_my_own_chain(UnitEntryTypes::Succession)?;
+    mine.extend(on_my_own_chain(UnitEntryTypes::SuccessionClaim)?);
+    let found = with_my_own(links, mine)?;
+
+    // The newest naming by the holder.
+    let Some((naming_hash, naming)) = found
+        .iter()
+        .rev()
+        .filter(|r| r.action().author() == &holder)
+        .find_map(|r| {
+            let s = r.entry().to_app_option::<Succession>().ok().flatten()?;
+            Some((r.action_address().clone(), s))
+        })
+    else {
+        return Ok(empty);
+    };
+
+    let mut state = SuccessionState {
+        naming: Some(naming_hash),
+        successor: naming.successor.as_ref().map(|k| k.to_string()),
+        checker: naming.checker.as_ref().map(|k| k.to_string()),
+        claim: None,
+    };
+    let Some(successor) = naming.successor else {
+        return Ok(state);
+    };
+
+    // The newest claim by the person named now.
+    let Some((claim_hash, at)) = found
+        .iter()
+        .rev()
+        .filter(|r| r.action().author() == &successor)
+        .find_map(|r| {
+            r.entry()
+                .to_app_option::<SuccessionClaim>()
+                .ok()
+                .flatten()?;
+            Some((r.action_address().clone(), r.action().timestamp()))
+        })
+    else {
+        return Ok(state);
+    };
+
+    let answer_links = get_links(
+        LinkQuery::try_new(claim_hash.clone(), LinkTypes::ClaimToAnswer)?,
+        GetStrategy::Network,
+    )?;
+    let mut mine = on_my_own_chain(UnitEntryTypes::StillHere)?;
+    mine.extend(on_my_own_chain(UnitEntryTypes::CheckedOn)?);
+    let answers = with_my_own(answer_links, mine)?;
+
+    let mut still_here = false;
+    let mut checks = Vec::new();
+    for r in answers {
+        let by = r.action().author().clone();
+        if let Some(s) = r.entry().to_app_option::<StillHere>().ok().flatten() {
+            if s.claim == claim_hash && by == holder {
+                still_here = true;
+            }
+        } else if let Some(c) = r.entry().to_app_option::<CheckedOn>().ok().flatten() {
+            if c.claim == claim_hash && by != successor && by != holder {
+                checks.push(Check {
+                    by: by.to_string(),
+                    at: r.action().timestamp(),
+                    holder_can_carry_on: c.holder_can_carry_on,
+                });
+            }
+        }
+    }
+
+    state.claim = Some(ClaimState {
+        claim: claim_hash,
+        by: successor.to_string(),
+        at,
+        still_here,
+        checks,
+    });
+    Ok(state)
 }
 
 // ---------------------------------------------------------------------------

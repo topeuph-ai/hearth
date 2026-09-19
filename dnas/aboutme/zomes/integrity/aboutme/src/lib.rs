@@ -325,6 +325,69 @@ pub struct Departure {
     pub removed: bool,
 }
 
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// When the holder can no longer look after the circle — dementia progresses,
+// a device is lost for good, she dies — the circle used to be stuck, read-only,
+// for ever. A successor is somebody she names in advance who may then move the
+// circle and become its new holder.
+//
+// The danger is somebody claiming she has gone when she has not. Ceri's
+// answers, 19 September 2026: anybody in the circle may be named; a waiting
+// period everybody can see, in which the holder can say "I'm still here"; the
+// holder can change or remove the successor at any time; and somebody who can
+// check in person — a checker she names, asked first, and anybody else if the
+// checker cannot.
+//
+// **Every device checks who may write each of these.** When they may be
+// written — the waiting period, when others may answer — is honoured by every
+// copy of Hearth rather than refused by the network, for the same reason as a
+// removal: "has she said she is still here yet?" is a question whose answer
+// arrives over time, and validation must reach one answer forever.
+
+/// Who the holder names to take over if she cannot, and who should check.
+///
+/// The newest one counts. Naming nobody (`successor: None`) removes the
+/// successor.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Succession {
+    pub successor: Option<AgentPubKey>,
+    /// Somebody who lives near her, or can phone her. Asked first.
+    pub checker: Option<AgentPubKey>,
+}
+
+/// The successor says the holder can no longer look after the circle.
+///
+/// Names the `Succession` it relies on, so every device can check it was
+/// really the person named, by that holder — a fixed hash, answered the same
+/// way everywhere.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct SuccessionClaim {
+    pub naming: ActionHash,
+}
+
+/// The holder answers a claim: "I'm still here." Stops it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct StillHere {
+    pub claim: ActionHash,
+}
+
+/// Somebody has checked on the holder, in person or by phone.
+///
+/// Never the successor, and never the holder: the point is a second person.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct CheckedOn {
+    pub claim: ActionHash,
+    /// True: she can still look after the circle. False: she cannot.
+    pub holder_can_carry_on: bool,
+}
+
 /// What kind of media an item is.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaKind {
@@ -471,6 +534,10 @@ pub enum EntryTypes {
     Departure(Departure),
     MediaItem(MediaItem),
     MediaPiece(MediaPiece),
+    Succession(Succession),
+    SuccessionClaim(SuccessionClaim),
+    StillHere(StillHere),
+    CheckedOn(CheckedOn),
 }
 
 #[hdk_link_types]
@@ -507,6 +574,11 @@ pub enum LinkTypes {
     CircleToDeparture,
     /// Anchor -> MediaItem, so every reader finds the photos, sound and video.
     CircleToMedia,
+    /// Anchor -> Succession and SuccessionClaim, so everybody can see who is
+    /// named and whether anybody has started.
+    CircleToSuccession,
+    /// SuccessionClaim -> the answers to it: StillHere and CheckedOn.
+    ClaimToAnswer,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -1201,6 +1273,38 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // A naming or a claim, filed by whoever wrote it. The entry rules have
+        // already said who may write each; this ties the link to its author.
+        LinkTypes::CircleToSuccession => {
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file what you wrote yourself");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // An answer to a claim, filed by whoever gave it, on a real claim.
+        LinkTypes::ClaimToAnswer => {
+            let Some(base) = as_action_hash(&action.base_address) else {
+                return invalid("An answer must be filed on a claim");
+            };
+            if claim_and_naming(&base)?.is_none() {
+                return invalid("An answer must be filed on a claim");
+            }
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("An answer link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Only the holder publishes media, and only her own.
         LinkTypes::CircleToMedia => {
             if !is_the_person(author)? {
@@ -1534,6 +1638,114 @@ fn validate_media_piece(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// The holder whose circle this is, if it is a circle.
+fn the_holder() -> ExternResult<Option<AgentPubKey>> {
+    Ok(match membrane()? {
+        Membrane::Founder(founder, _) => Some(founder),
+        _ => None,
+    })
+}
+
+/// Only the holder names a successor and a checker, and three people are
+/// three different people: her, the successor, and whoever checks on her.
+fn validate_succession(
+    succession: &Succession,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may name a successor");
+    }
+    if succession.successor.as_ref() == Some(author) {
+        return invalid("The person who holds a circle cannot be her own successor");
+    }
+    if succession.checker.as_ref() == Some(author) {
+        return invalid("The person who checks on the holder has to be somebody else");
+    }
+    if succession.checker.is_some() && succession.checker == succession.successor {
+        return invalid(
+            "The successor cannot be the one who checks: the point is a second person",
+        );
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A claim, and the naming it relies on — both checked to be what they say.
+fn claim_and_naming(claim: &ActionHash) -> ExternResult<Option<(Succession, AgentPubKey)>> {
+    let claim_action = must_get_action(claim.clone())?;
+    let Some(claim_entry_hash) = claim_action.action().entry_hash() else {
+        return Ok(None);
+    };
+    let Ok(claim) = SuccessionClaim::try_from(must_get_entry(claim_entry_hash.clone())?.content)
+    else {
+        return Ok(None);
+    };
+    let naming_action = must_get_action(claim.naming.clone())?;
+    let Some(naming_entry_hash) = naming_action.action().entry_hash() else {
+        return Ok(None);
+    };
+    let Ok(naming) = Succession::try_from(must_get_entry(naming_entry_hash.clone())?.content)
+    else {
+        return Ok(None);
+    };
+    Ok(Some((naming, claim_action.action().author().clone())))
+}
+
+/// Only the person the holder named may start taking over, and only under a
+/// naming she actually made.
+fn validate_succession_claim(
+    claim: &SuccessionClaim,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some(holder) = the_holder()? else {
+        return invalid("There is nobody to succeed outside a circle");
+    };
+    let naming_action = must_get_action(claim.naming.clone())?;
+    if naming_action.action().author() != &holder {
+        return invalid("A successor is named by the person whose circle this is");
+    }
+    let Some(entry_hash) = naming_action.action().entry_hash() else {
+        return invalid("A claim must rest on a naming");
+    };
+    let Ok(naming) = Succession::try_from(must_get_entry(entry_hash.clone())?.content) else {
+        return invalid("A claim must rest on a naming");
+    };
+    if naming.successor.as_ref() != Some(author) {
+        return invalid("Only the person named as successor may start taking over");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder says she is still here.
+fn validate_still_here(
+    still_here: &StillHere,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is can say she is still here");
+    }
+    if claim_and_naming(&still_here.claim)?.is_none() {
+        return invalid("\"Still here\" answers somebody starting to take over");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Somebody checked on her — never the successor, and never her.
+fn validate_checked_on(
+    checked: &CheckedOn,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some((_, successor)) = claim_and_naming(&checked.claim)? else {
+        return invalid("A check answers somebody starting to take over");
+    };
+    if &successor == author {
+        return invalid("The person taking over cannot also be the one who checks");
+    }
+    if is_the_person(author)? {
+        return invalid("The holder answers with \"I'm still here\", not a check on herself");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// Only the holder removes somebody, and never herself.
 ///
 /// A holder removing herself would leave a circle nobody may write in, with
@@ -1753,6 +1965,10 @@ fn validate_create(
         EntryTypes::Departure(d) => validate_departure(&d, author),
         EntryTypes::MediaItem(m) => validate_media_item(&m, author),
         EntryTypes::MediaPiece(p) => validate_media_piece(&p, author),
+        EntryTypes::Succession(s) => validate_succession(&s, author),
+        EntryTypes::SuccessionClaim(c) => validate_succession_claim(&c, author),
+        EntryTypes::StillHere(s) => validate_still_here(&s, author),
+        EntryTypes::CheckedOn(c) => validate_checked_on(&c, author),
     }
 }
 
@@ -1968,6 +2184,14 @@ fn validate_update(
             // something other than what they think they are.
             EntryTypes::MediaItem(_) | EntryTypes::MediaPiece(_) => {
                 invalid("A photo, sound or video cannot be changed; remove it and add another")
+            }
+            // Every step of taking over is a thing said at a moment, and stays
+            // said. Name somebody else, answer again, or start again.
+            EntryTypes::Succession(_)
+            | EntryTypes::SuccessionClaim(_)
+            | EntryTypes::StillHere(_)
+            | EntryTypes::CheckedOn(_) => {
+                invalid("This cannot be changed once it is said; say it again")
             }
     }
 }
