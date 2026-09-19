@@ -100,7 +100,8 @@ it is a second person, and that it is visible.
 | 4. Marking somebody as gone | **Built.** A `Departure` entry only the holder may write, never about herself; the newest decision counts. The Remove box offers this first and moving the circle as the choice for serious cases; the holder can let somebody back. Three tests |
 | 5. Their copy goes | **Built** with 4: their own app switches the circle off, deletes it, and says so |
 | 8. Coded values | **Built** — an empty optional space; saving keeps any codes a record has |
-| 6, 7, 9 | Not started |
+| 7. Photos, sound and video | **Built, and walked in the demo on 19 September.** Photos shrunk to ~1600 px; sound recorded or chosen, up to two minutes; video recorded at 480p or chosen and shrunk to 480p in Hearth — a 4K phone video came out at 480p quickly, and a second member received it at once. Each with an optional "in words" box; nothing plays by itself. Four tests on the rules |
+| 6, 9 | Not started |
 
 **Captured, 19 September 2026, not decided: media in suggestions (7b).**
 Ceri's idea: any member may attach a photo, sound or video to a suggestion,
