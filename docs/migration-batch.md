@@ -76,13 +76,14 @@ later. Item 10, the outer ring, is still to be decided.
   somebody claiming the holder has gone when she is away, in hospital for a
   week, or has simply not opened the app.
 
-How that last part might work, not yet decided:
+**Decided: (c), both.** The holder names a checker in advance — somebody close
+who can visit or call — as she names a successor. When a successor starts,
+the named checker is asked first, and anybody else in the circle may confirm if
+the checker cannot. The alternatives were any other member alone, or a named
+checker alone.
 
-- **(a) Any other member** confirms — the first to answer.
-- **(b) The holder names a checker in advance**, somebody close who can visit
-  or call, as she names a successor.
-- **(c) Both:** the named checker is asked first, and anybody else may confirm
-  if the checker cannot.
+**Item 10, the outer ring: later**, with its own migration when its design is
+finished.
 
 Whichever it is, the checker can never be the successor, and a confirmation
 is written in the circle where everybody can see who gave it and when. It is a
