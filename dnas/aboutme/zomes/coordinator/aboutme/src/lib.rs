@@ -171,7 +171,16 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
     })?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), invitee.clone())?;
+    let name = input.name.trim().to_string();
+    // Over the key and the name together, so neither can be changed on the way
+    // to the person who has to agree.
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: invitee.clone(),
+            name: name.clone(),
+        },
+    )?;
 
     let about = match get_circle_about_me(())?.first() {
         Some(original) => get_current_about_me(original.clone())?
@@ -202,7 +211,7 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         founder: me.to_string(),
         inviter,
         invitee: invitee.to_string(),
-        invitee_name: input.name.trim().to_string(),
+        invitee_name: name.clone(),
         seconder,
         requires_second_yes: asks_two,
         network_seed: dna_info()?.modifiers.network_seed,
@@ -213,15 +222,25 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
             // invitation is incomplete until they do.
             seconded: None,
             appointment: appointed.map(|(hash, _)| hash),
+            name,
         },
     })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SecondInput {
+    /// Their identifier, as text.
+    pub invitee: String,
+    /// The name the holder gave them, exactly as she signed it.
+    #[serde(default)]
+    pub name: String,
 }
 
 /// Add the second agreement to an invitation somebody else has started.
 ///
 /// Called by whoever the circle named as its seconder, on their own machine,
 /// with the invitee's identifier in front of them. They are signing the same
-/// thing the holder signed — that person's key, and nothing else.
+/// thing the holder signed — that person's key and the name she gave them.
 ///
 /// Deliberately not a "vote" or an "approval workflow". There is nothing to
 /// approve and nobody to approve it to: two people sign, or the invitation
@@ -234,12 +253,18 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
 /// like any other. The check that matters is in the membrane, where every peer
 /// makes it independently.
 #[hdk_extern]
-pub fn second_an_invitation(invitee: String) -> ExternResult<Signature> {
-    let invitee = AgentPubKey::try_from(invitee.trim())
+pub fn second_an_invitation(input: SecondInput) -> ExternResult<Signature> {
+    let invitee = AgentPubKey::try_from(input.invitee.trim())
         .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    sign(me, invitee)
+    sign(
+        me,
+        WhoIsLetIn {
+            invitee,
+            name: input.name.trim().to_string(),
+        },
+    )
 }
 
 /// Whether this circle asks two people to agree, and who the second is.
@@ -860,11 +885,16 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
      * nothing and can say something useful.
      */
     let me = agent_info()?.agent_initial_pubkey;
+    // What both signatures are over: this key, and the name the holder gave it.
+    let who = WhoIsLetIn {
+        invitee: me.clone(),
+        name: input.invitation.name.clone(),
+    };
 
     if !verify_signature(
         founder.clone(),
         input.invitation.signature.clone(),
-        me.clone(),
+        who.clone(),
     )? {
         return Err(wasm_error!(
             "This invitation was not made for you, or not by the person whose \
@@ -904,7 +934,7 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
             ));
         };
 
-        if !verify_signature(seconder, seconded, me)? {
+        if !verify_signature(seconder, seconded, who)? {
             return Err(wasm_error!(
                 "The second agreement on this invitation is not from the person \
                  this circle asks to give it."
@@ -1532,8 +1562,14 @@ pub fn propose_member(input: ProposeInput) -> ExternResult<Record> {
     })?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), invitee.clone())?;
     let name = input.name.trim().to_string();
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: invitee.clone(),
+            name: name.clone(),
+        },
+    )?;
 
     let action_hash = create_entry(EntryTypes::ProposedMember(ProposedMember {
         invitee: invitee.clone(),
@@ -1587,7 +1623,14 @@ pub fn endorse(proposed: ActionHash) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("That is not somebody put forward to join"))?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), entry.invitee.clone())?;
+    // The same key and name the holder signed.
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: entry.invitee.clone(),
+            name: entry.name.clone(),
+        },
+    )?;
 
     let (appointment, _) = appointment_now()?
         .ok_or_else(|| wasm_error!("This circle has not asked anybody to agree to who joins"))?;
@@ -1728,6 +1771,7 @@ pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
                     // whichever is in force now. They can differ, and the
                     // door checks against the first.
                     appointment: under.clone(),
+                    name: proposed.name.clone(),
                 },
             )?),
             None => None,

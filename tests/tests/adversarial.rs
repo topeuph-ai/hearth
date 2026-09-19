@@ -594,7 +594,14 @@ async fn two_people_agreeing_lets_somebody_in() {
     // Ruth signs from the lobby, never having joined the circle: she is
     // agreeing to who gets in without being able to read a word of it.
     let seconded: Signature = conductor
-        .call(&zome(&ruth_lobby), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&ruth_lobby),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let invitation = Invitation {
@@ -604,6 +611,7 @@ async fn two_people_agreeing_lets_somebody_in() {
         // Bob in on Alice's signature alone — which would make this test pass
         // without proving anything about Ruth at all.
         appointment: Some(appointment),
+        name: String::new(),
     };
 
     assert!(
@@ -676,7 +684,14 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     // signatures. This is the attack the feature exists for: the holder under
     // pressure, waiving her own safeguard.
     let forged: Signature = conductor
-        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let invitation = Invitation {
@@ -686,6 +701,7 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
         // her forged signature against. Without it there is no second
         // agreement being claimed at all, and nothing to catch.
         appointment: Some(appointment),
+        name: String::new(),
     };
 
     assert!(
@@ -729,7 +745,14 @@ async fn an_invitation_that_loses_its_appointment_is_not_checked_for_a_second_ye
     );
 
     let forged: Signature = conductor
-        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     // What the waiting room used to hand over: both signatures, no appointment.
@@ -737,6 +760,7 @@ async fn an_invitation_that_loses_its_appointment_is_not_checked_for_a_second_ye
         signature: bundle.invitation.signature.clone(),
         seconded: Some(forged),
         appointment: None,
+        name: String::new(),
     };
 
     assert!(
@@ -1967,12 +1991,20 @@ async fn a_circle_with_both_people_in_it() -> (
         )
         .await;
     let seconded: Signature = conductor
-        .call(&zome(&ruth_cell), "second_an_invitation", dave.to_string())
+        .call(
+            &zome(&ruth_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: dave.to_string(),
+                name: "Dave".to_string(),
+            },
+        )
         .await;
     let dave_invitation = aboutme_integrity::Invitation {
         signature: for_dave.invitation.signature.clone(),
         seconded: Some(seconded),
         appointment: None,
+        name: "Dave".to_string(),
     };
     let dave_cell = join(&conductor, "dave", &dave, &dna, Some(&dave_invitation))
         .await
@@ -3200,4 +3232,50 @@ async fn one_person_cannot_bury_a_door_in_knocks() {
         eleventh.is_err(),
         "an eleventh knock by the same person at the same door is refused"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The name on an invitation is signed (migration batch, item 2)
+// ---------------------------------------------------------------------------
+
+/// Change the name on the way, and the invitation stops working.
+///
+/// The second person is asked to agree to "Ronnie, her cousin", not to a key.
+/// Whoever carries an invitation between the two of them could once rename
+/// the person on it without breaking anything. Now both signatures are over
+/// the key and the name together.
+#[tokio::test(flavor = "multi_thread")]
+async fn renaming_somebody_on_an_invitation_breaks_it() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+    let dna = circle_dna(&alice).await;
+
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: "Bob, her nephew".to_string(),
+            },
+        )
+        .await;
+    assert_eq!(bundle.invitation.name, "Bob, her nephew");
+
+    let mut renamed = bundle.invitation.clone();
+    renamed.name = "The district nurse".to_string();
+
+    assert!(
+        join(&conductor, "bob-renamed", &bob, &dna, Some(&renamed))
+            .await
+            .is_err(),
+        "the name the holder signed is part of what she signed"
+    );
+    // The invitation as she made it opening the door is covered by every
+    // other test that joins somebody by name.
 }

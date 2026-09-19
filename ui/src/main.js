@@ -110,6 +110,9 @@ function invitationToToken(bundle) {
          * right for an invitation made before anybody was appointed.
          */
         appointment: appointment ? encodeHashToBase64(appointment) : null,
+        // Part of what both people signed. Dropped, the signatures no longer
+        // match and the door refuses the invitation.
+        name: bundle.invitation.name ?? "",
       },
     }),
   );
@@ -128,6 +131,7 @@ function tokenToInvitation(token) {
       // Tokens made before this was carried have no appointment at all, and
       // still read — as the holder's own invitation, which is what they were.
       appointment: appointment ? decodeHashFromBase64(appointment) : null,
+      name: parsed.invitation.name ?? "",
     },
   };
 }

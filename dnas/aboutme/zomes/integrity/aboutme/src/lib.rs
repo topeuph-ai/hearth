@@ -549,6 +549,32 @@ pub struct Invitation {
     /// than a lock, and what that does and does not buy.
     #[serde(default)]
     pub appointment: Option<ActionHash>,
+
+    /// Who the holder says this key belongs to — and now signed.
+    ///
+    /// The name used to travel beside the signature, so it could be changed
+    /// on the way without breaking anything: not a way in, because the
+    /// signature was over the key, but a way to mislead the second person, who
+    /// is asked "should Ronnie, her cousin, be let in?" and cannot answer that
+    /// about a key. Being talked into an admission is the whole of what the
+    /// second agreement guards against, and whoever does the talking is often
+    /// the one carrying the message.
+    ///
+    /// Both signatures are now over [`WhoIsLetIn`] — the key and this name
+    /// together — so changing either one breaks both.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// What both agreements on an invitation are signatures over.
+///
+/// A key identifies nobody, so agreeing to a key alone is agreeing to nothing
+/// anybody could judge. The name is the holder's claim, checked by nobody; what
+/// the signature adds is that it cannot be changed after she made it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct WhoIsLetIn {
+    pub invitee: AgentPubKey,
+    pub name: String,
 }
 
 /// How this circle decides who belongs.
@@ -676,9 +702,18 @@ fn check_membrane_as_far_as(
         Err(_) => return invalid("Invitation is not in a form this circle understands"),
     };
 
+    if invitation.name.chars().count() > MOST_CHARACTERS_IN_A_NAME {
+        return invalid("The name on this invitation is far longer than a name");
+    }
+
     // Signed over the invitee's own key, so an invitation cannot be passed on
-    // to somebody else.
-    if !verify_signature(founder.clone(), invitation.signature, agent.clone())? {
+    // to somebody else — and over the name the holder gave them, so it cannot
+    // be changed on the way to the person who has to agree.
+    let who = WhoIsLetIn {
+        invitee: agent.clone(),
+        name: invitation.name.clone(),
+    };
+    if !verify_signature(founder.clone(), invitation.signature, who.clone())? {
         return invalid("Invitation was not issued by the person whose circle this is");
     }
 
@@ -736,7 +771,7 @@ fn check_membrane_as_far_as(
              * person had apparently joined — and a door that opens and then
              * quietly stops working is worse than one that says no.
              */
-            if verify_signature(founder.clone(), seconded.clone(), agent.clone())? {
+            if verify_signature(founder.clone(), seconded.clone(), who.clone())? {
                 return invalid(
                     "The second agreement on this invitation is from the person \
                      whose circle it is. It has to be somebody else — that is the \
@@ -785,7 +820,7 @@ fn check_membrane_as_far_as(
                  this invitation only has one of them",
             );
         };
-        if !verify_signature(appointment.agrees, seconded, agent.clone())? {
+        if !verify_signature(appointment.agrees, seconded, who)? {
             return invalid(
                 "The second agreement on this invitation is not from the person \
                  this circle asks to give it",
@@ -1330,7 +1365,10 @@ fn validate_proposed_member(
     if !verify_signature(
         author.clone(),
         proposed.signature.clone(),
-        proposed.invitee.clone(),
+        WhoIsLetIn {
+            invitee: proposed.invitee.clone(),
+            name: proposed.name.clone(),
+        },
     )? {
         return invalid(
             "A proposal must carry the holder's own agreement, over the key it names",
@@ -1368,11 +1406,14 @@ fn validate_endorsement(
         return invalid("An agreement must refer to a proposed member");
     };
 
-    // Over the same key the holder signed, and nothing else.
+    // Over the same key and name the holder signed, and nothing else.
     if !verify_signature(
         author.clone(),
         endorsement.signature.clone(),
-        proposed.invitee.clone(),
+        WhoIsLetIn {
+            invitee: proposed.invitee.clone(),
+            name: proposed.name.clone(),
+        },
     )? {
         return invalid("The second agreement must be over the key the proposal names");
     }
