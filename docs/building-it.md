@@ -318,6 +318,17 @@ Proper updates later need a `publish` section pointing at
 each release, and ideally signed installers. Until then, people update by
 downloading the new installer.
 
+### A second copy of Kangaroo needs its own `node_modules`, not a link
+
+To build the LAN field test beside the real desktop app, the Kangaroo folder
+was copied and its `node_modules` pointed back at the original through a
+Windows junction, to save space. electron-builder does not follow it: the
+installer built and installed without complaint, and the app died on launch
+with `Cannot find module 'logform'`. So the first LAN test never ran on either
+machine. Copy `node_modules` for real, and check with
+`npx @electron/asar list dist/win-unpacked/resources/app.asar` that
+dependencies are inside before handing an installer to anybody.
+
 ### One change Hearth makes to Kangaroo: one copy at a time
 
 **The desktop app is a clone of Kangaroo that is not kept in this repository,**
