@@ -31,6 +31,13 @@
       why. It permits WebAssembly and nothing else; `eval` and inline script
       stay blocked. Found by trying it, which is the only way this would ever
       have been found before somebody installed it.
+
+      `blob:` for images and media, and only that. A photo, sound or video
+      read back from the circle is shown from a copy held in this page's own
+      memory, and a blob address can only ever name something this page made
+      itself — it reaches nothing outside. Without it, the first photo ever
+      added was saved perfectly and showed as a broken picture: its bytes came
+      back intact, and this rule refused to draw them.
     -->
     <meta
       http-equiv="Content-Security-Policy"
@@ -38,7 +45,8 @@
         default-src 'self';
         script-src 'self' 'wasm-unsafe-eval';
         style-src 'self' 'unsafe-inline';
-        img-src 'self' data:;
+        img-src 'self' data: blob:;
+        media-src 'self' blob:;
         font-src 'self';
         connect-src 'self' ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*;
         object-src 'none';
