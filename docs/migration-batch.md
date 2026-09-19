@@ -59,17 +59,35 @@ needs its own design first.
 | 11 | **History that travels with a moved circle** | Readings and suggestions come across a move as words kept on each device. An entry for them would put them in the circle itself, signed by the holder | S | **Later** — words work, and nobody has asked for more | |
 | 12 | **Short codes** — a door address of 16 characters | Your number for anything typed. Needs a way to look a short code up, which does not exist yet | M | **Later** — QR codes cover most of it now | |
 
-## Decisions item 9 needs from you
+## Decided, 19 September 2026
 
-If a successor is in:
+**Ceri agreed every recommendation above**: items 1–9 are in, 11 and 12 are
+later. Item 10, the outer ring, is still to be decided.
 
-- **Who may be named?** Anybody in the circle, or only the second person?
-- **What stops somebody claiming the holder has gone when she has not?** For
-  example: the move only happens after a waiting period in which the holder
-  can say "I'm still here", and everybody in the circle sees that it has been
-  started.
-- **Can the holder change or remove the successor at any time?** (Recommend:
-  yes, as with the second person.)
+**Item 9, the successor:**
+
+- **Anybody in the circle may be named.**
+- **A waiting period** before a successor can move the circle, visible to the
+  whole circle, during which the holder can say "I'm still here" and stop it.
+- **The holder can change or remove the successor at any time.**
+- **Ceri's addition: somebody who can check in person.** When a successor
+  starts, somebody in the circle who lives near the holder, or can phone her,
+  is asked to check and confirm. The danger this answers is the real one —
+  somebody claiming the holder has gone when she is away, in hospital for a
+  week, or has simply not opened the app.
+
+How that last part might work, not yet decided:
+
+- **(a) Any other member** confirms — the first to answer.
+- **(b) The holder names a checker in advance**, somebody close who can visit
+  or call, as she names a successor.
+- **(c) Both:** the named checker is asked first, and anybody else may confirm
+  if the checker cannot.
+
+Whichever it is, the checker can never be the successor, and a confirmation
+is written in the circle where everybody can see who gave it and when. It is a
+person's word, like everything else here; what makes it a safeguard is that
+it is a second person, and that it is visible.
 
 ## What has to come with it
 
