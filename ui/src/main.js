@@ -1537,6 +1537,9 @@ $("record-form").addEventListener("submit", async (event) => {
       how_to_support_me: $("how-to-support").value,
       also_worth_knowing: $("also-worth-knowing").value,
       supported_to_write_this_by: $("supported-by").value.trim(),
+      // Nothing on this form edits coded values, so whatever the record
+      // already carries is kept rather than quietly dropped on saving.
+      codes: entryOf(record?.current?.record)?.codes ?? [],
     };
 
     if (record) {
@@ -4949,6 +4952,7 @@ async function moveTheCircle(removedKey, removedName, reason) {
       how_to_support_me: entry.how_to_support_me ?? "",
       also_worth_knowing: entry.also_worth_knowing ?? "",
       supported_to_write_this_by: entry.supported_to_write_this_by ?? "",
+      codes: entry.codes ?? [],
     },
     to,
   );

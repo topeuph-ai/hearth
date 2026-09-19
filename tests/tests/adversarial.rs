@@ -34,6 +34,7 @@ fn an_about_me(name: &str) -> AboutMe {
         how_to_support_me: "Give me time to answer".into(),
         also_worth_knowing: "I was a district nurse for thirty years".into(),
         supported_to_write_this_by: "My daughter Ruth".into(),
+        codes: Vec::new(),
     }
 }
 

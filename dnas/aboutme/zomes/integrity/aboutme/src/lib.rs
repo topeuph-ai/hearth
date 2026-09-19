@@ -48,7 +48,36 @@ pub struct AboutMe {
     ///
     /// Self-declared like everything else here, and never inferred.
     pub supported_to_write_this_by: String,
+
+    /// Coded values, which the standard allows beside every section.
+    ///
+    /// Empty in almost every record, and nothing in the app fills it yet. It
+    /// is here because adding a field later means another migration, and a
+    /// space costs nothing now. A code is a claim like everything else in the
+    /// record: it says which terminology and which term, and nobody checks it
+    /// against anything.
+    #[serde(default)]
+    pub codes: Vec<CodedValue>,
 }
+
+/// One coded value, beside one section of the record.
+///
+/// The standard's coded values come from a terminology — usually SNOMED CT —
+/// so a system can recognise what a section is about without reading it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CodedValue {
+    /// Which section it sits beside.
+    pub section: AboutMeField,
+    /// Which terminology, for example `http://snomed.info/sct`.
+    pub system: String,
+    /// The code itself.
+    pub code: String,
+    /// What the code means, in words, as the terminology says it.
+    pub display: String,
+}
+
+/// More codes than this beside one record is not coding, it is filling.
+const MOST_CODES: usize = 50;
 
 /// A professional's "I have read this."
 ///
@@ -843,6 +872,18 @@ fn validate_about_me(
     ] {
         if too_long(section) {
             return invalid("Each part of the record holds up to 500 words");
+        }
+    }
+    if about_me.codes.len() > MOST_CODES {
+        return invalid("A record can carry up to 50 coded values");
+    }
+    for coded in &about_me.codes {
+        if coded.code.trim().is_empty()
+            || name_too_long(&coded.system)
+            || name_too_long(&coded.code)
+            || name_too_long(&coded.display)
+        {
+            return invalid("A coded value needs a code, and each part of it is short");
         }
     }
     Ok(ValidateCallbackResult::Valid)
