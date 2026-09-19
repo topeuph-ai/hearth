@@ -5783,18 +5783,29 @@ async function showMedia() {
           : `${noun}, with no words given`,
       );
       figure.append(audio);
-      if (here.media.seconds) {
-        const length = document.createElement("p");
-        length.className = "hint";
-        length.textContent = `${lengthInWords(here.media.seconds)} of ${noun.toLowerCase()}.`;
-        figure.append(length);
-      }
     }
 
+    /*
+     * The words straight under the thing they describe, and the length after
+     * them. Each item is its own box, with space between boxes.
+     *
+     * The first version put the length line between the player and its words,
+     * and the words sat closer to the next player than to their own — so a
+     * sound's description read as if it belonged to the video below it. Found
+     * the first time sound and video were on one section together.
+     */
     if (here.media.in_words) {
       const caption = document.createElement("figcaption");
       caption.textContent = here.media.in_words;
       figure.append(caption);
+    }
+
+    if (kind !== "Photo" && here.media.seconds) {
+      const length = document.createElement("p");
+      length.className = "hint media-length";
+      const noun = kind === "Video" ? "video" : "sound";
+      length.textContent = `${lengthInWords(here.media.seconds)} of ${noun}.`;
+      figure.append(length);
     }
 
     const what = kind === "Photo" ? "photo" : kind === "Video" ? "video" : "sound";
