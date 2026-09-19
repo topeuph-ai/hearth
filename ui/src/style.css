@@ -528,20 +528,31 @@ li {
   border-radius: 6px;
 }
 
-#add-photo {
+#add-photo,
+#add-sound {
   max-width: 32rem;
   border: 2px solid var(--line);
   border-radius: 12px;
   background: var(--paper);
 }
 
-#add-photo::backdrop {
+#add-photo::backdrop,
+#add-sound::backdrop {
   background: rgba(0, 0, 0, 0.45);
 }
 
-#add-photo textarea {
+#add-photo textarea,
+#add-sound textarea {
   width: 100%;
   box-sizing: border-box;
+}
+
+#sound-preview,
+.media-here audio {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0.5rem 0;
 }
 
 .address-code {

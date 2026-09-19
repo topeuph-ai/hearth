@@ -891,6 +891,13 @@ function renderRecord(current) {
       photo.textContent = "Add a photo";
       photo.addEventListener("click", () => pickAPhoto(key));
       group.append(photo);
+
+      const sound = document.createElement("button");
+      sound.type = "button";
+      sound.className = "linky change-one";
+      sound.textContent = "Add sound";
+      sound.addEventListener("click", () => pickASound(key));
+      group.append(sound);
     } else {
       /*
        * And for everybody else, the same place to start from.
@@ -5736,14 +5743,42 @@ async function showMedia() {
   for (const here of all) {
     const [key] = FIELD_LABELS[here.media.section] ?? [];
     const box = document.querySelector(`.media-here[data-media-for="${key}"]`);
-    if (!box || here.media.kind !== "Photo") continue;
+    if (!box) continue;
+    const kind = here.media.kind;
+    if (kind !== "Photo" && kind !== "Sound") continue;
 
     const figure = document.createElement("figure");
     figure.className = "media";
-    const img = document.createElement("img");
-    // The words are the picture for anybody who cannot see it.
-    img.alt = here.media.in_words || "A photo, with no description given";
-    figure.append(img);
+
+    let img = null;
+    let audio = null;
+    if (kind === "Photo") {
+      img = document.createElement("img");
+      // The words are the picture for anybody who cannot see it.
+      img.alt = here.media.in_words || "A photo, with no description given";
+      figure.append(img);
+    } else {
+      /*
+       * Sound, and it never plays by itself. Somebody opening a record on a
+       * busy ward has not chosen to have it heard by everybody near them.
+       */
+      audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      audio.setAttribute(
+        "aria-label",
+        here.media.in_words
+          ? `Sound: ${here.media.in_words}`
+          : "Sound, with no words given",
+      );
+      figure.append(audio);
+      if (here.media.seconds) {
+        const length = document.createElement("p");
+        length.className = "hint";
+        length.textContent = `${lengthInWords(here.media.seconds)} of sound.`;
+        figure.append(length);
+      }
+    }
 
     if (here.media.in_words) {
       const caption = document.createElement("figcaption");
@@ -5751,16 +5786,18 @@ async function showMedia() {
       figure.append(caption);
     }
 
+    const what = kind === "Photo" ? "photo" : "sound";
+
     if (isHolder()) {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "linky";
-      remove.textContent = "Remove this photo";
+      remove.textContent = `Remove this ${what}`;
       remove.addEventListener("click", () => {
-        if (!confirm("Remove this photo from the record?")) return;
+        if (!confirm(`Remove this ${what} from the record?`)) return;
         whileWorking(remove, "Removing…", async () => {
           await call("remove_media", here.item, circle.cellId);
-          announce("Photo removed.");
+          announce(kind === "Photo" ? "Photo removed." : "Sound removed.");
           shownMedia = "";
           await showMedia();
         }).catch(problem);
@@ -5770,16 +5807,28 @@ async function showMedia() {
 
     box.append(figure);
 
-    // The picture itself arrives after the frame; a piece not here yet is not
+    // The file itself arrives after the frame; a piece not here yet is not
     // an error, just not here yet.
     urlForMedia(here.media)
       .then((url) => {
-        img.src = url;
+        if (img) img.src = url;
+        if (audio) audio.src = url;
       })
       .catch(() => {
-        img.alt = "This photo has not arrived on this device yet.";
+        const notYet = `This ${what} has not arrived on this device yet.`;
+        if (img) img.alt = notYet;
+        if (audio) audio.setAttribute("aria-label", notYet);
       });
   }
+}
+
+/** "1 minute 5 seconds", "40 seconds". */
+function lengthInWords(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const minutes = m ? `${m} minute${m === 1 ? "" : "s"}` : "";
+  const secs = s ? `${s} second${s === 1 ? "" : "s"}` : "";
+  return [minutes, secs].filter(Boolean).join(" ") || "Less than a second";
 }
 
 /** Put down the pictures of a circle that is no longer open. */
@@ -5788,3 +5837,216 @@ function forgetMedia() {
   pieceUrls.clear();
   shownMedia = "";
 }
+
+// ---------------------------------------------------------------------------
+// Sound beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// Recorded here or chosen from a file, two minutes at most, heard back before
+// it is saved. Speech-quality recording keeps two minutes well under a
+// megabyte, so it fits in one piece on every member's device.
+
+const MOST_SECONDS_OF_MEDIA = 120;
+/** File types the rules accept for sound, and what some systems call them. */
+const SOUND_TYPES = {
+  "audio/webm": "audio/webm",
+  "audio/ogg": "audio/ogg",
+  "audio/mpeg": "audio/mpeg",
+  "audio/mp3": "audio/mpeg",
+  "audio/mp4": "audio/mp4",
+  "audio/x-m4a": "audio/mp4",
+  "audio/m4a": "audio/mp4",
+};
+
+let soundFor = null;
+let soundBytes = null;
+let soundType = null;
+let soundSeconds = 0;
+let soundName = "";
+let soundUrl = null;
+let recording = null; // { recorder, stream, started, timer }
+
+function showTheSound(bytes, type, seconds, name) {
+  soundBytes = bytes;
+  soundType = type;
+  soundSeconds = seconds;
+  soundName = name;
+  if (soundUrl) URL.revokeObjectURL(soundUrl);
+  soundUrl = URL.createObjectURL(new Blob([bytes], { type }));
+  $("sound-preview").src = soundUrl;
+  $("sound-preview").hidden = false;
+  $("save-sound").disabled = false;
+  $("sound-status").textContent =
+    `${lengthInWords(seconds)}. Play it back to check it before adding it.`;
+}
+
+function pickASound(key) {
+  soundFor = key;
+  soundBytes = null;
+  $("sound-preview").hidden = true;
+  $("sound-preview").removeAttribute("src");
+  $("save-sound").disabled = true;
+  $("sound-status").textContent = "";
+  $("sound-words").value = "";
+  $("record-sound").textContent = "Start recording";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[key]] ?? [null, "this section"];
+  $("add-sound-question").textContent = `Add sound to “${label}”?`;
+  $("add-sound").showModal();
+  $("record-sound").focus();
+}
+
+function stopRecording() {
+  if (!recording) return;
+  clearInterval(recording.timer);
+  if (recording.recorder.state !== "inactive") recording.recorder.stop();
+  for (const track of recording.stream.getTracks()) track.stop();
+}
+
+$("record-sound").addEventListener("click", async () => {
+  if (recording) {
+    stopRecording();
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    console.error(error);
+    $("sound-status").textContent =
+      "The microphone could not be opened. Check it is plugged in and that " +
+      "Hearth is allowed to use it, or choose a sound file instead.";
+    return;
+  }
+
+  const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  // Speech quality: clear for a voice, and small on every member's device.
+  const recorder = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: 32_000 });
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size) chunks.push(e.data);
+  });
+  recorder.addEventListener("stop", async () => {
+    const seconds = Math.max(1, Math.round((Date.now() - recording.started) / 1000));
+    recording = null;
+    $("record-sound").textContent = "Record again";
+    const bytes = new Uint8Array(await new Blob(chunks, { type: "audio/webm" }).arrayBuffer());
+    if (!bytes.length) {
+      $("sound-status").textContent = "Nothing was recorded. Try again.";
+      return;
+    }
+    showTheSound(bytes, "audio/webm", Math.min(seconds, MOST_SECONDS_OF_MEDIA), "recording.webm");
+  });
+
+  recording = { recorder, stream, started: Date.now(), timer: 0 };
+  recorder.start();
+  $("save-sound").disabled = true;
+  $("sound-preview").hidden = true;
+
+  // Says how long, and stops itself at two minutes rather than failing after.
+  const tick = () => {
+    const seconds = Math.round((Date.now() - recording.started) / 1000);
+    $("record-sound").textContent = `Stop recording (${lengthInWords(seconds)})`;
+    if (seconds >= MOST_SECONDS_OF_MEDIA) {
+      stopRecording();
+      $("sound-status").textContent = "Two minutes is the most. It has stopped itself.";
+    }
+  };
+  tick();
+  recording.timer = setInterval(tick, 1000);
+});
+
+$("choose-sound").addEventListener("click", () => {
+  stopRecording();
+  $("sound-file").value = "";
+  $("sound-file").click();
+});
+
+/** How long a sound file is, read from the file itself. */
+function durationOf(url) {
+  return new Promise((resolve, reject) => {
+    const probe = new Audio();
+    probe.preload = "metadata";
+    probe.addEventListener("loadedmetadata", () => resolve(probe.duration));
+    probe.addEventListener("error", () => reject(new Error("unreadable")));
+    probe.src = url;
+  });
+}
+
+$("sound-file").addEventListener("change", async () => {
+  const file = $("sound-file").files?.[0];
+  if (!file) return;
+
+  const type = SOUND_TYPES[file.type];
+  if (!type) {
+    $("sound-status").textContent =
+      "That kind of file cannot be added. MP3, M4A, OGG and WebM sound files work.";
+    return;
+  }
+  if (file.size > MOST_BYTES_IN_A_PIECE) {
+    $("sound-status").textContent =
+      "That file is more than three megabytes. Recording it here instead " +
+      "keeps it small enough.";
+    return;
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  let seconds;
+  try {
+    seconds = await durationOf(url);
+  } catch {
+    URL.revokeObjectURL(url);
+    $("sound-status").textContent = "That file could not be played. Try another.";
+    return;
+  }
+  URL.revokeObjectURL(url);
+  if (!Number.isFinite(seconds) || seconds > MOST_SECONDS_OF_MEDIA) {
+    $("sound-status").textContent =
+      "That is longer than two minutes. Two minutes is the most, so the " +
+      "people reading this will listen to all of it.";
+    return;
+  }
+  showTheSound(bytes, type, Math.max(1, Math.round(seconds)), file.name);
+});
+
+function putTheSoundDown() {
+  stopRecording();
+  if ($("add-sound").open) $("add-sound").close();
+  soundBytes = null;
+  soundFor = null;
+}
+
+$("cancel-sound").addEventListener("click", putTheSoundDown);
+// Closed with Escape: the microphone goes off too.
+$("add-sound").addEventListener("close", stopRecording);
+
+$("save-sound").addEventListener("click", () =>
+  whileWorking($("save-sound"), "Adding…", async () => {
+    const bytes = soundBytes;
+    const section = SECTION_FOR_KEY[soundFor];
+    if (!bytes || !section) return;
+
+    const piece = await call("add_media_piece", bytes, circle.cellId);
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Sound",
+        mime_type: soundType,
+        file_name: soundName,
+        in_words: $("sound-words").value.trim(),
+        seconds: soundSeconds,
+        pieces: [piece],
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putTheSoundDown();
+    announce("Sound added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);

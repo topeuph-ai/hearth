@@ -1197,6 +1197,43 @@
               </button>
             </div>
           </dialog>
+
+          <!--
+            Adding sound beside a section.
+
+            Recorded here, or chosen from a file. Two minutes at most — the
+            recording stops itself at two minutes rather than failing after.
+            Heard back before it is saved, and never played by itself later:
+            the guidance warns that sound in a busy workplace is overheard.
+          -->
+          <input type="file" id="sound-file" accept="audio/*" hidden />
+          <dialog id="add-sound">
+            <h3 id="add-sound-question">Add sound?</h3>
+            <p class="hint">
+              Record up to two minutes here, or choose a sound file you
+              already have. Speak close to the microphone in a quiet room.
+            </p>
+            <div class="actions">
+              <button type="button" id="record-sound">Start recording</button>
+              <button type="button" id="choose-sound" class="secondary">
+                Choose a sound file
+              </button>
+            </div>
+            <p id="sound-status" class="hint" aria-live="polite"></p>
+            <audio id="sound-preview" controls preload="metadata" hidden></audio>
+            <label for="sound-words">What this says, in words (optional)</label>
+            <p class="hint">
+              For anybody who cannot hear it. It does not have to be every
+              word — what matters in it.
+            </p>
+            <textarea id="sound-words" rows="3"></textarea>
+            <div class="actions">
+              <button type="button" id="save-sound" disabled>Add the sound</button>
+              <button type="button" id="cancel-sound" class="secondary">
+                Not this one
+              </button>
+            </div>
+          </dialog>
         </div>
 
 
