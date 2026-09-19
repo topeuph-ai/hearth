@@ -3279,3 +3279,85 @@ async fn renaming_somebody_on_an_invitation_breaks_it() {
     // The invitation as she made it opening the door is covered by every
     // other test that joins somebody by name.
 }
+
+// ---------------------------------------------------------------------------
+// Removing somebody, the ordinary way (migration batch, item 4)
+// ---------------------------------------------------------------------------
+
+/// The holder removes somebody, lets them back, and the newest decision is
+/// the one every app reads.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_remove_somebody_and_let_them_back() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().to_string();
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.clone(),
+                removed: true,
+            },
+        )
+        .await;
+    let standing: Vec<aboutme::Standing> =
+        conductor.call(&zome(&alice_cell), "get_departures", ()).await;
+    assert_eq!(standing.len(), 1);
+    assert!(standing[0].removed, "Bob has been removed");
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob,
+                removed: false,
+            },
+        )
+        .await;
+    let standing: Vec<aboutme::Standing> =
+        conductor.call(&zome(&alice_cell), "get_departures", ()).await;
+    assert_eq!(standing.len(), 1, "one line per person, not one per decision");
+    assert!(!standing[0].removed, "the newest decision is the one that counts");
+}
+
+/// Only the holder removes anybody.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_remove_anybody() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: alice_cell.agent_pubkey().to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "a member removing the holder, or anybody, is not a decision they can make"
+    );
+}
+
+/// The holder cannot remove herself: that would leave a circle nobody may
+/// write in, and it is what a successor is for.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_remove_herself() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: alice_cell.agent_pubkey().to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    assert!(refused.is_err());
+}

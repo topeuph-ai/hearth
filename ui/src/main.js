@@ -948,10 +948,12 @@ function sayWhichAnswersRunLong() {
   });
 }
 
-function renderReaders(records, earlier = []) {
+function renderReaders(allRecords, earlier = []) {
   const section = $("readers");
   const list = $("readers-list");
   list.replaceChildren();
+  // Nothing written by somebody after they were removed. See writtenWhileGone.
+  const records = allRecords.filter((r) => !writtenWhileGone(r));
 
   if (!records.length && !earlier.length) {
     section.hidden = true;
@@ -1057,6 +1059,10 @@ async function drawTheCircle() {
    * branch never ran, but there was nothing to render, so the reader saw an
    * empty box and a "Check again" button that never turned itself off.
    */
+  // Who has been removed, before anything is drawn — and if it is me, the
+  // circle comes off this device and there is nothing to draw.
+  if (await readDepartures()) return;
+
   const amHolder = isHolder();
   $("check-it-over").hidden = true;
 
@@ -1175,6 +1181,7 @@ async function drawTheCircle() {
  * unwritten. A modified app could show it. See docs/hard-questions.md.
  */
 function stillWorthShowing(item) {
+  if (writtenWhileGone(item.suggestion)) return false;
   if (isHolder()) return true;
   const outcome = entryOf(item.outcome);
   if (!outcome || outcome.accepted) return true;
@@ -2535,12 +2542,19 @@ function renderPeople() {
       li.append(askThem(key, who));
     }
 
-    // Removing somebody means moving everybody else. See moveTheCircle.
+    // Removing somebody: the ordinary way, or by moving everybody else.
     if (amHolder && key !== asText(me)) {
       li.append(removeThem(key, who));
     }
 
     list.append(li);
+  }
+
+  // Only the holder sees who she has removed, and can let them back.
+  if (amHolder) {
+    for (const [key, entry] of removedMembers) {
+      list.append(someoneRemoved(key, entry));
+    }
   }
 }
 
@@ -2661,11 +2675,15 @@ async function loadMembers() {
     [],
   );
   members = new Map();
+  removedMembers = new Map();
   for (const r of records) {
     const entry = entryOf(r);
     if (!entry) continue;
     // Latest introduction wins; people correct how they describe themselves.
-    members.set(asText(authorOf(r)), entry);
+    const key = asText(authorOf(r));
+    // Somebody removed is not in the circle, whatever they wrote before.
+    if (gone.has(key)) removedMembers.set(key, entry);
+    else members.set(key, entry);
   }
 
   /*
@@ -3069,6 +3087,9 @@ function forgetTheCircle() {
   circleAsksTwo = false;
   chainHealth.clear();
   askingAboutChain.clear();
+  // Who was removed from this circle means nothing in the next one.
+  gone = new Map();
+  removedMembers = new Map();
   knocking = [];
   lastWaitingCount = 0;
   stopChiming();
@@ -4438,6 +4459,14 @@ let currentRoomCell = null;
  * nobody to agree, the invitation is made and left at the door immediately.
  */
 async function letThemIn(item, roomCell) {
+  // Somebody removed before, let in again: record that they are back, or
+  // every copy of Hearth would go on hiding them — including their own, which
+  // would take the circle straight off their device again.
+  if (gone.has(item.who)) {
+    await call("decide_departure", { who: item.who, removed: false }, circle.cellId);
+    gone.delete(item.who);
+  }
+
   if (seconderHere) {
     // Drawn from a list that was read a moment ago, so check again here. A
     // second proposal for one person is a second agreement for somebody to
@@ -4850,9 +4879,15 @@ function removeThem(key, who) {
     $("really-move-question").textContent = whose
       ? `Remove ${who} from ${whose}'s circle?`
       : `Remove ${who} from this circle?`;
-    $("really-move-whom").textContent = who;
+    for (const span of document.querySelectorAll(".really-move-whom")) {
+      span.textContent = who;
+    }
     $("really-move-seconder").hidden = whoAgrees?.agrees !== key;
     $("move-reason").value = "";
+    // The ordinary way, every time the box opens. Moving the circle is a
+    // choice somebody makes on purpose, never one left over from last time.
+    $("remove-ordinary").checked = true;
+    $("move-details").hidden = true;
     $("really-move").showModal();
     $("stay-together").focus();
   });
@@ -4866,12 +4901,39 @@ $("stay-together").addEventListener("click", () => {
   $("really-move").close();
 });
 
+for (const id of ["remove-ordinary", "remove-and-move"]) {
+  $(id).addEventListener("change", () => {
+    $("move-details").hidden = !$("remove-and-move").checked;
+  });
+}
+
 $("move-for-real").addEventListener("click", async () => {
   const leaving = removing;
   const reason = $("move-reason").value.trim();
+  const move = $("remove-and-move").checked;
   $("really-move").close();
   removing = null;
   if (!leaving) return;
+
+  // The ordinary way: a decision written in the circle, honoured by every
+  // copy of Hearth, including theirs.
+  if (!move) {
+    try {
+      await call(
+        "decide_departure",
+        { who: leaving.key, removed: true },
+        circle.cellId,
+      );
+      announce(
+        `${leaving.who} has been removed. The circle will come off their ` +
+          `device the next time their Hearth looks.`,
+      );
+      await loadCircle();
+    } catch (error) {
+      problem(error);
+    }
+    return;
+  }
 
   if (movingNow) {
     announce("A move is already under way. Wait for it to finish first.");
@@ -5381,3 +5443,125 @@ $("suggest-form").addEventListener(
   },
   { capture: true },
 );
+
+// ---------------------------------------------------------------------------
+// Somebody removed: the ordinary way (migration batch, item 4)
+// ---------------------------------------------------------------------------
+//
+// The holder writes a decision into the circle. Every copy of Hearth honours
+// it: the person drops out of every list, what they write afterwards is not
+// shown, and their own copy takes the circle off their device. A modified app
+// can ignore all of that, which is what moving the circle is for.
+
+let gone = new Map(); // agent key text -> removed since, in microseconds
+let removedMembers = new Map(); // agent key text -> their last introduction
+
+/**
+ * Read who stands where, and act on it if it is me.
+ *
+ * Returns true when this device has just been removed and the circle has come
+ * off it — there is then nothing left to draw.
+ */
+async function readDepartures() {
+  if (!circle) return false;
+  const standings = await orNothingYet(
+    call("get_departures", null, circle.cellId),
+    null,
+  );
+  // Nobody answered: keep what was known rather than showing somebody removed
+  // as back in, even for twenty seconds.
+  if (!standings) return false;
+
+  gone = new Map(
+    standings.filter((s) => s.removed).map((s) => [s.who, Number(s.since)]),
+  );
+
+  if (gone.has(asText(me)) && !isHolder()) {
+    await takeItOffThisDevice();
+    return true;
+  }
+  return false;
+}
+
+/** Something somebody wrote after they were removed. */
+function writtenWhileGone(record) {
+  const since = gone.get(asText(authorOf(record)));
+  if (since === undefined) return false;
+  const at = Number(record?.signed_action?.hashed?.content?.header?.timestamp ?? 0);
+  return at >= since;
+}
+
+/*
+ * I have been removed. The circle comes off this device.
+ *
+ * Deleted, not only switched off: leaving keeps a circle in case somebody
+ * changes their mind, but this was somebody else's decision, and what is on
+ * this device goes with it. If they are ever let back in, they start fresh
+ * with the record as it is then.
+ *
+ * Said plainly, once. Nobody should find a circle simply gone with no word.
+ */
+async function takeItOffThisDevice() {
+  const cellId = circle.cellId;
+  const label = labelFor(cellId, $("circle-heading").textContent.trim() || "");
+
+  try {
+    await call("forget_circle", cellId[0]);
+  } catch (error) {
+    // Deleting failed: at least switch it off, so it is not on screen.
+    console.error("Could not delete the circle; switching it off.", error);
+    await call("leave_circle", cellId[0]).catch((e) => console.error(e));
+  }
+
+  forgetWhatThisDeviceKnew(cellId);
+  forgetRoom(cellId);
+  forgetTheCircle();
+  await loadCircles();
+
+  announce(
+    label
+      ? `You are no longer in ${label}'s circle. The person who holds it has ` +
+          `removed you, so it has been taken off this device.`
+      : `You are no longer in this circle. The person who holds it has ` +
+          `removed you, so it has been taken off this device.`,
+  );
+}
+
+/** A line for somebody removed, with a way to let them back. Holder only. */
+function someoneRemoved(key, entry) {
+  const li = document.createElement("li");
+  li.className = "removed";
+
+  const who = entry.name?.trim() || "Somebody";
+  const line = document.createElement("p");
+  line.textContent = `${who} — removed`;
+  li.append(line);
+
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent =
+    "The circle has been taken off their device. Letting them back means they " +
+    "can be let in at the door again, and start fresh.";
+  li.append(hint);
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "linky";
+  button.textContent = `Let ${who} back`;
+  button.addEventListener("click", () =>
+    whileWorking(button, "Letting them back…", async () => {
+      await call("decide_departure", { who: key, removed: false }, circle.cellId);
+      announce(
+        `${who} can be let in again. Send them the circle's address, and let ` +
+          `them in when they ask.`,
+      );
+      await loadCircle();
+    }).catch(problem),
+  );
+  actions.append(button);
+  li.append(actions);
+
+  return li;
+}

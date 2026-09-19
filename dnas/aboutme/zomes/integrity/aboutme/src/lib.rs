@@ -297,6 +297,34 @@ pub struct Endorsement {
     pub signature: Signature,
 }
 
+/// Somebody the holder has removed from the circle — or let back.
+///
+/// **The everyday removal** (migration batch, item 4). A support worker moves
+/// on; a relative falls out with the family. Moving the whole circle is for
+/// the serious cases; this is for the ordinary ones, and it costs nobody
+/// anything.
+///
+/// **What it can and cannot do, said plainly.** Nothing can take a person out
+/// of a network they are already in: there is no operator to reach across,
+/// and validation cannot ask "has this person been removed?" because the
+/// answer changes over time, and every device must reach the same answer
+/// forever. So this is a statement, written where the whole circle can see it,
+/// that every copy of Hearth honours: the person drops out of every list,
+/// anything they write afterwards is not shown, and their own app takes the
+/// circle off their device. A modified app can ignore it, and that is exactly
+/// what moving the circle is for.
+///
+/// Append-only, like every other decision here. The newest one about a person
+/// is the one that counts, so letting somebody back is writing another.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Departure {
+    /// Who.
+    pub who: AgentPubKey,
+    /// True when they are removed; false when they are let back.
+    pub removed: bool,
+}
+
 /// Which part of the record a suggestion is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
@@ -358,6 +386,8 @@ pub enum EntryTypes {
     Admission(Admission),
     Appointment(Appointment),
     Consent(Consent),
+    // The migration batch.
+    Departure(Departure),
 }
 
 #[hdk_link_types]
@@ -389,6 +419,9 @@ pub enum LinkTypes {
     /// Appointment -> the answer to it, so the holder finds out whether the
     /// person she asked is willing without having to go and ask them again.
     AppointmentToConsent,
+    /// Anchor -> Departure, so every app in the circle finds who has been
+    /// removed, and the person removed finds out too.
+    CircleToDeparture,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -1083,6 +1116,22 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Only the holder records who has gone, and only her own decisions.
+        LinkTypes::CircleToDeparture => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may remove somebody");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only record your own decision");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Anybody may knock, and only about themselves.
         LinkTypes::WaitingRoomToKnock => {
             if who_this_room_serves()?.is_none() {
@@ -1328,6 +1377,23 @@ fn validate_consent(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// Only the holder removes somebody, and never herself.
+///
+/// A holder removing herself would leave a circle nobody may write in, with
+/// no way back — that is what a successor is for, not this.
+fn validate_departure(
+    departure: &Departure,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may remove somebody");
+    }
+    if &departure.who == author {
+        return invalid("The person who holds a circle cannot remove herself from it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// Only the holder may appoint somebody, and never herself.
 fn validate_appointment(
     appointment: &Appointment,
@@ -1527,6 +1593,7 @@ fn validate_create(
         EntryTypes::Admission(a) => validate_admission(&a, author),
         EntryTypes::Appointment(a) => validate_appointment(&a, author),
         EntryTypes::Consent(c) => validate_consent(&c, author),
+        EntryTypes::Departure(d) => validate_departure(&d, author),
     }
 }
 
@@ -1731,6 +1798,11 @@ fn validate_update(
             // said: the holder may have acted on it.
             EntryTypes::Consent(_) => {
                 invalid("An answer cannot be changed; answer again")
+            }
+            // Let them back, or remove them again, by writing another. Who was
+            // removed, and when, stays where everybody can see it.
+            EntryTypes::Departure(_) => {
+                invalid("A removal cannot be changed; write another decision")
             }
     }
 }

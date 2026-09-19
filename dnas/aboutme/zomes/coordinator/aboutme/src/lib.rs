@@ -991,6 +991,29 @@ pub fn rejoin_circle(dna_hash: DnaHash) -> ExternResult<ClonedCell> {
     })
 }
 
+/// Take a circle off this device for good — for somebody who has been removed.
+///
+/// Leaving switches a circle off and keeps it, so that somebody who changes
+/// their mind finds it as it was. Being removed is different: the holder has
+/// decided, and what is on this device should go with the decision. So the
+/// circle is switched off and then deleted, and Holochain 0.7 removes its
+/// database from this device (`delete_clone_cell` calls
+/// `delete_cell_databases`, checked in the conductor source).
+///
+/// Carried out by this device's own app, because nothing else can reach it.
+/// A modified app need not call it, and deleting a file is not wiping a disk;
+/// see docs/how-it-works.md. If they are ever let back in, they start fresh.
+#[hdk_extern]
+pub fn forget_circle(dna_hash: DnaHash) -> ExternResult<()> {
+    // Already switched off is fine; deleting needs it off either way.
+    let _ = disable_clone_cell(DisableCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash.clone()),
+    });
+    delete_clone_cell(DeleteCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Signals: telling someone their record was read, without polling or a server
 // ---------------------------------------------------------------------------
@@ -2221,6 +2244,116 @@ const APPOINTMENT_ANCHOR: &str = "appointments";
 
 fn appointment_path() -> ExternResult<TypedPath> {
     anchored(APPOINTMENT_ANCHOR, LinkTypes::CircleToAppointment)
+}
+
+// ---------------------------------------------------------------------------
+// Who has been removed (migration batch, item 4)
+// ---------------------------------------------------------------------------
+//
+// The everyday removal. A decision the holder writes where the whole circle
+// sees it, honoured by every copy of Hearth: the person drops out of every
+// list, what they write afterwards is not shown, and their own app takes the
+// circle off their device. Moving the circle is for when that is not enough.
+
+const DEPARTURE_ANCHOR: &str = "departures";
+
+fn departure_path() -> ExternResult<TypedPath> {
+    anchored(DEPARTURE_ANCHOR, LinkTypes::CircleToDeparture)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepartureInput {
+    /// Who, as text.
+    pub who: String,
+    /// True to remove them; false to let them back.
+    pub removed: bool,
+}
+
+/// Remove somebody from this circle, or let them back.
+#[hdk_extern]
+pub fn decide_departure(input: DepartureInput) -> ExternResult<Record> {
+    let who = AgentPubKey::try_from(input.who.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+
+    let action_hash = create_entry(EntryTypes::Departure(Departure {
+        who,
+        removed: input.removed,
+    }))?;
+
+    let path = departure_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToDeparture,
+        (),
+    )?;
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the decision just written"))
+}
+
+/// Where somebody stands, from the newest decision about them.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Standing {
+    /// Who, as text.
+    pub who: String,
+    /// Whether they are removed now.
+    pub removed: bool,
+    /// When the newest decision about them was made, in microseconds. Things
+    /// they wrote after this are not shown while they are removed.
+    pub since: Timestamp,
+}
+
+/// Everybody the holder has ever removed or let back, as they stand now.
+///
+/// Only decisions the holder wrote count. Validation already refuses anybody
+/// else's, but this is also the one list whose mistakes would hide a real
+/// member, so it checks again rather than trusting what arrived.
+#[hdk_extern]
+pub fn get_departures(_: ()) -> ExternResult<Vec<Standing>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(
+            departure_path()?.path_entry_hash()?,
+            LinkTypes::CircleToDeparture,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    // Mine too, so the holder sees her decision the moment she makes it.
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::Departure)?);
+    oldest_first(&mut found);
+
+    let mut newest: std::collections::BTreeMap<String, Standing> =
+        std::collections::BTreeMap::new();
+    for record in found {
+        if record.action().author() != &holder {
+            continue;
+        }
+        let Some(departure) = record.entry().to_app_option::<Departure>().ok().flatten() else {
+            continue;
+        };
+        let who = departure.who.to_string();
+        newest.insert(
+            who.clone(),
+            Standing {
+                who,
+                removed: departure.removed,
+                since: record.action().timestamp(),
+            },
+        );
+    }
+
+    Ok(newest.into_values().collect())
 }
 
 /// Ask somebody to agree to who joins, from now on.

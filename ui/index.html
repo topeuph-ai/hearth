@@ -1374,27 +1374,58 @@
             <h3 id="really-move-question">
               Remove this person from the circle?
             </h3>
-            <p>
-              Hearth will make a new circle, copy the record into it, and move
-              everybody else across. Nobody has to do anything.
-              <span id="really-move-whom">They</span> will not be told, and will
-              not be able to see anything written from now on.
-            </p>
             <p id="really-move-seconder" class="notice" hidden>
-              They are the person who agrees to who joins. After the move, you
+              They are the person who agrees to who joins. After this, you
               will need to ask somebody else.
             </p>
-            <p class="hint">
-              What they have already seen cannot be taken back. Anybody not
-              using Hearth right now moves the next time they open it while you
-              have it open too. The door address changes, so any invitation not
-              yet used will need sending again.
-            </p>
-            <label for="move-reason">Why? (optional)</label>
-            <p class="hint" id="move-reason-hint">
-              Everybody who moves will see this. The person removed never will.
-            </p>
-            <textarea id="move-reason" rows="3"></textarea>
+            <!--
+              Two ways, and the ordinary one first.
+
+              Removing somebody is usually ordinary: a support worker moves on.
+              Moving the whole circle is for when their own copy of Hearth
+              cannot be trusted to honour it — so it is offered, explained,
+              and never the default.
+            -->
+            <fieldset>
+              <legend>How?</legend>
+              <div class="option">
+                <input type="radio" id="remove-ordinary" name="how-to-remove"
+                  value="ordinary" checked />
+                <label for="remove-ordinary">Remove them</label>
+                <p class="hint">
+                  <span class="really-move-whom">They</span> drop out of the
+                  circle, and it comes off their device. Their own copy of
+                  Hearth does this. What they have already seen cannot be taken
+                  back.
+                </p>
+              </div>
+              <div class="option">
+                <input type="radio" id="remove-and-move" name="how-to-remove"
+                  value="move" />
+                <label for="remove-and-move">
+                  Remove them and move the circle
+                </label>
+                <p class="hint">
+                  For serious cases — a stolen device, a safeguarding worry, or
+                  somebody who keeps writing. Hearth makes a new circle and
+                  moves everybody else into it.
+                  <span class="really-move-whom">They</span> are not told, and
+                  can see nothing written from then on, even with a changed app.
+                </p>
+              </div>
+            </fieldset>
+            <div id="move-details" hidden>
+              <p class="hint">
+                Anybody not using Hearth right now moves the next time they
+                open it while you have it open too. The door address changes,
+                so any invitation not yet used will need sending again.
+              </p>
+              <label for="move-reason">Why? (optional)</label>
+              <p class="hint" id="move-reason-hint">
+                Everybody who moves will see this. The person removed never will.
+              </p>
+              <textarea id="move-reason" rows="3"></textarea>
+            </div>
             <div class="actions">
               <button type="button" id="stay-together">No, take me back</button>
               <button type="button" id="move-for-real" class="secondary">
