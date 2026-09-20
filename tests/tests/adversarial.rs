@@ -1618,10 +1618,15 @@ async fn the_whole_journey() {
         )
         .await;
 
-    let readers: Vec<Record> = conductor
+    let readers: Vec<aboutme::WhoRead> = conductor
         .call(&zome(&alice), "get_acknowledgements", original)
         .await;
     assert_eq!(readers.len(), 1, "the holder should know it was read");
+    assert_eq!(
+        readers[0].role, "her son",
+        "and what he said he was, which is locked in the circle and opened here"
+    );
+    assert!(!readers[0].locked_out);
 }
 
 // ---------------------------------------------------------------------------

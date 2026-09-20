@@ -1024,12 +1024,19 @@ function sayWhichAnswersRunLong() {
   });
 }
 
-function renderReaders(allRecords, earlier = []) {
+/*
+ * Who has read the record.
+ *
+ * Each item is the acknowledgement itself and the role its author claimed,
+ * opened with the circle's key by the zome — the role is locked in the circle,
+ * so it cannot be read off the entry here.
+ */
+function renderReaders(allReads, earlier = []) {
   const section = $("readers");
   const list = $("readers-list");
   list.replaceChildren();
   // Nothing written by somebody after they were removed. See writtenWhileGone.
-  const records = allRecords.filter((r) => !writtenWhileGone(r));
+  const records = allReads.filter((item) => !writtenWhileGone(item.record));
 
   if (!records.length && !earlier.length) {
     section.hidden = true;
@@ -1047,14 +1054,16 @@ function renderReaders(allRecords, earlier = []) {
     list.append(li);
   }
 
-  for (const r of records) {
-    const entry = entryOf(r);
-    if (!entry) continue;
+  for (const item of records) {
     const li = document.createElement("li");
     // Never "Read by District Nurse" — that implies a credential nobody
     // checked. The claim and the claimant are shown as separate facts.
-    const who = describe(authorOf(r));
-    li.textContent = `${who} read this. Role claimed: ${entry.role}`;
+    const who = describe(authorOf(item.record));
+    // A role this device cannot open is said as that, not left blank: that
+    // somebody read the record is the evidence, and it is not in doubt.
+    li.textContent = item.locked_out
+      ? `${who} read this. What they said they were cannot be read on this device.`
+      : `${who} read this. Role claimed: ${item.role}`;
     list.append(li);
   }
 }
@@ -4945,13 +4954,13 @@ async function historyOf(cellId, names) {
         call("get_acknowledgements", current.record.signed_action.hashed.hash, cellId),
         [],
       );
-      for (const r of acks) {
-        const entry = entryOf(r);
-        if (!entry) continue;
+      for (const item of acks) {
         readers.push({
-          who: nameFrom(names, asText(authorOf(r))),
-          role: entry.role,
-          when: writtenAt(r),
+          who: nameFrom(names, asText(authorOf(item.record))),
+          // Kept as words, because this is written down before the circle moves
+          // and read back afterwards, when the old circle's keys are gone.
+          role: item.locked_out ? "not readable on this device" : item.role,
+          when: writtenAt(item.record),
         });
       }
     }

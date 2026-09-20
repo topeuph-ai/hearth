@@ -665,9 +665,20 @@ pub struct AcknowledgeInput {
 #[hdk_extern]
 pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
     let role = input.role.clone();
+    // Checked here, since nothing can check it once it is locked.
+    if name_too_long(&role) {
+        return Err(wasm_error!(
+            "What you say you are can be up to 200 characters"
+        ));
+    }
     let ack = Acknowledgement {
         about_me: input.about_me.clone(),
-        role: input.role,
+        role: String::new(),
+        locked: Some(lock(
+            ExternIO::encode(&role)
+                .map_err(|e| wasm_error!(format!("Could not pack the role to lock it: {e:?}")))?
+                .into_vec(),
+        )?),
     };
     let action_hash = create_entry(EntryTypes::Acknowledgement(ack))?;
 
@@ -700,9 +711,21 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("Could not read the acknowledgement just written"))
 }
 
+/// Somebody's "I have read this", with the role they claimed opened.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WhoRead {
+    pub record: Record,
+    /// What they said they were. Empty where this device cannot open it, which
+    /// the screen shows as a read by somebody whose claim it cannot see —
+    /// never as somebody who claimed nothing.
+    pub role: String,
+    /// True where there is a role this device cannot open.
+    pub locked_out: bool,
+}
+
 /// Who has read a given version of About Me.
 #[hdk_extern]
-pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
+pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<WhoRead>> {
     let wanted = about_me.clone();
     let links = get_links(
         LinkQuery::try_new(about_me, LinkTypes::AboutMeToAcknowledgement)?,
@@ -732,7 +755,33 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
     // Who read it, in the order they read it, the same way on every device.
     oldest_first(&mut records);
 
-    Ok(records)
+    Ok(records
+        .into_iter()
+        .map(|record| {
+            let ack = record
+                .entry()
+                .to_app_option::<Acknowledgement>()
+                .ok()
+                .flatten();
+            let (role, locked_out) = match ack.as_ref().and_then(|a| a.locked.as_ref()) {
+                Some(locked) => match unlock(locked).and_then(|w| {
+                    ExternIO::from(w)
+                        .decode::<String>()
+                        .map_err(|e| wasm_error!(format!("{e:?}")))
+                }) {
+                    Ok(role) => (role, false),
+                    Err(_) => (String::new(), true),
+                },
+                // Written before the roles were locked.
+                None => (ack.map(|a| a.role).unwrap_or_default(), false),
+            };
+            WhoRead {
+                record,
+                role,
+                locked_out,
+            }
+        })
+        .collect())
 }
 
 /// Delete a record. Validation permits this only to the record's own author,

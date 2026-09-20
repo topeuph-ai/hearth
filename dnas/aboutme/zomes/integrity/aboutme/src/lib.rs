@@ -151,7 +151,19 @@ fn locked_is_the_right_shape(
 /// app could write nonsense inside it. What it cannot do is fill anybody's
 /// disk, which is what the limit is for. The words themselves are checked by
 /// the app, as everything about locked content must be.
-const MOST_BYTES_IN_A_LOCKED_RECORD: usize = 9 * 8_000 * 4 + 1_024;
+///
+/// The arithmetic, so the next person can check it rather than trust it:
+///
+/// - nine text fields, 8,000 characters each, four bytes for the longest
+///   characters there are — 288,000
+/// - fifty coded values, each a section and three strings of up to 200
+///   characters — about 120,000
+/// - the field names they are packed under, and room to spare — 8,192
+///
+/// Half a megabyte, rounded up from about 416,000. An earlier version of this
+/// left the coded values out and would have refused a record that was entirely
+/// within the rules.
+const MOST_BYTES_IN_A_LOCKED_RECORD: usize = 512_000;
 
 /// One coded value, beside one section of the record.
 ///
@@ -184,6 +196,17 @@ pub struct Acknowledgement {
     pub about_me: ActionHash,
     /// Free text, e.g. "district nurse". Not a verified credential.
     pub role: String,
+
+    /// The role, locked with the circle's key. When this is here, `role` is
+    /// empty.
+    ///
+    /// Which version was read, and by whom, stays in the open: they are what
+    /// every device checks, and they are the evidence the whole acknowledgement
+    /// exists to be. What is hidden is the claim — that the person who read it
+    /// says they are a district nurse, which together with a name and a date is
+    /// exactly the sort of thing a removed member should not keep receiving.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
 
 /// Who somebody in the circle is, in their own words.
@@ -1629,8 +1652,25 @@ fn validate_acknowledgement(
     if action.action().author() == author {
         return invalid("An agent cannot acknowledge their own About Me");
     }
-    if name_too_long(&ack.role) {
-        return invalid("What you say you are can be up to 200 characters");
+    match &ack.locked {
+        Some(locked) => {
+            if !ack.role.is_empty() {
+                return invalid("A role is either locked or in the open, not partly both");
+            }
+            // A role is 200 characters at most, and locking adds a little.
+            if let ValidateCallbackResult::Invalid(why) = locked_is_the_right_shape(
+                locked,
+                MOST_CHARACTERS_IN_A_NAME * 4 + 1_024,
+                "That is larger than a role could be",
+            )? {
+                return Ok(ValidateCallbackResult::Invalid(why));
+            }
+        }
+        None => {
+            if name_too_long(&ack.role) {
+                return invalid("What you say you are can be up to 200 characters");
+            }
+        }
     }
 
     let entry_hash = action
