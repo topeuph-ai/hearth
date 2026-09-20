@@ -724,6 +724,28 @@
             <span id="who-decides-suggestions">The person who holds this
             circle</span> will decide whether to add it.
           </p>
+        <!--
+          A record that is here but cannot be opened on this device. Not an
+          empty record and not an error: the words are locked with a key this
+          device has not got. Either it has been removed from the circle, or it
+          is a few seconds behind on keys.
+        -->
+        <div id="locked-out" hidden>
+          <p>
+            <strong>This record cannot be opened on this device.</strong>
+          </p>
+          <p>
+            The words are locked with a key held by the people in the circle.
+            If you have just joined, or just come back online, wait a moment
+            and look again — the key arrives the same way everything else here
+            does.
+          </p>
+          <p>
+            If you have been removed from the circle, this is what that means:
+            what is written from then on cannot be read here, by this app or
+            any other. Nothing has gone wrong.
+          </p>
+        </div>
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->
           <p id="no-record-empty" hidden>

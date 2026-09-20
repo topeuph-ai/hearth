@@ -1,6 +1,7 @@
 # Encrypting the record: design note
 
-**Migration batch, item 6. Drafted 19 September 2026. Nothing here is built.**
+**Migration batch, item 6. Drafted 19 September 2026. The keys are built (20
+September); nothing is locked with them yet — see [what is built so far](#what-is-built-so-far).**
 Written before any code because it touches every kind of entry, and a mistake
 in it is either a record nobody can read or a record that was never as private
 as it said.
@@ -147,18 +148,84 @@ All three as recommended below:
    removed person who has joined since. Readable is simpler, and names are
    less sensitive than the record. *(Recommended: locked.)*
 
-## How it would be built, in order
+## What is built so far
 
-1. `BoxKey`, `EpochKey`, and locked forms of the record, suggestions,
-   acknowledgements, introductions and media — **the frozen-file part**, with
-   size limits in place of word limits.
-2. The circle functions: making and sealing keys, unsealing on arrival,
-   locking on write, unlocking on read.
-3. A new key on every removal and every succession.
-4. Tests: a removed member's copy of the next version cannot be opened; a new
-   member can; an offline member catches up; a locked entry too large is
-   refused.
-5. The [DPIA](DPIA.md) and the table in how-it-works updated from "planned" to
+**20 September 2026, on the `migration-batch` branch.** The keys, and nothing
+else: the record is still written as plain text, so none of the protection in
+the table above is in force yet.
+
+- `BoxKey` — each member's device publishes an X25519 public key, once. Only
+  its author may write one.
+- `EpochKey { epoch, for_member, sealed }` — the circle's key sealed to one
+  member. Only the holder may write one, never for epoch 0, and no bigger than
+  a sealed key can be.
+- `keep_keys_up_to_date` — the one call the app makes whenever a circle is
+  opened. It publishes this device's encryption key, takes up anything sealed
+  to it, and, on the holder's device, makes key 1 if there is none and seals
+  every key to everybody owed one. It writes nothing when nothing has changed,
+  and reports the circle's newest key, the newest this device can use, and
+  anybody whose encryption key has not arrived yet.
+- `keys_i_can_use` — asked of the keystore by locking one byte with each key,
+  because a keystore cannot be asked what it holds. This is what tells a
+  removed device's honest answer from a hopeful one.
+- Removal starts a new key (`decide_departure`); letting somebody back seals
+  them the ones they missed. A key that fails to be made does not undo the
+  removal — the next open tries again, and until then the screen can see that
+  this device's key is older than the circle's.
+
+And the record itself is locked:
+
+- `AboutMe` gained `locked: Option<Locked>`. When it is there, every other
+  field is empty — a record is locked or in the open, never half of each, and
+  every device checks that. The words are one sealed blob, with a ceiling of
+  what nine sections of 8,000 characters could be.
+- The app locks on write and opens on read: `create_about_me` and
+  `update_about_me` take the words as typed, and `get_current_about_me` returns
+  them opened, beside `locked_out` for a record this device cannot open.
+- **The word limits moved to the app.** No device can count words it cannot
+  read, so the zome counts them before locking and refuses with the same
+  wording the rules used to give. What every device still checks is the size of
+  the sealed bytes. This is a real loss of peer-checking, stated here rather
+  than glossed: a changed app could write 70 kB of nonsense where 500 words
+  belong. It could not write more, and it could not write it as somebody else.
+- A device that cannot open the record says so, in the app, in those words —
+  it never shows an empty record instead.
+
+Six tests, in `tests/tests/adversarial.rs`: everybody in the circle can use the
+key; **a removed member is not given the next key** and holds key 1 only;
+somebody who joins later is given every past key, and nothing is handed out
+twice; a member cannot hand out keys; the record is written locked with nothing
+in the open; and **a removed member cannot open what is written next** — the
+one test the whole design exists for.
+
+Still in the open, and next: suggestions and why, acknowledgement roles, how
+members describe themselves, and media pieces.
+
+### One thing the design note got wrong
+
+It said a new key on every **succession**. There is nothing to build: a
+successor does not become the holder of this circle, she *moves* it, and a
+moved circle is a different circle with a different identity — so it makes its
+own key 1, which the old circle's members were never given. Key names include
+the circle's identity for the same reason, so two circles on one device can
+never reach for each other's keys.
+
+## How it is being built, in order
+
+1. ~~`BoxKey` and `EpochKey`~~ **done.** Then the locked forms of the record,
+   suggestions, acknowledgements, introductions and media — **the frozen-file
+   part**, with size limits in place of word limits.
+2. ~~Making and sealing keys, unsealing on arrival~~ **done.** Then locking on
+   write and unlocking on read.
+3. ~~A new key on every removal~~ **done.** Succession needs none, for the
+   reason above.
+4. Tests: ~~a removed member is given no new key~~, ~~a new member is given the
+   history~~ — **done.** Still to come: a removed member's copy of the next
+   version cannot be opened; an offline member catches up; a locked entry too
+   large is refused.
+5. The app: a screen that says plainly what is locked and what is not, and the
+   password question (decision 2), which the keys do not settle on their own.
+6. The [DPIA](DPIA.md) and the table in how-it-works updated from "planned" to
    what was built.
 
 And one check against the licence: [licensing.md](licensing.md) notes that the

@@ -58,7 +58,46 @@ pub struct AboutMe {
     /// against anything.
     #[serde(default)]
     pub codes: Vec<CodedValue>,
+
+    /// The whole of the above, locked with the circle's key.
+    ///
+    /// When this is here, every field above is empty and the words live inside
+    /// it — so there is exactly one place a reader can look, and no way to
+    /// write a record that is half locked and half not.
+    ///
+    /// Left empty by older versions of the app, which is why it is optional:
+    /// a circle written before encryption still reads.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
+
+/// Something written in the circle that only its members can read, and the
+/// number of the key it was locked with.
+///
+/// The key number matters: a member who joined after key 3 holds keys 1, 2 and
+/// 3, and needs to know which to reach for. It is not secret — that the circle
+/// changed its key on Tuesday is visible to anybody receiving the circle
+/// anyway, and pretending otherwise would only stop the record opening.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Locked {
+    pub epoch: u32,
+    pub sealed: XSalsa20Poly1305EncryptedData,
+}
+
+/// The ceiling on a locked record, in bytes.
+///
+/// A device cannot count the words of something it cannot read, so the word
+/// limits become one limit every device *can* check: no more than the whole
+/// record could ever be. Nine sections of 8,000 characters, at four bytes a
+/// character for the longest characters there are, and room for the shape the
+/// fields are packed in.
+///
+/// It is a looser rule than 500 words a section, and deliberately: a changed
+/// app could write nonsense inside it. What it cannot do is fill anybody's
+/// disk, which is what the limit is for. The words themselves are checked by
+/// the app, as everything about locked content must be.
+const MOST_BYTES_IN_A_LOCKED_RECORD: usize = 9 * 8_000 * 4 + 1_024;
 
 /// One coded value, beside one section of the record.
 ///
@@ -77,7 +116,7 @@ pub struct CodedValue {
 }
 
 /// More codes than this beside one record is not coding, it is filling.
-const MOST_CODES: usize = 50;
+pub const MOST_CODES: usize = 50;
 
 /// A professional's "I have read this."
 ///
@@ -1118,6 +1157,24 @@ fn as_action_hash(hash: &AnyLinkableHash) -> Option<ActionHash> {
     hash.clone().into_action_hash()
 }
 
+/// Whether a locked record left nothing of itself in the open.
+fn unlocked_part_is_empty(about_me: &AboutMe) -> bool {
+    [
+        &about_me.display_name,
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+        &about_me.supported_to_write_this_by,
+    ]
+    .iter()
+    .all(|s| s.is_empty())
+        && about_me.codes.is_empty()
+}
+
 fn validate_about_me(
     about_me: &AboutMe,
     author: &AgentPubKey,
@@ -1128,6 +1185,29 @@ fn validate_about_me(
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may write their About Me");
     }
+
+    // A locked record is checked for what a device can check: who wrote it,
+    // that it is locked with a key that exists, that nothing was left in the
+    // open beside it, and that it is no bigger than the record could be.
+    // Everything about the words is the app's to check, because no device can
+    // read them — and must not try, since validation has to reach the same
+    // answer on every device forever, and "does this device hold key 3?" does
+    // not.
+    if let Some(locked) = &about_me.locked {
+        if !unlocked_part_is_empty(about_me) {
+            return invalid(
+                "A record is either locked or in the open, and this one is partly both",
+            );
+        }
+        if locked.epoch == 0 {
+            return invalid("A locked record has to say which key locked it");
+        }
+        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_LOCKED_RECORD {
+            return invalid("That is larger than the whole record could ever be");
+        }
+        return Ok(ValidateCallbackResult::Valid);
+    }
+
     if about_me.display_name.trim().is_empty() {
         return invalid("About Me must have a display name");
     }
@@ -2017,11 +2097,11 @@ const MOST_CHARACTERS_IN_AN_INVITATION: usize = 4_096;
 /// Somebody asking to be let in, again and again, at one door.
 const MOST_KNOCKS_BY_ONE_PERSON: usize = 10;
 
-fn too_long(text: &str) -> bool {
+pub fn too_long(text: &str) -> bool {
     text.split_whitespace().count() > MOST_WORDS || text.chars().count() > MOST_CHARACTERS
 }
 
-fn name_too_long(text: &str) -> bool {
+pub fn name_too_long(text: &str) -> bool {
     text.chars().count() > MOST_CHARACTERS_IN_A_NAME
 }
 

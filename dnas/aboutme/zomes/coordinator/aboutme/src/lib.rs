@@ -182,15 +182,7 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         },
     )?;
 
-    let about = match get_circle_about_me(())?.first() {
-        Some(original) => get_current_about_me(original.clone())?
-            .record
-            .and_then(|r| r.entry().as_option().cloned())
-            .and_then(|e| AboutMe::try_from(e).ok())
-            .map(|a| a.display_name)
-            .unwrap_or_default(),
-        None => String::new(),
-    };
+    let about = the_name_here()?;
 
     let appointed = appointment_now()?;
     let seconder = appointed.as_ref().map(|(_, key)| key.to_string());
@@ -453,9 +445,13 @@ pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
     Ok(out)
 }
 
+/// Write the record. The words are locked with the circle's key on the way in.
+///
+/// The app passes the words as they were typed; nothing outside this zome ever
+/// handles the locked form, and nothing inside it writes the words in the open.
 #[hdk_extern]
 pub fn create_about_me(about_me: AboutMe) -> ExternResult<Record> {
-    let action_hash = create_entry(EntryTypes::AboutMe(about_me))?;
+    let action_hash = create_entry(EntryTypes::AboutMe(lock_about_me(&about_me)?))?;
 
     let path = circle_path()?;
     path.ensure()?;
@@ -481,7 +477,7 @@ pub struct UpdateAboutMeInput {
 
 #[hdk_extern]
 pub fn update_about_me(input: UpdateAboutMeInput) -> ExternResult<Record> {
-    let updated = update_entry(input.previous_action_hash, &input.about_me)?;
+    let updated = update_entry(input.previous_action_hash, &lock_about_me(&input.about_me)?)?;
 
     create_link(
         input.original_action_hash,
@@ -583,6 +579,16 @@ pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<V
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurrentAboutMe {
     pub record: Option<Record>,
+    /// The words, opened with the circle's key.
+    ///
+    /// What the record says is here and not in `record`, whose entry holds the
+    /// locked form. Empty where there is no record, and where this device
+    /// cannot open the one there is — a device that has been removed from the
+    /// circle, or has not caught up with its keys yet. The screen says which,
+    /// because the two are nothing alike to the person looking.
+    pub about_me: Option<AboutMe>,
+    /// True where there is a record this device cannot open.
+    pub locked_out: bool,
     /// How many versions have nothing written on top of them.
     ///
     /// One is the ordinary case however many times the record has been
@@ -629,9 +635,20 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .count()
         .max(1);
 
+    // Already in hand from the batch above, so no second trip for it.
+    let record = fetched.into_iter().find(|r| r.action_address() == &newest);
+
+    let written = record
+        .as_ref()
+        .and_then(|r| r.entry().as_option().cloned())
+        .and_then(|e| AboutMe::try_from(e).ok());
+    let about_me = written.as_ref().and_then(|w| unlock_about_me(w).ok());
+    let locked_out = written.is_some() && about_me.is_none();
+
     Ok(CurrentAboutMe {
-        // Already in hand from the batch above, so no second trip for it.
-        record: fetched.into_iter().find(|r| r.action_address() == &newest),
+        record,
+        about_me,
+        locked_out,
         divergent_versions,
     })
 }
@@ -1546,15 +1563,7 @@ fn bundle_around(
 ) -> ExternResult<InvitationBundle> {
     let me = agent_info()?.agent_initial_pubkey;
 
-    let about = match get_circle_about_me(())?.first() {
-        Some(original) => get_current_about_me(original.clone())?
-            .record
-            .and_then(|r| r.entry().as_option().cloned())
-            .and_then(|e| AboutMe::try_from(e).ok())
-            .map(|a| a.display_name)
-            .unwrap_or_default(),
-        None => String::new(),
-    };
+    let about = the_name_here()?;
 
     let seconder = appointment_now()?.map(|(_, key)| key.to_string());
     let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
@@ -2784,25 +2793,125 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
 }
 
 /// Lock something with the circle's newest key, saying which key it used.
-#[allow(dead_code)]
-fn lock(data: Vec<u8>) -> ExternResult<(u32, XSalsa20Poly1305EncryptedData)> {
+fn lock(data: Vec<u8>) -> ExternResult<Locked> {
     let epoch = newest_epoch()?;
     if epoch == 0 {
         return Err(wasm_error!("This circle has no key yet"));
     }
     let sealed = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, data.into())?;
-    Ok((epoch, sealed))
+    Ok(Locked { epoch, sealed })
 }
 
 /// Open something locked with one of the circle's keys.
-#[allow(dead_code)]
-fn unlock(epoch: u32, sealed: XSalsa20Poly1305EncryptedData) -> ExternResult<Vec<u8>> {
-    let opened = x_salsa20_poly1305_decrypt(key_ref_for(epoch)?, sealed)?.ok_or_else(|| {
-        wasm_error!(
-            "This device does not have the key this was locked with, or it has been changed"
-        )
-    })?;
+fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
+    let opened = x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed.clone())?
+        .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
     Ok(opened.as_ref().to_vec())
+}
+
+/// A record with nothing in the open: the shell a locked record is written as.
+fn nothing_in_the_open() -> AboutMe {
+    AboutMe {
+        display_name: String::new(),
+        what_matters_to_me: String::new(),
+        people_who_matter: String::new(),
+        how_to_communicate_with_me: String::new(),
+        my_wellness: String::new(),
+        please_do_and_please_do_not: String::new(),
+        how_to_support_me: String::new(),
+        also_worth_knowing: String::new(),
+        supported_to_write_this_by: String::new(),
+        codes: Vec::new(),
+        locked: None,
+    }
+}
+
+/// Lock a record, so what goes into the circle is the sealed form of it.
+///
+/// The holder's first record makes the circle's first key, because nobody
+/// should have to press anything to have a locked record.
+fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+    // The words are checked here because from here on nothing can check them.
+    // Every device used to count them as the record arrived; a device cannot
+    // count what it cannot read, so the app counts them before locking and the
+    // rules keep the one limit that survives — how big the sealed bytes may be.
+    // The messages are the same ones the rules gave, because they are shown to
+    // the same person for the same reason.
+    if about_me.display_name.trim().is_empty() {
+        return Err(wasm_error!("About Me must have a display name"));
+    }
+    if name_too_long(&about_me.display_name) || name_too_long(&about_me.supported_to_write_this_by)
+    {
+        return Err(wasm_error!("A name here can be up to 200 characters"));
+    }
+    for section in [
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+    ] {
+        if too_long(section) {
+            return Err(wasm_error!("Each part of the record holds up to 500 words"));
+        }
+    }
+    if about_me.codes.len() > MOST_CODES {
+        return Err(wasm_error!("A record can carry up to 50 coded values"));
+    }
+    for coded in &about_me.codes {
+        if coded.code.trim().is_empty()
+            || name_too_long(&coded.system)
+            || name_too_long(&coded.code)
+            || name_too_long(&coded.display)
+        {
+            return Err(wasm_error!(
+                "A coded value needs a code, and each part of it is short"
+            ));
+        }
+    }
+
+    if newest_epoch()? == 0 {
+        new_key(())?;
+    }
+    let words = ExternIO::encode(about_me)
+        .map_err(|e| wasm_error!(format!("Could not pack the record to lock it: {e:?}")))?;
+    Ok(AboutMe {
+        locked: Some(lock(words.into_vec())?),
+        ..nothing_in_the_open()
+    })
+}
+
+/// Open a record read from the circle, where it is locked and this device can.
+///
+/// A record from before encryption is returned as it is: that is what "in the
+/// open" looks like, and hiding it would only mean showing nothing.
+fn unlock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+    let Some(locked) = &about_me.locked else {
+        return Ok(about_me.clone());
+    };
+    let words = unlock(locked)?;
+    let mut opened: AboutMe = ExternIO::from(words)
+        .decode()
+        .map_err(|e| wasm_error!(format!("The record opened but could not be read: {e:?}")))?;
+    // Nothing nested: what comes back is the words, not another locked shell.
+    opened.locked = None;
+    Ok(opened)
+}
+
+/// The name of the person this circle is about, as this device can read it.
+///
+/// Empty where there is no record yet, and where this device cannot open it —
+/// which is the same to a reader either way.
+fn the_name_here() -> ExternResult<String> {
+    let Some(original) = get_circle_about_me(())?.first().cloned() else {
+        return Ok(String::new());
+    };
+    Ok(get_current_about_me(original)?
+        .about_me
+        .map(|a| a.display_name)
+        .unwrap_or_default())
 }
 
 // ---------------------------------------------------------------------------

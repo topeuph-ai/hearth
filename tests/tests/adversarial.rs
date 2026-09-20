@@ -35,6 +35,9 @@ fn an_about_me(name: &str) -> AboutMe {
         also_worth_knowing: "I was a district nurse for thirty years".into(),
         supported_to_write_this_by: "My daughter Ruth".into(),
         codes: Vec::new(),
+        // The words as they are typed. The zome locks them on the way in, so
+        // nothing a test writes is ever the locked form.
+        locked: None,
     }
 }
 
@@ -3786,4 +3789,145 @@ async fn a_member_cannot_hand_out_keys() {
 
     let sealed: u32 = conductor.call(&zome(&bob_cell), "hand_out_keys", ()).await;
     assert_eq!(sealed, 0, "and he seals nothing to anybody");
+}
+
+/// The record goes into the circle locked, and nothing of it in the open.
+///
+/// This is the test that would catch the worst mistake available here: words
+/// written where anybody receiving the circle could read them, with every
+/// screen still looking exactly right.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_record_is_written_locked() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+
+    let written = AboutMe::try_from(
+        created
+            .entry()
+            .as_option()
+            .cloned()
+            .expect("the record has an entry"),
+    )
+    .expect("and it is an About Me");
+
+    assert!(
+        written.locked.is_some(),
+        "the record must be locked with the circle's key"
+    );
+    assert!(
+        written.display_name.is_empty()
+            && written.what_matters_to_me.is_empty()
+            && written.supported_to_write_this_by.is_empty(),
+        "and nothing of it may be left in the open: {written:?}"
+    );
+
+    // And it reads back as what was typed, for the person who holds the key.
+    let current: aboutme::CurrentAboutMe = conductor
+        .call(
+            &zome(&alice_cell),
+            "get_current_about_me",
+            created.action_address().clone(),
+        )
+        .await;
+    let words = current.about_me.expect("she can open her own record");
+    assert_eq!(words.display_name, "Alice Bell");
+    assert_eq!(words.what_matters_to_me, "Seeing my grandchildren");
+    assert!(!current.locked_out);
+}
+
+/// Somebody removed cannot read what the circle writes afterwards.
+///
+/// The whole of what encryption adds over the everyday removal. Everything else
+/// in this file is about an app behaving itself; this one holds whatever the
+/// app on the other device does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_cannot_open_what_is_written_next() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let original = created.action_address().clone();
+
+    // While he is in the circle, Bob reads it. Nothing takes that back.
+    let mut read_it = false;
+    for _ in 0..20 {
+        let current: aboutme::CurrentAboutMe = conductor
+            .call(&zome(&bob_cell), "get_current_about_me", original.clone())
+            .await;
+        if current.about_me.is_some() {
+            read_it = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    assert!(read_it, "a member reads the record he is there to read");
+
+    // Then he is removed, which starts a new key, and she writes again.
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+
+    let mut after = an_about_me("Alice Bell");
+    after.my_wellness = "Written after he was removed".into();
+    let updated: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "update_about_me",
+            aboutme::UpdateAboutMeInput {
+                original_action_hash: original.clone(),
+                previous_action_hash: original.clone(),
+                about_me: after,
+            },
+        )
+        .await;
+
+    // His device receives it — replication does not choose person by person —
+    // and cannot open it. Not "is not shown it": cannot open it.
+    let mut arrived = None;
+    for _ in 0..20 {
+        let current: aboutme::CurrentAboutMe = conductor
+            .call(&zome(&bob_cell), "get_current_about_me", original.clone())
+            .await;
+        if current.record.as_ref().map(|r| r.action_address()) == Some(updated.action_address()) {
+            arrived = Some(current);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    let current = arrived.expect("the new version reaches his device, as everything does");
+    assert!(
+        current.about_me.is_none(),
+        "a removed member must not be able to open what was written after he went"
+    );
+    assert!(
+        current.locked_out,
+        "and his app should say so, rather than showing an empty record"
+    );
 }

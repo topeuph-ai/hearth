@@ -275,6 +275,25 @@ function entryOf(record) {
 }
 
 /**
+ * The words of the record, as this device can read them.
+ *
+ * The record is locked with the circle's key, so its entry holds sealed bytes
+ * and the words come back opened beside it. Nothing on this side holds a key
+ * or does any unlocking: the zome asks the keystore, and this asks the zome.
+ *
+ * Null where there is no record, and null where there is one this device
+ * cannot open — a device that has been removed, or one whose keys have not
+ * caught up. `current.locked_out` tells those two apart, and the screen says
+ * so rather than showing an empty record as though nothing were written.
+ *
+ * Falls back to the entry for a circle written before encryption, where the
+ * words really are in the open.
+ */
+function wordsOf(current) {
+  return current?.about_me ?? entryOf(current?.record);
+}
+
+/**
  * Who wrote a record.
  *
  * Holochain 0.7 splits an action into a header and its per-variant data, and
@@ -378,7 +397,7 @@ let knownName = "";
  */
 function personName() {
   const fromRecord =
-    entryOf(record?.current?.record)?.display_name?.trim();
+    wordsOf(record?.current)?.display_name?.trim();
   return fromRecord || knownName.trim();
 }
 
@@ -701,7 +720,7 @@ let beenThroughOnce = false;
 
 const hasBeenThroughOnce = (current) =>
   current?.record?.signed_action?.hashed?.content?.data?.type === "Update" ||
-  hasBeenWritten(entryOf(current?.record));
+  hasBeenWritten(wordsOf(current));
 
 /**
  * When a record was written, in the words a person would use.
@@ -773,11 +792,24 @@ $("suggest-another-section").addEventListener("click", () => {
 });
 
 function renderRecord(current) {
-  const entry = entryOf(current?.record);
+  const entry = wordsOf(current);
 
   // Her name is hers whether or not anything has been written yet, and every
   // question on this screen is phrased around it.
   if (entry?.display_name) nameHer(entry.display_name);
+
+  /*
+   * A record this device cannot open is not an empty record, and must never
+   * look like one. It means one of two things — this device has been removed
+   * from the circle, or its keys have not caught up yet — and either way the
+   * honest thing is to say so and show nothing.
+   */
+  $("locked-out").hidden = !current?.locked_out;
+  if (current?.locked_out) {
+    $("no-record").hidden = true;
+    $("record").hidden = true;
+    return;
+  }
 
   if (!hasBeenThroughOnce(current)) {
     $("no-record").hidden = false;
@@ -1116,7 +1148,7 @@ async function drawTheCircle() {
       )
     : null;
 
-  const entry = entryOf(current?.record);
+  const entry = wordsOf(current);
   const haveIt = Boolean(entry);
 
   /*
@@ -1236,7 +1268,7 @@ async function loadSuggestions() {
 }
 
 function fillForm() {
-  const entry = entryOf(record?.current?.record);
+  const entry = wordsOf(record?.current);
   // In the order they appear on the form.
   $("what-matters").value = entry?.what_matters_to_me ?? "";
   $("people-who-matter").value = entry?.people_who_matter ?? "";
@@ -1581,7 +1613,7 @@ $("record-form").addEventListener("submit", async (event) => {
       supported_to_write_this_by: $("supported-by").value.trim(),
       // Nothing on this form edits coded values, so whatever the record
       // already carries is kept rather than quietly dropped on saving.
-      codes: entryOf(record?.current?.record)?.codes ?? [],
+      codes: wordsOf(record?.current)?.codes ?? [],
     };
 
     if (record) {
@@ -2224,7 +2256,7 @@ async function decide(item, entry, accepted) {
     }
 
     const [key] = FIELD_LABELS[entry.field] ?? [];
-    const current = entryOf(record.current.record);
+    const current = wordsOf(record.current);
     const existing = current[key]?.trim();
 
     await call(
@@ -4856,7 +4888,7 @@ async function historyOf(cellId, names) {
       call("get_current_about_me", originals[0], cellId),
       null,
     );
-    if (hasBeenWritten(entryOf(current?.record))) {
+    if (hasBeenWritten(wordsOf(current))) {
       const acks = await orNothingYet(
         call("get_acknowledgements", current.record.signed_action.hashed.hash, cellId),
         [],
@@ -5037,7 +5069,7 @@ $("move-for-real").addEventListener("click", async () => {
  */
 async function moveTheCircle(removedKey, removedName, reason) {
   const from = circle.cellId;
-  const entry = entryOf(record?.current?.record);
+  const entry = wordsOf(record?.current);
   if (!entry) {
     throw new Error(
       "The record has not arrived on this device yet, so there is nothing to " +
