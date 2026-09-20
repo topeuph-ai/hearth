@@ -160,7 +160,28 @@ async fn a_circle_with_a_member() -> (SweetConductor, CellId, CellId) {
         .await
         .expect("an invited agent should be admitted");
 
+    // Keys, as the app does on every pass. Everything written in a circle is
+    // locked, so without this a member cannot offer a suggestion and the holder
+    // cannot write the record — which is a fact about the app worth knowing,
+    // not something to work around: see `keep_keys_up_to_date`.
+    keys_flowing(&conductor, &alice_cell, &[&bob_cell]).await;
+
     (conductor, alice_cell, bob_cell)
+}
+
+/// Get the circle's keys to everybody, the way the app does when it opens one.
+///
+/// The member's device publishes its encryption key, the holder makes the
+/// circle's key and seals it to whoever is owed one, and the member takes it up.
+/// In one conductor this takes one pass each way.
+async fn keys_flowing(conductor: &SweetConductor, holder: &CellId, members: &[&CellId]) {
+    for cell in members {
+        let _: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+    }
+    keys_until(conductor, holder, |k| k.epoch >= 1 && k.mine >= 1).await;
+    for cell in members {
+        keys_until(conductor, cell, |k| k.mine >= 1).await;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2014,6 +2035,8 @@ async fn a_circle_with_both_people_in_it() -> (
         .await
         .expect("two agreements admit an ordinary member");
 
+    keys_flowing(&conductor, &alice_cell, &[&ruth_cell, &dave_cell]).await;
+
     (conductor, alice_cell, ruth_cell, dave_cell, ronnie)
 }
 
@@ -3427,19 +3450,19 @@ async fn the_holder_can_add_a_photo_and_read_it_back() {
 /// A photo added after somebody is removed cannot be opened on their device.
 ///
 /// The same rule as the record, applied to the thing people mind most about: a
-/// photograph of somebody in their own home.
+/// photograph of somebody in their own home. On two devices, so that his
+/// keystore is his — see `a_circle_on_two_devices`.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
-    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let his = conductors.get(1).unwrap();
     let bob = bob_cell.agent_pubkey().clone();
 
-    let _: aboutme::KeysHere = conductor
-        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
-        .await;
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
-    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
 
-    let _: Record = conductor
+    let _: Record = hers
         .call(
             &zome(&alice_cell),
             "decide_departure",
@@ -3449,17 +3472,20 @@ async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
             },
         )
         .await;
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
 
     let picture: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
-    let piece: EntryHash = conductor
+    let piece: EntryHash = hers
         .call(
             &zome(&alice_cell),
             "add_media_piece",
             aboutme::Bytes(picture),
         )
         .await;
-    let _: Record = conductor
+    let _: Record = hers
         .call(
             &zome(&alice_cell),
             "add_media",
@@ -3470,18 +3496,20 @@ async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
     // It reaches his device like everything else does; it is the opening of it
     // that fails. Waiting for it to arrive first is what makes that the claim.
     let mut arrived = false;
-    for _ in 0..20 {
-        let here: Vec<aboutme::MediaHere> =
-            conductor.call(&zome(&bob_cell), "get_media", ()).await;
+    for _ in 0..60 {
+        let here: Vec<aboutme::MediaHere> = his.call(&zome(&bob_cell), "get_media", ()).await;
         if here.iter().any(|m| m.media.pieces.contains(&piece)) {
             arrived = true;
             break;
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-    assert!(arrived, "the photo reaches his device, as everything here does");
+    assert!(
+        arrived,
+        "the photo reaches his device, as everything here does"
+    );
 
-    let asked: Result<aboutme::Bytes, _> = conductor
+    let asked: Result<aboutme::Bytes, _> = his
         .call_fallible(&zome(&bob_cell), "get_media_piece", piece)
         .await;
     assert!(
@@ -3719,6 +3747,76 @@ async fn a_check_on_the_holder_is_seen() {
 // were never given. These tests are about who ends up holding which key,
 // because that is the whole of it.
 
+/// A circle on two devices, each with a keystore of its own.
+///
+/// Every other test in this file runs both people inside one conductor, which is
+/// right for rules: they are checked by code, and the code is the same. It is
+/// useless for keys. One conductor has one keystore, and a key is stored there
+/// under a name — so a key the holder made is reachable from any agent in that
+/// conductor, and "he was never given this key" cannot be shown at all. Two
+/// conductors are two keystores, which is what being given a key means.
+///
+/// Returns the batch (the calls have to go to the conductor that owns the cell),
+/// the holder's cell, and the member's.
+async fn a_circle_on_two_devices() -> (SweetConductorBatch, CellId, CellId) {
+    let conductors = SweetConductorBatch::standard(2).await;
+    let alice = SweetAgents::one(conductors.get(0).unwrap().keystore()).await;
+    let bob = SweetAgents::one(conductors.get(1).unwrap().keystore()).await;
+    let dna = circle_dna(&alice).await;
+
+    let alice_cell = join(conductors.get(0).unwrap(), "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let bundle: aboutme::InvitationBundle = conductors
+        .get(0)
+        .unwrap()
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
+        .await;
+
+    let bob_cell = join(
+        conductors.get(1).unwrap(),
+        "bob",
+        &bob,
+        &dna,
+        Some(&bundle.invitation),
+    )
+    .await
+    .expect("an invited agent should be admitted");
+
+    // Two conductors do not find each other on their own here.
+    conductors.exchange_peer_info().await;
+
+    (conductors, alice_cell, bob_cell)
+}
+
+/// The same as `keys_until`, for a cell in a batch of conductors.
+async fn keys_until_on(
+    conductors: &SweetConductorBatch,
+    which: usize,
+    cell: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let conductor = conductors.get(which).expect("that conductor exists");
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..60 {
+        let here: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+        if enough(&here) {
+            return here;
+        }
+        last = Some(here);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("keys never reached the state the test waited for: {last:?}");
+}
+
 /// Ask a cell about keys until it says what the test is waiting for, or give up.
 ///
 /// Keys travel as entries, so one member's device learns about another's a
@@ -3763,18 +3861,20 @@ async fn everybody_in_the_circle_can_use_the_key() {
 }
 
 /// Somebody removed is not given the key the circle uses from then on.
+///
+/// On two devices, because that is the only way this can be shown. See
+/// `a_circle_on_two_devices`.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_removed_member_is_not_given_the_next_key() {
-    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
     let bob = bob_cell.agent_pubkey().clone();
 
-    let _: aboutme::KeysHere = conductor
-        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
-        .await;
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
-    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
 
-    let _: Record = conductor
+    let _: Record = conductors
+        .get(0)
+        .unwrap()
         .call(
             &zome(&alice_cell),
             "decide_departure",
@@ -3785,51 +3885,67 @@ async fn a_removed_member_is_not_given_the_next_key() {
         )
         .await;
 
-    let hers = keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+    let hers = keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
     assert_eq!(hers.epoch, 2, "removing somebody starts a new key");
 
     // Bob's device sees that the circle has moved on, and cannot follow: no
     // amount of asking gives him key 2, because nothing in the circle carries
     // it to him.
-    let his = keys_until(&conductor, &bob_cell, |k| k.epoch == 2).await;
+    let his = keys_until_on(&conductors, 1, &bob_cell, |k| k.epoch == 2).await;
     assert_eq!(
         his.mine, 1,
         "a removed member keeps what he had and is given nothing after"
     );
-    let held: Vec<u32> = conductor.call(&zome(&bob_cell), "keys_i_can_use", ()).await;
-    assert_eq!(held, vec![1], "key 1 only, which he was given while he was in");
+    let held: Vec<u32> = conductors
+        .get(1)
+        .unwrap()
+        .call(&zome(&bob_cell), "keys_i_can_use", ())
+        .await;
+    assert_eq!(
+        held,
+        vec![1],
+        "key 1 only, which he was given while he was in"
+    );
 }
 
-/// Somebody who joins later is given the circle's history, not only its present.
+/// Somebody owed the circle's history is given every past key, not only the
+/// one in use.
 ///
 /// Ceri's decision of 20 September 2026: the record's history is part of the
-/// record, so a new district nurse can read how it used to read.
+/// record, so a new district nurse can read how it used to read. Shown here by
+/// removing somebody and letting them back, which is the same code path a
+/// genuinely new member takes — the holder seals every epoch to anybody who is
+/// owed one. On two devices, because what is being tested is which keys reach
+/// his keystore.
 #[tokio::test(flavor = "multi_thread")]
-async fn somebody_who_joins_later_is_given_every_past_key() {
-    let (conductor, alice_cell, ruth_cell, dave_cell, _) = a_circle_with_both_people_in_it().await;
+async fn somebody_owed_the_history_is_given_every_past_key() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let bob = bob_cell.agent_pubkey().clone();
 
-    for cell in [&ruth_cell, &dave_cell] {
-        let _: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
-    }
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
 
-    // Dave goes, which starts key 2; then he is let back in, and is owed both.
-    let dave = dave_cell.agent_pubkey().clone();
+    // He goes, which starts key 2 without him; then he is let back in, and is
+    // owed both keys.
     for removed in [true, false] {
-        let _: Record = conductor
+        let _: Record = hers
             .call(
                 &zome(&alice_cell),
                 "decide_departure",
                 aboutme::DepartureInput {
-                    who: dave.to_string(),
+                    who: bob.to_string(),
                     removed,
                 },
             )
             .await;
     }
 
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 2).await;
-    let his = keys_until(&conductor, &dave_cell, |k| k.mine == 2).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 2).await;
+    let his = keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 2).await;
     assert_eq!(
         his.mine, 2,
         "back in the circle, and able to read what it says now"
@@ -3837,10 +3953,14 @@ async fn somebody_who_joins_later_is_given_every_past_key() {
 
     // And key 1 as well, which is what "the history" means: both keys were
     // sealed to him, not only the one the circle is using now.
-    let held: Vec<u32> = conductor.call(&zome(&dave_cell), "keys_i_can_use", ()).await;
+    let held: Vec<u32> = conductors
+        .get(1)
+        .unwrap()
+        .call(&zome(&bob_cell), "keys_i_can_use", ())
+        .await;
     assert_eq!(held, vec![1, 2], "the history, and the present");
 
-    let sealed_again: u32 = conductor.call(&zome(&alice_cell), "hand_out_keys", ()).await;
+    let sealed_again: u32 = hers.call(&zome(&alice_cell), "hand_out_keys", ()).await;
     assert_eq!(
         sealed_again, 0,
         "and nothing is handed out twice, however often the circle is opened"
@@ -3979,20 +4099,20 @@ async fn a_suggestion_is_written_locked() {
 /// Somebody removed cannot read what the circle writes afterwards.
 ///
 /// The whole of what encryption adds over the everyday removal. Everything else
-/// in this file is about an app behaving itself; this one holds whatever the
-/// app on the other device does.
+/// in this file is about an app behaving itself; this one holds whatever the app
+/// on the other device does. On two devices, so that "his keystore" means
+/// something — see `a_circle_on_two_devices`.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_removed_member_cannot_open_what_is_written_next() {
-    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let his = conductors.get(1).unwrap();
     let bob = bob_cell.agent_pubkey().clone();
 
-    let _: aboutme::KeysHere = conductor
-        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
-        .await;
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
-    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
 
-    let created: Record = conductor
+    let created: Record = hers
         .call(
             &zome(&alice_cell),
             "create_about_me",
@@ -4003,8 +4123,8 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
 
     // While he is in the circle, Bob reads it. Nothing takes that back.
     let mut read_it = false;
-    for _ in 0..20 {
-        let current: aboutme::CurrentAboutMe = conductor
+    for _ in 0..60 {
+        let current: aboutme::CurrentAboutMe = his
             .call(&zome(&bob_cell), "get_current_about_me", original.clone())
             .await;
         if current.about_me.is_some() {
@@ -4016,7 +4136,7 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
     assert!(read_it, "a member reads the record he is there to read");
 
     // Then he is removed, which starts a new key, and she writes again.
-    let _: Record = conductor
+    let _: Record = hers
         .call(
             &zome(&alice_cell),
             "decide_departure",
@@ -4026,11 +4146,14 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
             },
         )
         .await;
-    keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
 
     let mut after = an_about_me("Alice Bell");
     after.my_wellness = "Written after he was removed".into();
-    let updated: Record = conductor
+    let updated: Record = hers
         .call(
             &zome(&alice_cell),
             "update_about_me",
@@ -4045,8 +4168,8 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
     // His device receives it — replication does not choose person by person —
     // and cannot open it. Not "is not shown it": cannot open it.
     let mut arrived = None;
-    for _ in 0..20 {
-        let current: aboutme::CurrentAboutMe = conductor
+    for _ in 0..60 {
+        let current: aboutme::CurrentAboutMe = his
             .call(&zome(&bob_cell), "get_current_about_me", original.clone())
             .await;
         if current.record.as_ref().map(|r| r.action_address()) == Some(updated.action_address()) {

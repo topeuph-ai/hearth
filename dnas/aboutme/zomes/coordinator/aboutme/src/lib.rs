@@ -6,6 +6,8 @@
 //! which is the thing to resolve before this becomes a product.
 
 use aboutme_integrity::*;
+use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
 
@@ -2878,15 +2880,45 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
             "This device has no key for this circle yet. Wait a moment and try again"
         ));
     }
-    let sealed = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, data.into())?;
-    Ok(Locked { epoch, sealed })
+    // A key of its own for this one entry, kept nowhere. The keystore locks it
+    // with the circle's key, and the content is locked with it here. See
+    // `Locked` in the rules for why it is two steps: the keystore refuses any
+    // message over 8 KiB, and a full-length record is several times that.
+    let one_use = random_bytes(BYTES_IN_A_ONE_USE_KEY as u32)?.into_vec();
+    let nonce = random_bytes(BYTES_IN_A_NONCE as u32)?.into_vec();
+    let sealed_key = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, one_use.clone().into())?;
+
+    let cipher = XChaCha20Poly1305::new_from_slice(&one_use)
+        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
+    let body = cipher
+        .encrypt(XNonce::from_slice(&nonce), data.as_ref())
+        .map_err(|_| wasm_error!("Could not lock what was written"))?;
+
+    Ok(Locked {
+        epoch,
+        sealed_key,
+        nonce,
+        body,
+    })
 }
 
 /// Open something locked with one of the circle's keys.
+///
+/// Fails rather than returning anything when this device has not got the key.
+/// Every caller treats that as "cannot be read here" and says so; none of them
+/// guesses at what was in it.
 fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
-    let opened = x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed.clone())?
-        .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
-    Ok(opened.as_ref().to_vec())
+    let one_use =
+        x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed_key.clone())?
+            .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
+
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use.as_ref())
+        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    cipher
+        .decrypt(XNonce::from_slice(&locked.nonce), locked.body.as_ref())
+        // Either this device has the wrong key or the bytes were changed on the
+        // way. Not worth telling apart: neither of them gives anything to show.
+        .map_err(|_| wasm_error!("This could not be opened on this device"))
 }
 
 /// Whether this device is the one that holds the circle.

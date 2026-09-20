@@ -71,18 +71,72 @@ pub struct AboutMe {
     pub locked: Option<Locked>,
 }
 
-/// Something written in the circle that only its members can read, and the
-/// number of the key it was locked with.
+/// Something written in the circle that only its members can read.
 ///
-/// The key number matters: a member who joined after key 3 holds keys 1, 2 and
-/// 3, and needs to know which to reach for. It is not secret — that the circle
-/// changed its key on Tuesday is visible to anybody receiving the circle
-/// anyway, and pretending otherwise would only stop the record opening.
+/// **Why it is in two parts.** Holochain's keystore will lock data for you and
+/// never let the key out — but every request to it travels down a channel that
+/// refuses a single message over 8 KiB (lair_keystore_api 0.7.1,
+/// `sodium_secretstream.rs`), and a full-length record is several times that; a
+/// photograph is a thousand times. So each thing written here gets its own
+/// short key, used once: the keystore locks that key with the circle's key
+/// (`sealed_key`, well under the limit), and the content is locked with it
+/// (`body`). Opening it is the same two steps backwards.
+///
+/// The circle's own key therefore never leaves the keystore, which is the
+/// property that matters. What does pass through the app is the one-use key for
+/// the thing being written or read at that moment.
+///
+/// **The key number is not secret.** A member who joined after key 3 holds keys
+/// 1, 2 and 3 and has to know which to reach for. That the circle changed its
+/// key on Tuesday is visible to anybody receiving the circle in any case, and
+/// hiding it would only stop the record opening.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct Locked {
     pub epoch: u32,
-    pub sealed: XSalsa20Poly1305EncryptedData,
+    /// The one-use key for this entry, locked with the circle's key.
+    pub sealed_key: XSalsa20Poly1305EncryptedData,
+    /// The number used once, for the content.
+    #[serde(with = "serde_bytes")]
+    pub nonce: Vec<u8>,
+    /// The content, locked with the one-use key.
+    #[serde(with = "serde_bytes")]
+    pub body: Vec<u8>,
+}
+
+/// A nonce for the content: 24 bytes, so random ones never collide in practice.
+pub const BYTES_IN_A_NONCE: usize = 24;
+/// The one-use key: 32 bytes.
+pub const BYTES_IN_A_ONE_USE_KEY: usize = 32;
+/// The sealed one-use key is 32 bytes and what locking adds to them.
+const MOST_BYTES_IN_A_SEALED_ONE_USE_KEY: usize = 128;
+
+/// What every device can check about something locked, whatever it is.
+///
+/// Not the content — no device can read that. Its shape: that it names a key
+/// that could exist, that it carries a nonce of the right size and a sealed
+/// key no bigger than a sealed key, and that the content is not larger than
+/// that kind of content could be.
+fn locked_is_the_right_shape(
+    locked: &Locked,
+    most_bytes: usize,
+    too_big: &str,
+) -> ExternResult<ValidateCallbackResult> {
+    if locked.epoch == 0 {
+        return invalid("Something locked has to say which key locked it");
+    }
+    if locked.nonce.len() != BYTES_IN_A_NONCE {
+        return invalid("That is not a number used once");
+    }
+    if locked.sealed_key.as_encrypted_data_ref().is_empty()
+        || locked.sealed_key.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_SEALED_ONE_USE_KEY
+    {
+        return invalid("That is not a key for one entry");
+    }
+    if locked.body.is_empty() || locked.body.len() > most_bytes {
+        return invalid(too_big);
+    }
+    Ok(ValidateCallbackResult::Valid)
 }
 
 /// The ceiling on a locked record, in bytes.
@@ -1232,13 +1286,11 @@ fn validate_about_me(
                 "A record is either locked or in the open, and this one is partly both",
             );
         }
-        if locked.epoch == 0 {
-            return invalid("A locked record has to say which key locked it");
-        }
-        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_LOCKED_RECORD {
-            return invalid("That is larger than the whole record could ever be");
-        }
-        return Ok(ValidateCallbackResult::Valid);
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_LOCKED_RECORD,
+            "That is larger than the whole record could ever be",
+        );
     }
 
     if about_me.display_name.trim().is_empty() {
@@ -1798,16 +1850,14 @@ fn validate_media_item(
         if !item.file_name.is_empty() || !item.in_words.is_empty() {
             return invalid("A file's words are either locked or in the open, not partly both");
         }
-        if locked.epoch == 0 {
-            return invalid("Locked words have to say which key locked them");
-        }
-        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_LOCKED_MEDIA_WORDS {
-            return invalid("That is larger than a file name and its words could be");
-        }
         if name_too_long(&item.mime_type) {
             return invalid("A file type can be up to 200 characters");
         }
-        return Ok(ValidateCallbackResult::Valid);
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_LOCKED_MEDIA_WORDS,
+            "That is larger than a file name and its words could be",
+        );
     }
     if name_too_long(&item.file_name) || name_too_long(&item.mime_type) {
         return invalid("A file name can be up to 200 characters");
@@ -1830,17 +1880,13 @@ fn validate_media_piece(
         if !piece.bytes.is_empty() {
             return invalid("A piece is either locked or in the open, not partly both");
         }
-        if locked.epoch == 0 {
-            return invalid("A locked piece has to say which key locked it");
-        }
-        // Room above the plain limit for what locking adds: a nonce, and proof
-        // the bytes were not tampered with.
-        if locked.sealed.as_encrypted_data_ref().is_empty()
-            || locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_PIECE + 1_024
-        {
-            return invalid("A piece of a file is at most three megabytes");
-        }
-        return Ok(ValidateCallbackResult::Valid);
+        // Room above the plain limit for what locking adds: proof the bytes
+        // were not tampered with.
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_PIECE + 1_024,
+            "A piece of a file is at most three megabytes",
+        );
     }
     if piece.bytes.is_empty() || piece.bytes.len() > MOST_BYTES_IN_A_PIECE {
         return invalid("A piece of a file is at most three megabytes");
@@ -2105,13 +2151,11 @@ fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallback
         if !suggestion.text.is_empty() || !suggestion.because.is_empty() {
             return invalid("A suggestion is either locked or in the open, not partly both");
         }
-        if locked.epoch == 0 {
-            return invalid("A locked suggestion has to say which key locked it");
-        }
-        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_LOCKED_SUGGESTION {
-            return invalid("That is larger than a suggestion and its reason could be");
-        }
-        return Ok(ValidateCallbackResult::Valid);
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_LOCKED_SUGGESTION,
+            "That is larger than a suggestion and its reason could be",
+        );
     }
     if suggestion.text.trim().is_empty() {
         return invalid("A suggestion needs something in it");
