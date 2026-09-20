@@ -604,6 +604,11 @@ The limits, stated plainly:
 
 #### Where that leaves the three levels
 
+Both of the first two columns are now built, on the `migration-batch` branch —
+see [encryption.md](encryption.md) for exactly what is locked and what is not.
+The third is the removed person's own app deleting its copy, which is built as
+well; what it cannot do is reach a device that has been changed to keep it.
+
 | | Marking as gone | + encryption and a new key | + deleting on removal |
 | --- | --- | --- | --- |
 | Ordinary use of the app | Holds | Holds | Holds |
@@ -617,13 +622,13 @@ does — which makes re-forming a rarer last resort still.
 
 #### What is worth building from that
 
-Two cheap things, neither built:
+Two cheap things. The first is built; the second is not.
 
-**Write the departure down.** If marking somebody as gone is an entry in the
-circle rather than a setting on one device, then who was removed and when is
-part of the record everybody holds. Anything that person writes afterwards is
-then visibly a write from somebody who was removed — which is the whole of the
-detection anybody needs, and it costs one entry type.
+**Write the departure down** — built, migration batch item 4. Marking somebody
+as gone is an entry in the circle rather than a setting on one device, so who
+was removed and when is part of the record everybody holds. Anything that
+person writes afterwards is then visibly a write from somebody who was removed
+— which is the whole of the detection anybody needs, and it cost one entry type.
 
 **Show the health of each member's chain.** `get_agent_activity` on the people
 in a circle would surface a forked or warranted chain without anybody going

@@ -191,15 +191,40 @@ And the record itself is locked:
 - A device that cannot open the record says so, in the app, in those words —
   it never shows an empty record instead.
 
-Six tests, in `tests/tests/adversarial.rs`: everybody in the circle can use the
-key; **a removed member is not given the next key** and holds key 1 only;
+Suggestions and media are locked the same way:
+
+- A **suggestion** and its why are sealed together. Which section it is about
+  stays in the open, because that is a heading and the holder's screen sorts
+  by it.
+- **Photos, sound and video** are locked piece by piece — which is what
+  Holochain advises for anything large, and what the pieces already were — and
+  so are a file's name and what it says in words. What stays readable is what a
+  player needs and what every device has to check: section, kind, file type,
+  length, how many pieces, how big.
+- The three-megabyte limit on a piece is measured on the **file**, before
+  locking, because three megabytes is what people were promised. Peers check
+  the sealed size, which is a little larger by the nonce and the proof the
+  bytes were not tampered with.
+
+Eight tests, in `tests/tests/adversarial.rs`: everybody in the circle can use
+the key; **a removed member is not given the next key** and holds key 1 only;
 somebody who joins later is given every past key, and nothing is handed out
 twice; a member cannot hand out keys; the record is written locked with nothing
-in the open; and **a removed member cannot open what is written next** — the
-one test the whole design exists for.
+in the open; a suggestion likewise, and reads back as it was offered; **a
+removed member cannot open what is written next**; and **a removed member
+cannot open a photo added after they went** — the two the whole design exists
+for.
 
-Still in the open, and next: suggestions and why, acknowledgement roles, how
-members describe themselves, and media pieces.
+### Still in the open, and next
+
+- **Acknowledgement roles** ("district nurse"). Small, and next.
+- **How members describe themselves**, which Ceri decided should be locked.
+  Left until last on purpose: an introduction is written the moment somebody
+  joins, which may be before the holder has sealed them a key, so locking it
+  naively would mean a person unable to say who they are until the holder is
+  next online. It wants deciding, not rushing — either the app waits and writes
+  the introduction when the key arrives, or the introduction stays in the open
+  until then and is rewritten locked.
 
 ### One thing the design note got wrong
 
