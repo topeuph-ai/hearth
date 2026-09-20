@@ -2864,7 +2864,15 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
 /// leaves nobody out. The holder always has the newest, being the one who
 /// made it.
 fn lock(data: Vec<u8>) -> ExternResult<Locked> {
-    let epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
+    let mut epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
+
+    // The holder writing the first thing in a circle makes its first key. It
+    // used to be the record that did this, which was true of every circle made
+    // in the app and would have been false the day anything else came first.
+    if epoch == 0 && i_am_the_holder()? && newest_epoch()? == 0 {
+        epoch = new_key(())?;
+    }
+
     if epoch == 0 {
         return Err(wasm_error!(
             "This device has no key for this circle yet. Wait a moment and try again"
@@ -2950,9 +2958,6 @@ fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
         }
     }
 
-    if newest_epoch()? == 0 {
-        new_key(())?;
-    }
     let words = ExternIO::encode(about_me)
         .map_err(|e| wasm_error!(format!("Could not pack the record to lock it: {e:?}")))?;
     Ok(AboutMe {
