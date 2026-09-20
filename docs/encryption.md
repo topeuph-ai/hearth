@@ -253,9 +253,13 @@ removed member cannot open what is written next**; and **a removed member
 cannot open a photo added after they went** — the two the whole design exists
 for.
 
+**Acknowledgement roles are locked too.** "District nurse", beside a name and a
+date, is exactly what a removed member should stop receiving. Which version was
+read, and by whom, stays in the open: that is the evidence the acknowledgement
+exists to be, and it is what every device checks.
+
 ### Still in the open, and next
 
-- **Acknowledgement roles** ("district nurse"). Small, and next.
 - **How members describe themselves**, which Ceri decided should be locked.
   Left until last on purpose: an introduction is written the moment somebody
   joins, which may be before the holder has sealed them a key, so locking it
@@ -263,6 +267,11 @@ for.
   next online. It wants deciding, not rushing — either the app waits and writes
   the introduction when the key arrives, or the introduction stays in the open
   until then and is rewritten locked.
+- **A password when Hearth starts**, which is Ceri's decision 2 and is not
+  something the keys settle on their own. Without one the keystore's password
+  sits on the same device, so somebody holding the device holds the keys.
+
+Everything in this list is a decision, not a gap in the build.
 
 ### One thing the design note got wrong
 
