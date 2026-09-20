@@ -121,7 +121,17 @@ Said plainly, so nobody reads more into it:
   laptop's.
 - **Not resistant to a future quantum computer**, per Holochain's own notes.
 
-## Decisions for Ceri
+## Decided by Ceri, 20 September 2026
+
+All three as recommended below:
+
+1. **Somebody who joins later reads the history.** The holder seals every past
+   key to them, not only the current one.
+2. **Hearth offers a password at startup**, with an explanation, and never
+   forces one on somebody who cannot manage it.
+3. **How members describe themselves is locked** along with the record.
+
+## The questions those answers settle
 
 1. **Does somebody who joins later read the circle's history?** If yes, the
    holder seals *every* past key to them, not only the current one — so a new

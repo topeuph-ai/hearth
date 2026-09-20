@@ -926,6 +926,13 @@ Holochain has it. Shipping the fork before then is a deliberate choice to
 make, not a default — every copy of Hearth would have to use it, and Hearth
 would depend on a fork its authors call not for general use.
 
+**The moment to decide is the migration batch release** (20 September 2026).
+Everybody has to install a new version then anyway, because the rules change
+and circles are carried across, so switching the Holochain underneath at the
+same time costs one reinstall instead of two — and nobody is left on a build
+that cannot see the others. If official Holochain has local discovery by
+then, the question answers itself.
+
 ### Captured, not planned: phones in the same room
 
 Ceri's idea, 14 September 2026: people with no internet connecting by
