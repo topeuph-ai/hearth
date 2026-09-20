@@ -3631,3 +3631,159 @@ async fn a_check_on_the_holder_is_seen() {
     assert!(!seen.checks[0].holder_can_carry_on);
     assert!(!seen.still_here, "and it was not mistaken for 'still here'");
 }
+
+// ---------------------------------------------------------------------------
+// Keys (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The one thing encryption adds over the everyday removal: what the circle
+// writes after somebody is removed reaches their device locked with a key they
+// were never given. These tests are about who ends up holding which key,
+// because that is the whole of it.
+
+/// Ask a cell about keys until it says what the test is waiting for, or give up.
+///
+/// Keys travel as entries, so one member's device learns about another's a
+/// moment later, as with everything else here.
+async fn keys_until(
+    conductor: &SweetConductor,
+    cell: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..20 {
+        let here: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+        if enough(&here) {
+            return here;
+        }
+        last = Some(here);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("keys never reached the state the test waited for: {last:?}");
+}
+
+/// The holder makes the first key, and every member ends up able to use it.
+#[tokio::test(flavor = "multi_thread")]
+async fn everybody_in_the_circle_can_use_the_key() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // Bob's device publishes its encryption key; without it the holder has
+    // nothing to seal to.
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+
+    let hers = keys_until(&conductor, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    assert!(
+        hers.waiting_for.is_empty(),
+        "the holder should not still be waiting for anybody's key: {:?}",
+        hers.waiting_for
+    );
+
+    let his = keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+    assert_eq!(his.epoch, 1, "one key, and Bob can use it");
+}
+
+/// Somebody removed is not given the key the circle uses from then on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_is_not_given_the_next_key() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+
+    let hers = keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+    assert_eq!(hers.epoch, 2, "removing somebody starts a new key");
+
+    // Bob's device sees that the circle has moved on, and cannot follow: no
+    // amount of asking gives him key 2, because nothing in the circle carries
+    // it to him.
+    let his = keys_until(&conductor, &bob_cell, |k| k.epoch == 2).await;
+    assert_eq!(
+        his.mine, 1,
+        "a removed member keeps what he had and is given nothing after"
+    );
+    let held: Vec<u32> = conductor.call(&zome(&bob_cell), "keys_i_can_use", ()).await;
+    assert_eq!(held, vec![1], "key 1 only, which he was given while he was in");
+}
+
+/// Somebody who joins later is given the circle's history, not only its present.
+///
+/// Ceri's decision of 20 September 2026: the record's history is part of the
+/// record, so a new district nurse can read how it used to read.
+#[tokio::test(flavor = "multi_thread")]
+async fn somebody_who_joins_later_is_given_every_past_key() {
+    let (conductor, alice_cell, ruth_cell, dave_cell, _) = a_circle_with_both_people_in_it().await;
+
+    for cell in [&ruth_cell, &dave_cell] {
+        let _: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+    }
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+
+    // Dave goes, which starts key 2; then he is let back in, and is owed both.
+    let dave = dave_cell.agent_pubkey().clone();
+    for removed in [true, false] {
+        let _: Record = conductor
+            .call(
+                &zome(&alice_cell),
+                "decide_departure",
+                aboutme::DepartureInput {
+                    who: dave.to_string(),
+                    removed,
+                },
+            )
+            .await;
+    }
+
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 2).await;
+    let his = keys_until(&conductor, &dave_cell, |k| k.mine == 2).await;
+    assert_eq!(
+        his.mine, 2,
+        "back in the circle, and able to read what it says now"
+    );
+
+    // And key 1 as well, which is what "the history" means: both keys were
+    // sealed to him, not only the one the circle is using now.
+    let held: Vec<u32> = conductor.call(&zome(&dave_cell), "keys_i_can_use", ()).await;
+    assert_eq!(held, vec![1, 2], "the history, and the present");
+
+    let sealed_again: u32 = conductor.call(&zome(&alice_cell), "hand_out_keys", ()).await;
+    assert_eq!(
+        sealed_again, 0,
+        "and nothing is handed out twice, however often the circle is opened"
+    );
+}
+
+/// Only the person who holds the circle hands out its keys.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_hand_out_keys() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+
+    let refused: Result<u32, _> = conductor.call_fallible(&zome(&bob_cell), "new_key", ()).await;
+    assert!(
+        refused.is_err(),
+        "a member starting a new key would lock the holder out of her own circle"
+    );
+
+    let sealed: u32 = conductor.call(&zome(&bob_cell), "hand_out_keys", ()).await;
+    assert_eq!(sealed, 0, "and he seals nothing to anybody");
+}

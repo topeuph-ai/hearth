@@ -2438,6 +2438,374 @@ pub fn remove_media(item: ActionHash) -> ExternResult<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Keys, so the record can be locked (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The circle's words are locked with a key every member holds. Removing
+// somebody starts a new key, sealed to everybody but them, so that what is
+// written afterwards cannot be opened on their device even by a changed app.
+// See docs/encryption.md for what this does and does not protect.
+//
+// Nothing secret passes through here. The keys are made, sealed and opened
+// inside the keystore; this code only ever holds references to them.
+//
+// Succession needs no key of its own. A successor does not become the holder
+// of this circle — she moves it, which founds a different circle with a
+// different identity, and so with its own key 1 that the old circle's members
+// were never given. The key names below include the circle's identity for the
+// same reason: two circles on one device can never reach for each other's
+// keys.
+
+const BOX_KEY_ANCHOR: &str = "box-keys";
+const EPOCH_KEY_ANCHOR: &str = "epoch-keys";
+
+fn box_key_path() -> ExternResult<TypedPath> {
+    anchored(BOX_KEY_ANCHOR, LinkTypes::CircleToBoxKey)
+}
+
+fn epoch_key_path() -> ExternResult<TypedPath> {
+    anchored(EPOCH_KEY_ANCHOR, LinkTypes::CircleToEpochKey)
+}
+
+/// What the keystore calls one of this circle's keys.
+///
+/// The circle's own identity is in the name, so two circles on one device
+/// never reach for each other's keys, and the number says which key it is.
+fn key_ref_for(epoch: u32) -> ExternResult<XSalsa20Poly1305KeyRef> {
+    let mut name = b"hearth-circle-".to_vec();
+    name.extend_from_slice(dna_info()?.hash.get_raw_39());
+    name.extend_from_slice(b"-epoch-");
+    name.extend_from_slice(&epoch.to_be_bytes());
+    Ok(XSalsa20Poly1305KeyRef::from(name))
+}
+
+/// My own encryption key, made and published the first time it is needed.
+///
+/// The secret half never leaves the keystore. The public half goes into the
+/// circle so the holder can seal the circle's key to me.
+fn my_box_key() -> ExternResult<X25519PubKey> {
+    if let Some(mine) = on_my_own_chain(UnitEntryTypes::BoxKey)?
+        .last()
+        .and_then(|r| r.entry().to_app_option::<BoxKey>().ok().flatten())
+    {
+        return Ok(mine.key);
+    }
+
+    let key = create_x25519_keypair()?;
+    let action_hash = create_entry(EntryTypes::BoxKey(BoxKey { key }))?;
+    let path = box_key_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash,
+        LinkTypes::CircleToBoxKey,
+        (),
+    )?;
+    Ok(key)
+}
+
+/// Make sure this device has published an encryption key. Safe to call often.
+#[hdk_extern]
+pub fn publish_my_box_key(_: ()) -> ExternResult<X25519PubKey> {
+    my_box_key()
+}
+
+/// Everybody's encryption key, newest per person.
+fn box_keys() -> ExternResult<std::collections::BTreeMap<AgentPubKey, X25519PubKey>> {
+    let links = get_links(
+        LinkQuery::try_new(
+            box_key_path()?.path_entry_hash()?,
+            LinkTypes::CircleToBoxKey,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::BoxKey)?);
+    oldest_first(&mut found);
+
+    let mut out = std::collections::BTreeMap::new();
+    for r in found {
+        if let Some(k) = r.entry().to_app_option::<BoxKey>().ok().flatten() {
+            out.insert(r.action().author().clone(), k.key);
+        }
+    }
+    Ok(out)
+}
+
+/// Every sealed key in the circle, written by the holder.
+fn epoch_keys() -> ExternResult<Vec<EpochKey>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+    let links = get_links(
+        LinkQuery::try_new(
+            epoch_key_path()?.path_entry_hash()?,
+            LinkTypes::CircleToEpochKey,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::EpochKey)?);
+    oldest_first(&mut found);
+
+    Ok(found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder)
+        .filter_map(|r| r.entry().to_app_option::<EpochKey>().ok().flatten())
+        .collect())
+}
+
+/// The newest key the holder has handed out, or 0 before there is one.
+fn newest_epoch() -> ExternResult<u32> {
+    Ok(epoch_keys()?.iter().map(|k| k.epoch).max().unwrap_or(0))
+}
+
+/// Which of the circle's keys this device can actually use.
+///
+/// Asked of the keystore, not worked out from what is written in the circle:
+/// there is no way to list what a keystore holds, but locking a single byte
+/// with a key succeeds only if the key is there. So this asks the only
+/// question that cannot be wrong.
+#[hdk_extern]
+pub fn keys_i_can_use(_: ()) -> ExternResult<Vec<u32>> {
+    let mut usable = Vec::new();
+    for epoch in 1..=newest_epoch()? {
+        if x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, vec![0u8].into()).is_ok() {
+            usable.push(epoch);
+        }
+    }
+    Ok(usable)
+}
+
+/// Take up every key sealed to me that this device has not opened yet.
+///
+/// Opening a key this device already holds fails, and that is not a problem
+/// worth reporting: it means the key is there. What the device can use is
+/// asked afterwards, of the keystore. Returns the newest key it can now use.
+#[hdk_extern]
+pub fn take_up_keys(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(0);
+    };
+    let keys = box_keys()?;
+    let Some(holder_box) = keys.get(&holder).copied() else {
+        return Ok(0);
+    };
+    let mine = my_box_key()?;
+
+    for key in epoch_keys()? {
+        if key.for_member != me {
+            continue;
+        }
+        let _ = x_salsa20_poly1305_shared_secret_ingest(
+            mine,
+            holder_box,
+            key.sealed.clone(),
+            Some(key_ref_for(key.epoch)?),
+        );
+    }
+    Ok(keys_i_can_use(())?.into_iter().max().unwrap_or(0))
+}
+
+/// Seal the circle's keys to everybody who has published an encryption key.
+///
+/// Every key, not only the newest: somebody who joins later can read what the
+/// record used to say, which is Ceri's decision of 20 September 2026 — the
+/// history is part of the record.
+///
+/// Idempotent, and safe to call whenever the circle is read: a key already
+/// sealed to somebody is left alone.
+#[hdk_extern]
+pub fn hand_out_keys(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(0);
+    };
+    if holder != me {
+        return Ok(0);
+    }
+
+    let mine = my_box_key()?;
+    let already: std::collections::BTreeSet<(u32, AgentPubKey)> = epoch_keys()?
+        .into_iter()
+        .map(|k| (k.epoch, k.for_member))
+        .collect();
+    let removed: std::collections::BTreeSet<String> = get_departures(())?
+        .into_iter()
+        .filter(|s| s.removed)
+        .map(|s| s.who)
+        .collect();
+
+    let epochs: Vec<u32> = (1..=newest_epoch()?).collect();
+    let mut sealed = 0;
+    for (member, their_box) in box_keys()? {
+        if removed.contains(&member.to_string()) {
+            continue;
+        }
+        for epoch in &epochs {
+            if already.contains(&(*epoch, member.clone())) {
+                continue;
+            }
+            let data =
+                x_salsa20_poly1305_shared_secret_export(mine, their_box, key_ref_for(*epoch)?)?;
+            write_epoch_key(*epoch, member.clone(), data)?;
+            sealed += 1;
+        }
+    }
+    Ok(sealed)
+}
+
+fn write_epoch_key(
+    epoch: u32,
+    for_member: AgentPubKey,
+    sealed: XSalsa20Poly1305EncryptedData,
+) -> ExternResult<()> {
+    let action_hash = create_entry(EntryTypes::EpochKey(EpochKey {
+        epoch,
+        for_member,
+        sealed,
+    }))?;
+    let path = epoch_key_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash,
+        LinkTypes::CircleToEpochKey,
+        (),
+    )?;
+    Ok(())
+}
+
+/// Start a new key for this circle, sealed to everybody except those removed.
+///
+/// The first call makes key 1. Every removal calls it again, which is what
+/// stops the person removed from reading what is written next.
+#[hdk_extern]
+pub fn new_key(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Err(wasm_error!("Only a circle has keys"));
+    };
+    if holder != me {
+        return Err(wasm_error!(
+            "Only the person who holds a circle hands out its keys"
+        ));
+    }
+
+    let epoch = newest_epoch()? + 1;
+    let key = key_ref_for(epoch)?;
+    // Making a key under a name the keystore already has fails, and it must:
+    // a second key of the same name would stop everything written with the
+    // first one opening. But this key may have been made a moment ago by a
+    // call that then failed to hand it out, so a name already there is only
+    // a mistake if it cannot be used.
+    if x_salsa20_poly1305_shared_secret_create_random(Some(key.clone())).is_err() {
+        x_salsa20_poly1305_encrypt(key.clone(), vec![0u8].into()).map_err(|_| {
+            wasm_error!("This circle's next key could not be made or used; nothing was changed")
+        })?;
+    }
+
+    let mine = my_box_key()?;
+    let removed: std::collections::BTreeSet<String> = get_departures(())?
+        .into_iter()
+        .filter(|s| s.removed)
+        .map(|s| s.who)
+        .collect();
+
+    for (member, their_box) in box_keys()? {
+        if removed.contains(&member.to_string()) {
+            continue;
+        }
+        let data = x_salsa20_poly1305_shared_secret_export(mine, their_box, key_ref_for(epoch)?)?;
+        write_epoch_key(epoch, member, data)?;
+    }
+    Ok(epoch)
+}
+
+/// Where this device stands on keys.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KeysHere {
+    /// The newest key the circle has. 0 before there is one.
+    pub epoch: u32,
+    /// The newest key this device can actually use.
+    pub mine: u32,
+    /// Members who have not published an encryption key yet, so the holder
+    /// cannot seal anything to them. Ordinarily seconds, on joining.
+    pub waiting_for: Vec<String>,
+}
+
+/// Everything about keys that ought to happen when the circle is opened.
+///
+/// Publishes this device's encryption key, takes up anything sealed to it,
+/// and — if this device holds the circle — makes the first key and seals
+/// every key to everybody who is owed one. Safe to call as often as you like;
+/// on a circle where nothing has changed it writes nothing.
+#[hdk_extern]
+pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
+    my_box_key()?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    if let Membrane::Founder(holder, _) = membrane()? {
+        if holder == me {
+            if newest_epoch()? == 0 {
+                new_key(())?;
+            }
+            hand_out_keys(())?;
+        }
+    }
+
+    let mine = take_up_keys(())?;
+    let have_keys = box_keys()?;
+    let mut waiting_for: Vec<String> = get_members(())?
+        .into_iter()
+        .map(|r| r.action().author().clone())
+        .filter(|who| !have_keys.contains_key(who))
+        .map(|who| who.to_string())
+        .collect();
+    waiting_for.sort();
+    waiting_for.dedup();
+
+    Ok(KeysHere {
+        epoch: newest_epoch()?,
+        mine,
+        waiting_for,
+    })
+}
+
+/// Lock something with the circle's newest key, saying which key it used.
+#[allow(dead_code)]
+fn lock(data: Vec<u8>) -> ExternResult<(u32, XSalsa20Poly1305EncryptedData)> {
+    let epoch = newest_epoch()?;
+    if epoch == 0 {
+        return Err(wasm_error!("This circle has no key yet"));
+    }
+    let sealed = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, data.into())?;
+    Ok((epoch, sealed))
+}
+
+/// Open something locked with one of the circle's keys.
+#[allow(dead_code)]
+fn unlock(epoch: u32, sealed: XSalsa20Poly1305EncryptedData) -> ExternResult<Vec<u8>> {
+    let opened = x_salsa20_poly1305_decrypt(key_ref_for(epoch)?, sealed)?.ok_or_else(|| {
+        wasm_error!(
+            "This device does not have the key this was locked with, or it has been changed"
+        )
+    })?;
+    Ok(opened.as_ref().to_vec())
+}
+
+// ---------------------------------------------------------------------------
 // A successor (migration batch, item 9)
 // ---------------------------------------------------------------------------
 //
@@ -2740,6 +3108,20 @@ pub fn decide_departure(input: DepartureInput) -> ExternResult<Record> {
         LinkTypes::CircleToDeparture,
         (),
     )?;
+
+    // A new key from here on, so what the circle writes next cannot be opened
+    // on the removed person's device even by a changed app. Letting somebody
+    // back needs no new key; they are simply owed the ones they missed.
+    //
+    // A key that could not be made does not undo the removal: the removal is
+    // what the holder asked for, and it holds on its own. The next open of the
+    // circle tries again, and until it succeeds keep_keys_up_to_date reports a
+    // key older than the circle's newest, which is what the screen shows.
+    if input.removed {
+        let _ = new_key(());
+    } else {
+        let _ = hand_out_keys(());
+    }
 
     get(action_hash, GetOptions::default())?
         .ok_or_else(|| wasm_error!("Could not read the decision just written"))

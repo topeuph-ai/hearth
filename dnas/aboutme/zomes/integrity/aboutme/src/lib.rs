@@ -326,6 +326,50 @@ pub struct Departure {
 }
 
 // ---------------------------------------------------------------------------
+// Keys, so the record can be locked (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The circle's words are locked with a key every member holds, and removing
+// somebody starts a new key that everybody but them is given. What is written
+// afterwards still arrives on their device and cannot be opened there — which
+// is mathematics rather than their app behaving itself. See
+// docs/encryption.md.
+//
+// Two entries carry the keys themselves, and neither carries anything secret:
+// a public encryption key, and a key sealed so that only one person can open
+// it.
+
+/// A member's public encryption key.
+///
+/// Sharing a key with somebody needs *their* X25519 public key — the agent
+/// key everything else here uses cannot receive one. So each member's app
+/// makes an encryption key pair when it joins, keeps the secret half in the
+/// keystore, and publishes this half. Anybody may write their own, and
+/// writing another replaces it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct BoxKey {
+    pub key: X25519PubKey,
+}
+
+/// One of the circle's keys, sealed so that one member can open it.
+///
+/// Written by the holder, one per member per key. Nothing in it is readable
+/// by anybody else: it is the key itself, boxed to that member's [`BoxKey`].
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct EpochKey {
+    /// Which of the circle's keys this is. They start at 1 and go up by one
+    /// every time somebody is removed.
+    pub epoch: u32,
+    pub for_member: AgentPubKey,
+    pub sealed: XSalsa20Poly1305EncryptedData,
+}
+
+/// A sealed key is a key and a nonce, not a message.
+const MOST_BYTES_IN_A_SEALED_KEY: usize = 1_024;
+
+// ---------------------------------------------------------------------------
 // A successor (migration batch, item 9)
 // ---------------------------------------------------------------------------
 //
@@ -538,6 +582,8 @@ pub enum EntryTypes {
     SuccessionClaim(SuccessionClaim),
     StillHere(StillHere),
     CheckedOn(CheckedOn),
+    BoxKey(BoxKey),
+    EpochKey(EpochKey),
 }
 
 #[hdk_link_types]
@@ -579,6 +625,10 @@ pub enum LinkTypes {
     CircleToSuccession,
     /// SuccessionClaim -> the answers to it: StillHere and CheckedOn.
     ClaimToAnswer,
+    /// Anchor -> BoxKey, so the holder can seal the circle's key to somebody.
+    CircleToBoxKey,
+    /// Anchor -> EpochKey, so each member finds the keys sealed to them.
+    CircleToEpochKey,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -1081,8 +1131,7 @@ fn validate_about_me(
     if about_me.display_name.trim().is_empty() {
         return invalid("About Me must have a display name");
     }
-    if name_too_long(&about_me.display_name)
-        || name_too_long(&about_me.supported_to_write_this_by)
+    if name_too_long(&about_me.display_name) || name_too_long(&about_me.supported_to_write_this_by)
     {
         return invalid("A name here can be up to 200 characters");
     }
@@ -1242,9 +1291,7 @@ fn validate_create_link(
         // Only the holder puts somebody forward to agree, and only her own.
         LinkTypes::CircleToAppointment => {
             if !is_the_person(author)? {
-                return invalid(
-                    "Only the person whose circle this is may ask somebody to agree",
-                );
+                return invalid("Only the person whose circle this is may ask somebody to agree");
             }
             // Path anchor scaffolding. See the note under CircleToAboutMe.
             let Some(target) = as_action_hash(&action.target_address) else {
@@ -1269,6 +1316,20 @@ fn validate_create_link(
             let target_action = must_get_action(target)?;
             if target_action.action().author() != author {
                 return invalid("You may only link your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Keys, filed by whoever wrote them: your own encryption key, and the
+        // holder's sealed copies of the circle's keys.
+        LinkTypes::CircleToBoxKey | LinkTypes::CircleToEpochKey => {
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file a key you wrote yourself");
             }
             Ok(ValidateCallbackResult::Valid)
         }
@@ -1488,7 +1549,12 @@ fn knocked_too_often(
     };
     let earlier = must_get_agent_activity(author.clone(), ChainFilter::new(before))?
         .into_iter()
-        .filter(|a| matches!(a.action.hashed.content.entry_type(), Some(EntryType::App(_))))
+        .filter(|a| {
+            matches!(
+                a.action.hashed.content.entry_type(),
+                Some(EntryType::App(_))
+            )
+        })
         .count();
     if earlier >= MOST_KNOCKS_BY_ONE_PERSON {
         return Ok(Some(ValidateCallbackResult::Invalid(
@@ -1638,6 +1704,32 @@ fn validate_media_piece(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// Anybody in a circle may publish their own encryption key, and only in a
+/// circle: a waiting room and the lobby hold nothing to lock.
+fn validate_box_key(_key: &BoxKey) -> ExternResult<ValidateCallbackResult> {
+    if the_holder()?.is_none() {
+        return invalid("There is nothing to lock outside a circle");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder hands out the circle's keys.
+fn validate_epoch_key(
+    key: &EpochKey,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is hands out its keys");
+    }
+    if key.epoch == 0 {
+        return invalid("The circle's keys start at one");
+    }
+    if key.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_SEALED_KEY {
+        return invalid("That is far larger than a sealed key");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// The holder whose circle this is, if it is a circle.
 fn the_holder() -> ExternResult<Option<AgentPubKey>> {
     Ok(match membrane()? {
@@ -1662,9 +1754,7 @@ fn validate_succession(
         return invalid("The person who checks on the holder has to be somebody else");
     }
     if succession.checker.is_some() && succession.checker == succession.successor {
-        return invalid(
-            "The successor cannot be the one who checks: the point is a second person",
-        );
+        return invalid("The successor cannot be the one who checks: the point is a second person");
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -1805,9 +1895,7 @@ fn validate_proposed_member(
             name: proposed.name.clone(),
         },
     )? {
-        return invalid(
-            "A proposal must carry the holder's own agreement, over the key it names",
-        );
+        return invalid("A proposal must carry the holder's own agreement, over the key it names");
     }
 
     Ok(ValidateCallbackResult::Valid)
@@ -1825,9 +1913,7 @@ fn validate_endorsement(
     author: &AgentPubKey,
 ) -> ExternResult<ValidateCallbackResult> {
     if !is_appointed_by(author, &endorsement.appointment)? {
-        return invalid(
-            "Only the person this circle asks to agree may give the second agreement",
-        );
+        return invalid("Only the person this circle asks to agree may give the second agreement");
     }
 
     // It must be about a real proposal, so an endorsement cannot be attached
@@ -1969,6 +2055,8 @@ fn validate_create(
         EntryTypes::SuccessionClaim(c) => validate_succession_claim(&c, author),
         EntryTypes::StillHere(s) => validate_still_here(&s, author),
         EntryTypes::CheckedOn(c) => validate_checked_on(&c, author),
+        EntryTypes::BoxKey(k) => validate_box_key(&k),
+        EntryTypes::EpochKey(k) => validate_epoch_key(&k, author),
     }
 }
 
@@ -2111,88 +2199,82 @@ fn validate_update(
     action: &TypedAction<UpdateData>,
 ) -> ExternResult<ValidateCallbackResult> {
     match app_entry {
-            EntryTypes::AboutMe(about_me) => {
-                // Only the original author may revise an About Me.
-                // Every peer holding this checks it independently, so there
-                // is no server to trust and nobody to ask for permission.
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only the original author may update an About Me");
-                }
-                validate_about_me(&about_me, action.author())
+        EntryTypes::AboutMe(about_me) => {
+            // Only the original author may revise an About Me.
+            // Every peer holding this checks it independently, so there
+            // is no server to trust and nobody to ask for permission.
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only the original author may update an About Me");
             }
-            EntryTypes::Acknowledgement(_) => {
-                invalid("Acknowledgements cannot be updated; write a new one")
+            validate_about_me(&about_me, action.author())
+        }
+        EntryTypes::Acknowledgement(_) => {
+            invalid("Acknowledgements cannot be updated; write a new one")
+        }
+        // A member may correct their own suggestion before it is decided.
+        EntryTypes::Suggestion(s) => {
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only the person who offered a suggestion may change it");
             }
-            // A member may correct their own suggestion before it is decided.
-            EntryTypes::Suggestion(s) => {
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only the person who offered a suggestion may change it");
-                }
-                validate_suggestion(&s)
+            validate_suggestion(&s)
+        }
+        EntryTypes::SuggestionOutcome(_) => invalid("A decision cannot be edited; make a new one"),
+        // You may correct how you describe yourself, and only your own.
+        EntryTypes::Member(m) => {
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only you may change how you are described");
             }
-            EntryTypes::SuggestionOutcome(_) => {
-                invalid("A decision cannot be edited; make a new one")
-            }
-            // You may correct how you describe yourself, and only your own.
-            EntryTypes::Member(m) => {
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only you may change how you are described");
-                }
-                validate_member(&m)
-            }
-            /*
-             * Neither of these can be edited, and both refusals are the same
-             * refusal: an agreement is a thing that was given at a moment, and
-             * a record of it that can be rewritten afterwards is not evidence
-             * of anything.
-             *
-             * Changing your mind about who may join is possible and costs
-             * nothing — propose somebody else, or simply never agree. What is
-             * not possible is altering what was already agreed to.
-             */
-            EntryTypes::ProposedMember(_) => {
-                invalid("A proposal cannot be changed; make another one")
-            }
-            EntryTypes::Endorsement(_) => {
-                invalid("An agreement cannot be changed once it is given")
-            }
-            // You may knock again; you may not rewrite the knock somebody has
-            // already read and is deciding about.
-            EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
-            EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
-            // Appoint somebody else instead. Rewriting who was trusted, and
-            // when, would take away the only thing this safeguard now rests
-            // on, which is that everybody can see it.
-            EntryTypes::Appointment(_) => {
-                invalid("An appointment cannot be changed; appoint somebody else")
-            }
-            // Change your mind by answering again. What you said before stays
-            // said: the holder may have acted on it.
-            EntryTypes::Consent(_) => {
-                invalid("An answer cannot be changed; answer again")
-            }
-            // Let them back, or remove them again, by writing another. Who was
-            // removed, and when, stays where everybody can see it.
-            EntryTypes::Departure(_) => {
-                invalid("A removal cannot be changed; write another decision")
-            }
-            // Replace a photo by removing it and adding another. A file that
-            // changes under the same name is how a reader ends up looking at
-            // something other than what they think they are.
-            EntryTypes::MediaItem(_) | EntryTypes::MediaPiece(_) => {
-                invalid("A photo, sound or video cannot be changed; remove it and add another")
-            }
-            // Every step of taking over is a thing said at a moment, and stays
-            // said. Name somebody else, answer again, or start again.
-            EntryTypes::Succession(_)
-            | EntryTypes::SuccessionClaim(_)
-            | EntryTypes::StillHere(_)
-            | EntryTypes::CheckedOn(_) => {
-                invalid("This cannot be changed once it is said; say it again")
-            }
+            validate_member(&m)
+        }
+        /*
+         * Neither of these can be edited, and both refusals are the same
+         * refusal: an agreement is a thing that was given at a moment, and
+         * a record of it that can be rewritten afterwards is not evidence
+         * of anything.
+         *
+         * Changing your mind about who may join is possible and costs
+         * nothing — propose somebody else, or simply never agree. What is
+         * not possible is altering what was already agreed to.
+         */
+        EntryTypes::ProposedMember(_) => invalid("A proposal cannot be changed; make another one"),
+        EntryTypes::Endorsement(_) => invalid("An agreement cannot be changed once it is given"),
+        // You may knock again; you may not rewrite the knock somebody has
+        // already read and is deciding about.
+        EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
+        EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
+        // Appoint somebody else instead. Rewriting who was trusted, and
+        // when, would take away the only thing this safeguard now rests
+        // on, which is that everybody can see it.
+        EntryTypes::Appointment(_) => {
+            invalid("An appointment cannot be changed; appoint somebody else")
+        }
+        // Change your mind by answering again. What you said before stays
+        // said: the holder may have acted on it.
+        EntryTypes::Consent(_) => invalid("An answer cannot be changed; answer again"),
+        // Let them back, or remove them again, by writing another. Who was
+        // removed, and when, stays where everybody can see it.
+        EntryTypes::Departure(_) => invalid("A removal cannot be changed; write another decision"),
+        // Replace a photo by removing it and adding another. A file that
+        // changes under the same name is how a reader ends up looking at
+        // something other than what they think they are.
+        EntryTypes::MediaItem(_) | EntryTypes::MediaPiece(_) => {
+            invalid("A photo, sound or video cannot be changed; remove it and add another")
+        }
+        // Every step of taking over is a thing said at a moment, and stays
+        // said. Name somebody else, answer again, or start again.
+        EntryTypes::Succession(_)
+        | EntryTypes::SuccessionClaim(_)
+        | EntryTypes::StillHere(_)
+        | EntryTypes::CheckedOn(_) => {
+            invalid("This cannot be changed once it is said; say it again")
+        }
+        // A key is a key. Publish another.
+        EntryTypes::BoxKey(_) | EntryTypes::EpochKey(_) => {
+            invalid("A key cannot be changed; publish another")
+        }
     }
 }
 
