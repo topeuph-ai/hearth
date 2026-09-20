@@ -2908,6 +2908,14 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
 /// Every caller treats that as "cannot be read here" and says so; none of them
 /// guesses at what was in it.
 fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
+    // Every device refuses an entry whose nonce is the wrong size, so this
+    // cannot come from the circle. It could come from a build of this app that
+    // once wrote something else, and asking the cipher would panic rather than
+    // say so.
+    if locked.nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!("This was not locked in a way this app can open"));
+    }
+
     let one_use =
         x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed_key.clone())?
             .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;

@@ -32,6 +32,7 @@ Read in `hdk-0.7.0/src/x_salsa20_poly1305.rs`, not taken from documentation:
 - **`x_salsa20_poly1305_shared_secret_create_random`** — makes a random key
   inside the keystore (lair). The app gets a reference to it, never the key.
 - **`x_salsa20_poly1305_encrypt` / `_decrypt`** — lock and unlock with that key.
+  **Only for small things**: see the 8 KiB limit below, found the hard way.
 - **`x_salsa20_poly1305_shared_secret_export`** — seals the key for one other
   person, **using X25519 encryption keys, not the agent's identity key**.
 - **`x_salsa20_poly1305_shared_secret_ingest`** — the other person unseals it
@@ -42,7 +43,44 @@ Read in `hdk-0.7.0/src/x_salsa20_poly1305.rs`, not taken from documentation:
 Holochain's own notes on these, worth keeping in view: the key is only as
 safe as the device; "encrypted data cannot be validated effectively by the
 public DHT"; large data should be locked in chunks; and none of it is resistant
-to a future quantum computer.
+to a future quantum computer. The note about chunks turned out to be the
+important one — see the next section.
+
+## What the first build ran into: the keystore takes 8 KiB at a time
+
+**Found on 20 September 2026, by a test with a 20 KB photograph in it**, which
+failed with `FrameOverflow, 29937 > 8192`. Confirmed in the source rather than
+guessed at: every request to the keystore travels down a framed channel with
+
+```rust
+/// Throw errors on the streams if a single message is > 8 KiB
+const MAX_FRAME: usize = 1024 * 8; // 8 KiB
+```
+
+in `lair_keystore_api-0.7.1/src/sodium_secretstream.rs`. So
+`x_salsa20_poly1305_encrypt` cannot lock anything much over about five
+kilobytes — not a full-length record (nine sections of 500 words is some thirty
+kilobytes), and nowhere near a photograph.
+
+**So the design gained one step, and lost none of its point.** Each thing
+written gets a key of its own, used once:
+
+1. The keystore locks that one-use key with the circle's key. Thirty-two bytes,
+   well inside the limit.
+2. The content is locked with the one-use key, in the zome, with
+   XChaCha20-Poly1305.
+
+Opening it is those two steps backwards. **The circle's own key still never
+leaves the keystore** — that is the property everything here rests on. What
+passes through the app is the one-use key for the one thing being read or
+written at that moment, which is no worse than the plain text passing through
+it, as it always has.
+
+This is the ordinary way large data is encrypted, and it is what Holochain's
+own notes mean when they say to encrypt large data in chunks. The cost is one
+dependency in the coordinator zome (`chacha20poly1305`, a cipher used widely
+and reviewed far more than anything this project could write), and it does not
+touch the frozen rules file's own logic.
 
 ## The design
 
