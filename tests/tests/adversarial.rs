@@ -7,7 +7,7 @@
 //! been implemented far more strongly than authorship, plus two holes it
 //! missed: link creation and deletes were entirely unvalidated.
 
-use aboutme_integrity::{AboutMe, CircleProperties, Invitation};
+use aboutme_integrity::{AboutMe, CircleProperties, Invitation, Suggestion};
 use holochain::prelude::*;
 use holochain::sweettest::*;
 use std::collections::HashMap;
@@ -1385,6 +1385,7 @@ fn a_suggestion() -> aboutme_integrity::Suggestion {
         field: aboutme_integrity::AboutMeField::WhatMattersToMe,
         text: "Her allotment. She talked about it all summer.".to_string(),
         because: "I am her son.".to_string(),
+        locked: None,
     }
 }
 
@@ -3178,6 +3179,7 @@ async fn a_suggestion_holds_five_hundred_words_and_no_more() {
                 field: aboutme_integrity::AboutMeField::WhatMattersToMe,
                 text: words(501),
                 because: String::new(),
+                locked: None,
             },
         )
         .await;
@@ -3403,9 +3405,16 @@ async fn the_holder_can_add_a_photo_and_read_it_back() {
     assert_eq!(here[0].media.pieces, vec![piece.clone()]);
 
     let back: aboutme::Bytes = conductor
-        .call(&zome(&alice_cell), "get_media_piece", piece)
+        .call(&zome(&alice_cell), "get_media_piece", piece.clone())
         .await;
     assert_eq!(back.0, picture, "the photo comes back byte for byte");
+
+    // The words beside it are locked too, and read back as they were written.
+    assert_eq!(
+        here[0].media.in_words,
+        "Me with my daughter Ruth at the allotment",
+        "the caption is locked in the circle and opened for a member"
+    );
 
     let _: () = conductor
         .call(&zome(&alice_cell), "remove_media", here[0].item.clone())
@@ -3413,6 +3422,72 @@ async fn the_holder_can_add_a_photo_and_read_it_back() {
     let after: Vec<aboutme::MediaHere> =
         conductor.call(&zome(&alice_cell), "get_media", ()).await;
     assert!(after.is_empty(), "a removed photo does not come back on her own screen");
+}
+
+/// A photo added after somebody is removed cannot be opened on their device.
+///
+/// The same rule as the record, applied to the thing people mind most about: a
+/// photograph of somebody in their own home.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 2 && k.mine == 2).await;
+
+    let picture: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+    let piece: EntryHash = conductor
+        .call(
+            &zome(&alice_cell),
+            "add_media_piece",
+            aboutme::Bytes(picture),
+        )
+        .await;
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "add_media",
+            a_photo(vec![piece.clone()], 20_000),
+        )
+        .await;
+
+    // It reaches his device like everything else does; it is the opening of it
+    // that fails. Waiting for it to arrive first is what makes that the claim.
+    let mut arrived = false;
+    for _ in 0..20 {
+        let here: Vec<aboutme::MediaHere> =
+            conductor.call(&zome(&bob_cell), "get_media", ()).await;
+        if here.iter().any(|m| m.media.pieces.contains(&piece)) {
+            arrived = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    assert!(arrived, "the photo reaches his device, as everything here does");
+
+    let asked: Result<aboutme::Bytes, _> = conductor
+        .call_fallible(&zome(&bob_cell), "get_media_piece", piece)
+        .await;
+    assert!(
+        asked.is_err(),
+        "a removed member must not be able to open a photo added after he went"
+    );
 }
 
 /// Media is part of the person's account of themselves: only the holder adds it.
@@ -3840,6 +3915,65 @@ async fn the_record_is_written_locked() {
     assert_eq!(words.display_name, "Alice Bell");
     assert_eq!(words.what_matters_to_me, "Seeing my grandchildren");
     assert!(!current.locked_out);
+}
+
+/// A suggestion goes into the circle locked, and reads back as it was offered.
+///
+/// A suggestion carries what somebody noticed about a person — often the most
+/// candid words in the circle — so it is locked like the record. Which section
+/// it is about stays in the open, because that is a heading.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suggestion_is_written_locked() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // Keys first: Bob cannot lock anything until he has one.
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let written = Suggestion::try_from(
+        offered
+            .entry()
+            .as_option()
+            .cloned()
+            .expect("the suggestion has an entry"),
+    )
+    .expect("and it is a suggestion");
+    assert!(written.locked.is_some(), "it must be locked");
+    assert!(
+        written.text.is_empty() && written.because.is_empty(),
+        "and nothing of what he wrote may be left in the open: {written:?}"
+    );
+    assert_eq!(
+        written.field,
+        aboutme_integrity::AboutMeField::WhatMattersToMe,
+        "the section it is about is a heading, and stays readable"
+    );
+
+    // And the holder reads what he actually offered.
+    let hash = offered.action_address().clone();
+    let mut seen = None;
+    for _ in 0..20 {
+        let list: Vec<aboutme::SuggestionWithOutcome> =
+            conductor.call(&zome(&alice_cell), "get_suggestions", ()).await;
+        if let Some(found) = list
+            .into_iter()
+            .find(|s| s.suggestion.action_address() == &hash)
+        {
+            seen = found.words;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    let words = seen.expect("the holder can open what was offered to her");
+    assert_eq!(words.text, "Her allotment. She talked about it all summer.");
+    assert_eq!(words.because, "I am her son.");
 }
 
 /// Somebody removed cannot read what the circle writes afterwards.

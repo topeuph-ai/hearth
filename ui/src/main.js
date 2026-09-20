@@ -294,6 +294,19 @@ function wordsOf(current) {
 }
 
 /**
+ * What a suggestion says, as this device can read it.
+ *
+ * The same arrangement as the record: the suggestion and the why are locked
+ * with the circle's key and come back opened beside the entry. Which section
+ * it is about is in the open, so a suggestion this device cannot open is
+ * skipped rather than shown as a blank card — which is why this returns
+ * nothing at all when the words are missing.
+ */
+function suggestionWords(item) {
+  return item?.words ?? entryOf(item?.suggestion);
+}
+
+/**
  * Who wrote a record.
  *
  * Holochain 0.7 splits an action into a header and its per-variant data, and
@@ -2088,7 +2101,7 @@ function markSuggestionsOnTheRecord() {
 
   const byField = new Map();
   for (const item of suggestions) {
-    const entry = entryOf(item.suggestion);
+    const entry = suggestionWords(item);
     if (!entry) continue;
     const [key] = FIELD_LABELS[entry.field] ?? [];
     if (!key) continue;
@@ -2137,7 +2150,7 @@ function markSuggestionsOnTheRecord() {
 function suggestionCard(item) {
   const amHolder = isHolder();
 
-  const entry = entryOf(item.suggestion);
+  const entry = suggestionWords(item);
   if (!entry) return null;
 
   const author = authorOf(item.suggestion);
@@ -4908,7 +4921,7 @@ async function historyOf(cellId, names) {
   const suggestions = [];
   const unfinished = [];
   for (const item of await orNothingYet(call("get_suggestions", null, cellId), [])) {
-    const entry = entryOf(item.suggestion);
+    const entry = suggestionWords(item);
     if (!entry) continue;
     const author = asText(authorOf(item.suggestion));
     const outcome = entryOf(item.outcome);

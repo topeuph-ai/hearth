@@ -519,7 +519,19 @@ pub struct MediaItem {
     pub pieces: Vec<EntryHash>,
     /// All the pieces together, in bytes.
     pub size: u64,
+
+    /// The file name and "what this says in words", locked with the circle's
+    /// key. When this is here, both of those are empty.
+    ///
+    /// What stays in the open is what a player needs and what every device has
+    /// to check: which section, which kind, which file type, how long, how
+    /// many pieces and how big.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
+
+/// The ceiling on a locked file name and text alternative together.
+const MOST_BYTES_IN_LOCKED_MEDIA_WORDS: usize = 8_000 * 4 + 1_024;
 
 /// One piece of a media file: at most three megabytes of it.
 #[hdk_entry_helper]
@@ -527,10 +539,19 @@ pub struct MediaItem {
 pub struct MediaPiece {
     #[serde(with = "serde_bytes")]
     pub bytes: Vec<u8>,
+
+    /// The piece, locked with the circle's key.
+    ///
+    /// When this is here, `bytes` is empty. A photograph of somebody in their
+    /// own home is as personal as anything in the record, and is locked the
+    /// same way. Holochain's own notes say to lock large data in pieces, which
+    /// is what this already is.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
 
 /// A piece is at most this, leaving room under Holochain's four megabytes.
-const MOST_BYTES_IN_A_PIECE: usize = 3_000_000;
+pub const MOST_BYTES_IN_A_PIECE: usize = 3_000_000;
 /// Ceri's two minutes, for sound and video.
 const MOST_SECONDS: u32 = 120;
 
@@ -580,7 +601,19 @@ pub struct Suggestion {
     /// Optional: why they think so. "She talked about the allotment all
     /// summer." Often the more useful half.
     pub because: String,
+
+    /// The suggestion and the why, locked with the circle's key.
+    ///
+    /// When this is here, `text` and `because` are empty. Which section it is
+    /// about stays in the open: it is the name of a heading, it is what the
+    /// holder's screen sorts by, and hiding it would buy nothing.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
+
+/// The ceiling on a locked suggestion: the suggestion and the why, each no
+/// bigger than a section of the record could be.
+const MOST_BYTES_IN_A_LOCKED_SUGGESTION: usize = 2 * 8_000 * 4 + 1_024;
 
 /// What the holder decided about a suggestion.
 ///
@@ -1761,6 +1794,21 @@ fn validate_media_item(
         }
         _ => {}
     }
+    if let Some(locked) = &item.locked {
+        if !item.file_name.is_empty() || !item.in_words.is_empty() {
+            return invalid("A file's words are either locked or in the open, not partly both");
+        }
+        if locked.epoch == 0 {
+            return invalid("Locked words have to say which key locked them");
+        }
+        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_LOCKED_MEDIA_WORDS {
+            return invalid("That is larger than a file name and its words could be");
+        }
+        if name_too_long(&item.mime_type) {
+            return invalid("A file type can be up to 200 characters");
+        }
+        return Ok(ValidateCallbackResult::Valid);
+    }
     if name_too_long(&item.file_name) || name_too_long(&item.mime_type) {
         return invalid("A file name can be up to 200 characters");
     }
@@ -1777,6 +1825,22 @@ fn validate_media_piece(
 ) -> ExternResult<ValidateCallbackResult> {
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may add a photo, sound or video");
+    }
+    if let Some(locked) = &piece.locked {
+        if !piece.bytes.is_empty() {
+            return invalid("A piece is either locked or in the open, not partly both");
+        }
+        if locked.epoch == 0 {
+            return invalid("A locked piece has to say which key locked it");
+        }
+        // Room above the plain limit for what locking adds: a nonce, and proof
+        // the bytes were not tampered with.
+        if locked.sealed.as_encrypted_data_ref().is_empty()
+            || locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_PIECE + 1_024
+        {
+            return invalid("A piece of a file is at most three megabytes");
+        }
+        return Ok(ValidateCallbackResult::Valid);
     }
     if piece.bytes.is_empty() || piece.bytes.len() > MOST_BYTES_IN_A_PIECE {
         return invalid("A piece of a file is at most three megabytes");
@@ -2037,6 +2101,18 @@ fn validate_member(member: &Member) -> ExternResult<ValidateCallbackResult> {
 fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallbackResult> {
     // Deliberately no check on who the author is. Any member of the circle may
     // offer something; the holder decides what goes in.
+    if let Some(locked) = &suggestion.locked {
+        if !suggestion.text.is_empty() || !suggestion.because.is_empty() {
+            return invalid("A suggestion is either locked or in the open, not partly both");
+        }
+        if locked.epoch == 0 {
+            return invalid("A locked suggestion has to say which key locked it");
+        }
+        if locked.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_LOCKED_SUGGESTION {
+            return invalid("That is larger than a suggestion and its reason could be");
+        }
+        return Ok(ValidateCallbackResult::Valid);
+    }
     if suggestion.text.trim().is_empty() {
         return invalid("A suggestion needs something in it");
     }

@@ -1304,7 +1304,7 @@ fn suggestion_path() -> ExternResult<TypedPath> {
 
 #[hdk_extern]
 pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
-    let action_hash = create_entry(EntryTypes::Suggestion(suggestion.clone()))?;
+    let action_hash = create_entry(EntryTypes::Suggestion(lock_suggestion(&suggestion)?))?;
 
     let path = suggestion_path()?;
     path.ensure()?;
@@ -1339,6 +1339,12 @@ pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SuggestionWithOutcome {
     pub suggestion: Record,
+    /// What was offered, opened with the circle's key.
+    ///
+    /// Where the words are, as with the record: the entry holds the sealed
+    /// form. None where this device cannot open it, and the screen says so
+    /// rather than showing a suggestion with nothing in it.
+    pub words: Option<Suggestion>,
     /// None means the holder has not looked at it yet.
     pub outcome: Option<Record>,
 }
@@ -1462,8 +1468,16 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
                 .cloned();
         }
 
+        let words = suggestion
+            .entry()
+            .to_app_option::<Suggestion>()
+            .ok()
+            .flatten()
+            .and_then(|s| unlock_suggestion(&s).ok());
+
         out.push(SuggestionWithOutcome {
             suggestion,
+            words,
             outcome,
         });
     }
@@ -2300,7 +2314,23 @@ pub struct Bytes(#[serde(with = "serde_bytes")] pub Vec<u8>);
 /// Write one piece of a file, and say which hash names it.
 #[hdk_extern]
 pub fn add_media_piece(bytes: Bytes) -> ExternResult<EntryHash> {
-    let piece = MediaPiece { bytes: bytes.0 };
+    // Said here as well as by every device, so somebody who cannot add a file
+    // is told that, rather than being told something about keys.
+    if !i_am_the_holder()? {
+        return Err(wasm_error!(
+            "Only the person whose circle this is may add a photo, sound or video"
+        ));
+    }
+    // The plain size, checked before locking. Every device still checks the
+    // locked size, but locking adds a little to it, and the limit people were
+    // promised is about the file — so it is measured on the file.
+    if bytes.0.is_empty() || bytes.0.len() > MOST_BYTES_IN_A_PIECE {
+        return Err(wasm_error!("A piece of a file is at most three megabytes"));
+    }
+    let piece = MediaPiece {
+        bytes: Vec::new(),
+        locked: Some(lock(bytes.0)?),
+    };
     let hash = hash_entry(&piece)?;
     create_entry(EntryTypes::MediaPiece(piece))?;
     Ok(hash)
@@ -2324,15 +2354,31 @@ pub struct AddMediaInput {
 /// Put a photo, sound or video beside a section, once its pieces are written.
 #[hdk_extern]
 pub fn add_media(input: AddMediaInput) -> ExternResult<Record> {
+    let file_name = input.file_name.trim().to_string();
+    let in_words = input.in_words.trim().to_string();
+    // Checked here, because once locked nothing else can check them.
+    if name_too_long(&file_name) {
+        return Err(wasm_error!("A file name can be up to 200 characters"));
+    }
+    if too_long(&in_words) {
+        return Err(wasm_error!("What it says in words can be up to 500 words"));
+    }
+    let words = ExternIO::encode((&file_name, &in_words)).map_err(|e| {
+        wasm_error!(format!(
+            "Could not pack the file's words to lock them: {e:?}"
+        ))
+    })?;
+
     let action_hash = create_entry(EntryTypes::MediaItem(MediaItem {
         section: input.section,
         kind: input.kind,
         mime_type: input.mime_type,
-        file_name: input.file_name.trim().to_string(),
-        in_words: input.in_words.trim().to_string(),
+        file_name: String::new(),
+        in_words: String::new(),
         seconds: input.seconds,
         pieces: input.pieces,
         size: input.size,
+        locked: Some(lock(words.into_vec())?),
     }))?;
 
     let path = media_path()?;
@@ -2403,7 +2449,21 @@ pub fn get_media(_: ()) -> ExternResult<Vec<MediaHere>> {
         .into_iter()
         .filter(|r| r.action().author() == &holder && !removed.contains(r.action_address()))
         .filter_map(|r| {
-            let media = r.entry().to_app_option::<MediaItem>().ok().flatten()?;
+            let mut media = r.entry().to_app_option::<MediaItem>().ok().flatten()?;
+            // The file name and what it says in words, opened. A device that
+            // cannot open them still gets the player: a photo whose caption
+            // cannot be read is better than no photo, and the bytes are locked
+            // with the same key anyway, so this is not a way round anything.
+            if let Some(locked) = media.locked.take() {
+                if let Ok((file_name, in_words)) = unlock(&locked).and_then(|w| {
+                    ExternIO::from(w)
+                        .decode::<(String, String)>()
+                        .map_err(|e| wasm_error!(format!("{e:?}")))
+                }) {
+                    media.file_name = file_name;
+                    media.in_words = in_words;
+                }
+            }
             Some(MediaHere {
                 item: r.action_address().clone(),
                 added: r.action().timestamp(),
@@ -2423,7 +2483,11 @@ pub fn get_media_piece(hash: EntryHash) -> ExternResult<Bytes> {
         .to_app_option::<MediaPiece>()
         .map_err(|e| wasm_error!(format!("{e:?}")))?
         .ok_or_else(|| wasm_error!("That is not a piece of a file"))?;
-    Ok(Bytes(piece.bytes))
+    match &piece.locked {
+        Some(locked) => Ok(Bytes(unlock(locked)?)),
+        // A piece written before encryption. The bytes really are in the open.
+        None => Ok(Bytes(piece.bytes)),
+    }
 }
 
 /// Take a photo, sound or video away from beside the record.
@@ -2792,11 +2856,19 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
     })
 }
 
-/// Lock something with the circle's newest key, saying which key it used.
+/// Lock something with the newest key this device can use.
+///
+/// The newest key it *can use*, not the newest the circle has: a member whose
+/// key has not arrived yet would otherwise be unable to write anything at all,
+/// and everybody who can read the circle holds every key, so an older one
+/// leaves nobody out. The holder always has the newest, being the one who
+/// made it.
 fn lock(data: Vec<u8>) -> ExternResult<Locked> {
-    let epoch = newest_epoch()?;
+    let epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
     if epoch == 0 {
-        return Err(wasm_error!("This circle has no key yet"));
+        return Err(wasm_error!(
+            "This device has no key for this circle yet. Wait a moment and try again"
+        ));
     }
     let sealed = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, data.into())?;
     Ok(Locked { epoch, sealed })
@@ -2807,6 +2879,12 @@ fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
     let opened = x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed.clone())?
         .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
     Ok(opened.as_ref().to_vec())
+}
+
+/// Whether this device is the one that holds the circle.
+fn i_am_the_holder() -> ExternResult<bool> {
+    let me = agent_info()?.agent_initial_pubkey;
+    Ok(matches!(membrane()?, Membrane::Founder(holder, _) if holder == me))
 }
 
 /// A record with nothing in the open: the shell a locked record is written as.
@@ -2898,6 +2976,48 @@ fn unlock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
     // Nothing nested: what comes back is the words, not another locked shell.
     opened.locked = None;
     Ok(opened)
+}
+
+/// Lock a suggestion. Which section it is about stays in the open.
+fn lock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+    // Checked here for the same reason the record's words are: after this,
+    // nothing can read them to check.
+    if suggestion.text.trim().is_empty() {
+        return Err(wasm_error!("A suggestion needs something in it"));
+    }
+    if too_long(&suggestion.text) || too_long(&suggestion.because) {
+        return Err(wasm_error!(
+            "A suggestion, and why, can be up to 500 words each"
+        ));
+    }
+
+    let words = ExternIO::encode((&suggestion.text, &suggestion.because))
+        .map_err(|e| wasm_error!(format!("Could not pack the suggestion to lock it: {e:?}")))?;
+    Ok(Suggestion {
+        field: suggestion.field.clone(),
+        text: String::new(),
+        because: String::new(),
+        locked: Some(lock(words.into_vec())?),
+    })
+}
+
+/// Open a suggestion, where it is locked and this device can.
+fn unlock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+    let Some(locked) = &suggestion.locked else {
+        return Ok(suggestion.clone());
+    };
+    let (text, because): (String, String) =
+        ExternIO::from(unlock(locked)?).decode().map_err(|e| {
+            wasm_error!(format!(
+                "The suggestion opened but could not be read: {e:?}"
+            ))
+        })?;
+    Ok(Suggestion {
+        field: suggestion.field.clone(),
+        text,
+        because,
+        locked: None,
+    })
 }
 
 /// The name of the person this circle is about, as this device can read it.
