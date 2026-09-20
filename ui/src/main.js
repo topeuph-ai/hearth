@@ -146,6 +146,10 @@ let circles = []; // every circle this person is in
 let me = null; // our AgentPubKey
 let holder = null; // whose circle this is
 let record = null; // the current About Me record
+// Where this device stands on keys: { epoch, mine, waiting_for }. The circle's
+// newest key, the newest this device can use, and anybody whose encryption key
+// has not reached the holder yet.
+let keys = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -1110,9 +1114,44 @@ async function readTheCircle() {
   try {
     // Left the circle while a reading was queued. Nothing to draw.
     if (!circle) return;
+    await keepKeysUpToDate();
     await drawTheCircle();
   } finally {
     readingNow = null;
+  }
+}
+
+/**
+ * Keys, before anything is read or written.
+ *
+ * The record and everything else in the circle is locked, so a device with no
+ * key has nothing to show and nothing it can write. This publishes this
+ * device's encryption key, takes up whatever the holder has sealed to it, and —
+ * on the holder's own device — seals the circle's keys to everybody owed one.
+ * It writes nothing when nothing has changed, which is almost every time.
+ *
+ * Never allowed to stop the screen being drawn. A circle whose keys have not
+ * arrived yet still has people in it, a name at the top, and things to say
+ * about what cannot be opened — see the locked-out note.
+ */
+async function keepKeysUpToDate() {
+  try {
+    keys = await call("keep_keys_up_to_date", null, circle.cellId);
+
+    /*
+     * Deliberately not on the screen. From inside this device, "my key is
+     * older than the circle's" is the same fact whether somebody has just
+     * joined or has been removed, and the app must not guess which and
+     * reassure the wrong person. The locked-out note says both readings out
+     * loud instead. This is here for whoever is looking at a log.
+     */
+    if (keys && keys.mine < keys.epoch) {
+      console.info(
+        `This device can use key ${keys.mine} of ${keys.epoch} in this circle.`,
+      );
+    }
+  } catch (error) {
+    console.error("Could not bring this device's keys up to date.", error);
   }
 }
 
