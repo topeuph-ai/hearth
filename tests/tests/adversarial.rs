@@ -3464,8 +3464,7 @@ async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
     let his = conductors.get(1).unwrap();
     let bob = bob_cell.agent_pubkey().clone();
 
-    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
-    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
 
     let _: Record = hers
         .call(
@@ -3802,6 +3801,27 @@ async fn a_circle_on_two_devices() -> (SweetConductorBatch, CellId, CellId) {
     (conductors, alice_cell, bob_cell)
 }
 
+/// Get the circle's key to the member, across two conductors.
+///
+/// The order matters and is the app's own: the member's device publishes its
+/// encryption key first, because until it has, the holder has nothing to seal
+/// to; then the holder makes the circle's key and seals it; then the member
+/// takes it up. Waiting on the member first can never finish, which is exactly
+/// what four of these tests did before this existed.
+async fn keys_flowing_on_two(
+    conductors: &SweetConductorBatch,
+    holder: &CellId,
+    member: &CellId,
+) {
+    let _: aboutme::KeysHere = conductors
+        .get(1)
+        .unwrap()
+        .call(&zome(member), "keep_keys_up_to_date", ())
+        .await;
+    keys_until_on(conductors, 0, holder, |k| k.epoch >= 1 && k.mine >= 1).await;
+    keys_until_on(conductors, 1, member, |k| k.mine >= 1).await;
+}
+
 /// The same as `keys_until`, for a cell in a batch of conductors.
 async fn keys_until_on(
     conductors: &SweetConductorBatch,
@@ -3874,8 +3894,7 @@ async fn a_removed_member_is_not_given_the_next_key() {
     let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
     let bob = bob_cell.agent_pubkey().clone();
 
-    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
-    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
 
     let _: Record = conductors
         .get(0)
@@ -3931,8 +3950,7 @@ async fn somebody_owed_the_history_is_given_every_past_key() {
     let hers = conductors.get(0).unwrap();
     let bob = bob_cell.agent_pubkey().clone();
 
-    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
-    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
 
     // He goes, which starts key 2 without him; then he is let back in, and is
     // owed both keys.
@@ -4114,8 +4132,7 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
     let his = conductors.get(1).unwrap();
     let bob = bob_cell.agent_pubkey().clone();
 
-    keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 1).await;
-    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
 
     let created: Record = hers
         .call(
