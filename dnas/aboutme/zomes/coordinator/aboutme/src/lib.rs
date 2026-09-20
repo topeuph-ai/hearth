@@ -2913,7 +2913,9 @@ fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
     // once wrote something else, and asking the cipher would panic rather than
     // say so.
     if locked.nonce.len() != BYTES_IN_A_NONCE {
-        return Err(wasm_error!("This was not locked in a way this app can open"));
+        return Err(wasm_error!(
+            "This was not locked in a way this app can open"
+        ));
     }
 
     let one_use =
