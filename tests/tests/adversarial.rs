@@ -3812,14 +3812,44 @@ async fn keys_flowing_on_two(
     conductors: &SweetConductorBatch,
     holder: &CellId,
     member: &CellId,
-) {
-    let _: aboutme::KeysHere = conductors
-        .get(1)
-        .unwrap()
-        .call(&zome(member), "keep_keys_up_to_date", ())
-        .await;
-    keys_until_on(conductors, 0, holder, |k| k.epoch >= 1 && k.mine >= 1).await;
-    keys_until_on(conductors, 1, member, |k| k.mine >= 1).await;
+) -> aboutme::KeysHere {
+    both_until(conductors, holder, member, |k| k.mine >= 1).await
+}
+
+/// Refresh both devices until the member's own state is what is wanted.
+///
+/// Both, in turn, because that is how this works in life: the member's device
+/// publishes its encryption key, and the holder's device has to *see* that
+/// before it can seal anything to them — which on two machines is a moment
+/// later, not instantly. Polling the member alone waits for something nobody
+/// is doing, which is how two of these tests failed with
+/// `KeysHere { epoch: 1, mine: 0 }`: the circle had a key and he had not been
+/// given it, because nothing asked her device to look again.
+async fn both_until(
+    conductors: &SweetConductorBatch,
+    holder: &CellId,
+    member: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..60 {
+        let _: aboutme::KeysHere = conductors
+            .get(0)
+            .unwrap()
+            .call(&zome(holder), "keep_keys_up_to_date", ())
+            .await;
+        let his: aboutme::KeysHere = conductors
+            .get(1)
+            .unwrap()
+            .call(&zome(member), "keep_keys_up_to_date", ())
+            .await;
+        if enough(&his) {
+            return his;
+        }
+        last = Some(his);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("the member's keys never reached what the test waited for: {last:?}");
 }
 
 /// The same as `keys_until`, for a cell in a batch of conductors.
@@ -3918,7 +3948,9 @@ async fn a_removed_member_is_not_given_the_next_key() {
     // Bob's device sees that the circle has moved on, and cannot follow: no
     // amount of asking gives him key 2, because nothing in the circle carries
     // it to him.
-    let his = keys_until_on(&conductors, 1, &bob_cell, |k| k.epoch == 2).await;
+    // Both devices refresh, so this is not waiting on something nobody does: she
+    // hands out keys and he takes up whatever is his. Key 2 is not.
+    let his = both_until(&conductors, &alice_cell, &bob_cell, |k| k.epoch == 2).await;
     assert_eq!(
         his.mine, 1,
         "a removed member keeps what he had and is given nothing after"
@@ -3967,8 +3999,7 @@ async fn somebody_owed_the_history_is_given_every_past_key() {
             .await;
     }
 
-    keys_until_on(&conductors, 0, &alice_cell, |k| k.epoch == 2).await;
-    let his = keys_until_on(&conductors, 1, &bob_cell, |k| k.mine == 2).await;
+    let his = both_until(&conductors, &alice_cell, &bob_cell, |k| k.mine == 2).await;
     assert_eq!(
         his.mine, 2,
         "back in the circle, and able to read what it says now"
