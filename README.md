@@ -276,6 +276,7 @@ Read the first one before the others.
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
 | [DPIA.md](docs/DPIA.md) | Data protection assessment |
+| [EHIA.md](docs/EHIA.md) | Equality and health inequalities impact assessment — including who this could leave out, and how it could widen the inequality it means to narrow |
 | [latency.md](docs/latency.md) | Why joining takes ninety seconds |
 | [prior-art.md](docs/prior-art.md) | What has been tried before, and what became of it |
 | [what-to-borrow.md](docs/what-to-borrow.md) | What paper got right that we have not |
