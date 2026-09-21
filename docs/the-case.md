@@ -222,6 +222,18 @@ Circles that exist keep working with no maintenance, because there is nothing in
 the middle to maintain. That is a genuinely different answer from every hosted
 product's.
 
+**8a. Where is the evidence that this problem is real?**
+The LeDeR 2024 report (King's College London for NHS England, July 2026) found
+that adults with a learning disability died at a median age of 62.8 in 2024,
+19.0 years below the general adult population, and that 39.0% of their deaths
+were avoidable against 21.1% in the general population. The two most common
+problems in care were **"problems with organisational systems" (40.5%)** and
+delays in care or treatment (39.8%); among autistic adults without a learning
+disability the report lists **"fragmented and poorly coordinated care across
+services"**. That is the gap Hearth is aimed at. It is not evidence that Hearth
+closes it — see the note in [EHIA.md](EHIA.md), which quotes the report exactly
+and is careful about what it does and does not show.
+
 **9. Has a real person ever used it?**
 Not yet, and the project does not pretend otherwise —
 [what-is-proven.md](what-is-proven.md) has a section titled "Nobody outside the

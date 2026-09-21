@@ -49,7 +49,7 @@ It is **not a clinical record** and holds no clinical content.
 | Protected characteristic | Main potential positive or adverse impact | Main recommendation |
 | --- | --- | --- |
 | **Age**: older people; middle years; early years; children and young people | **Positive, and strongly weighted to older people**, who are the likeliest to be supported by several organisations at once and to be admitted somewhere unfamiliar. **Adverse**: older people are also over-represented among those who do not use a smartphone or computer, or who rely on somebody else to do so. An older person without a device depends entirely on a relative or worker holding their circle for them, which is a weaker form of "held by the person". Children and young people are not the current focus; the standard implemented is the adult About Me. | Support a proxy holder explicitly and visibly, so it is always clear on screen whose account this is and who is keeping it. Never require the person themselves to own a device. |
-| **Disability**: physical, sensory and learning impairment; mental health condition; long-term conditions | **The largest positive impact, and the reason the project exists.** People with a learning disability, autistic people, people living with dementia and people with communication impairment are those whose needs are most often unknown to whoever is in front of them. Photographs, recorded speech and short video are built in so that a person who cannot read a screen, or cannot write, can still be heard in their own voice. **Adverse**: the interface has not been through an independent accessibility audit; WCAG 2.2 AA is the target, not a demonstrated fact. Sensory impairment (in particular deafblindness) is not specifically provided for beyond standard accessibility. | Commission an independent accessibility review against WCAG 2.2 AA with attention to cognitive impairment. Do not claim conformance until it has been done. Treat the media features as core, not as an extra. |
+| **Disability**: physical, sensory and learning impairment; mental health condition; long-term conditions | **The largest positive impact, and the reason the project exists.** People with a learning disability, autistic people, people living with dementia and people with communication impairment are those whose needs are most often unknown to whoever is in front of them. Photographs, recorded speech and short video are built in so that a person who cannot read a screen, or cannot write, can still be heard in their own voice. The LeDeR 2024 report records reasonable adjustments as provided in 77.8% of reviews, and lists "care and treatment not consistently adapted to autistic adults' needs" among its findings — a record that states a person's needs plainly, to whoever is in front of them, is aimed squarely at that. **Adverse**: the interface has not been through an independent accessibility audit; WCAG 2.2 AA is the target, not a demonstrated fact. Sensory impairment (in particular deafblindness) is not specifically provided for beyond standard accessibility. | Commission an independent accessibility review against WCAG 2.2 AA with attention to cognitive impairment. Do not claim conformance until it has been done. Treat the media features as core, not as an extra. |
 | **Gender reassignment and/or people who identify as transgender** | **Potentially positive and specifically so.** The record is written in the person's own words and shown unchanged, so a person's name, pronouns and how they wish to be addressed travel with them and do not have to be re-established with each new worker or ward. Being repeatedly misnamed by people providing intimate care is a known harm. **Adverse**: the record is visible to everybody in the circle, so a person who is out to some of the people around them and not to others cannot presently share selectively. | Note the "everyone sees everything" limitation as a real constraint (it is documented in hard-questions.md). Consider whether any future partial-visibility mechanism is worth its complexity, with this group's needs as a primary test case. |
 | **Marriage and civil partnership** | No identified positive or adverse impact. | Not applicable. |
 | **Pregnancy and maternity** | No specific impact identified. Maternity is not a target setting, and About Me is not a maternity record. | Not applicable. |
@@ -101,11 +101,73 @@ statement of benefit above is reasoned rather than observed.
 
 | Evidence type | Key sources used | Key gaps |
 | --- | --- | --- |
-| Published evidence | The Core20PLUS5 approach (NHS England), which names people with a learning disability, autistic people and people with multiple long-term conditions among expected PLUS populations. Reviews of the deaths of people with a learning disability (the LeDeR programme) have repeatedly reported communication needs being misinterpreted and care poorly co-ordinated between services. **The LeDeR findings here are taken from secondary summaries and must be read at source before being quoted in any submission.** | No figures of any kind on: how often an About Me document is lost between settings; how often it is read; whether having one changes what happens to the person. Digital exclusion figures by deprivation have not been read at source and are not quoted here for that reason. |
+| Published evidence | The **Core20PLUS5** approach (NHS England), which names people with a learning disability, autistic people and people with multiple long-term conditions among expected PLUS populations. The **LeDeR 2024 report** (King's College London for NHS England, published July 2026) — see the findings quoted in full below. | No figures of any kind on: how often an About Me document is lost between settings; how often it is read; whether having one changes what happens to the person. Digital exclusion figures by deprivation have not been read at source and are not quoted here for that reason. |
 | Consultation and involvement findings | None. See section 5. | Everything. |
 | Research | None conducted. No academic partner. | No evaluation design exists. |
 | Participant or expert knowledge | None. The developer has no professional background in health or social care and states this openly throughout the project's documentation. | No clinical, safeguarding, accessibility or information-governance expertise has been applied to this assessment. |
 | The project's own testing | 94 automated adversarial tests; two-machine testing over the internet, through an internet outage, and with no internet at all (19 September 2026). See `what-is-proven.md`. | All of it is technical. None of it involves a person who needs this. |
+
+### What the LeDeR 2024 report actually says
+
+Read at source on 21 September 2026 from the key infographics published with the
+report ([King's College London](https://www.kcl.ac.uk/research/leder),
+[report](https://www.kcl.ac.uk/ioppn/leder/leder2024/leder-2024-report.pdf)).
+Covering adults with a learning disability who died between 2021 and 2024 and
+were reported to LeDeR by November 2025.
+
+**How much earlier people die:**
+
+> "In 2024, the median age at death for adults with a learning disability
+> notified to LeDeR was 62.8 years, 19.0 years lower than the median age at
+> death of the general adult population in 2024 (81.8 years)."
+
+> "In 2024, more than half (56.6%) of adults with a learning disability notified
+> to LeDeR died before the age of 65."
+
+**Avoidable deaths — falling, and still nearly double:**
+
+> "The proportion of avoidable deaths for adults with a learning disability who
+> had a LeDeR review has significantly declined, dropping from 46.3% in 2021 to
+> 39.0% in 2024."
+
+> "However, the proportion of avoidable deaths in 2024 remains nearly double
+> that of the general adult population (21.1%)."
+
+**Problems in care (2024).** The two most commonly reported were
+**"problems with organisational systems" (40.5%)** and **"delays in care or
+treatment" (39.8%)**, followed by "diagnosis and treatment guidelines not met"
+(25.8%) and "gaps in care" (20.2%).
+
+**Quality of care (2024).** Reasonable adjustments were recorded as provided in
+**77.8%** of reviews; the care package met the person's needs in 79.3%; the
+Mental Capacity Act was correctly followed in 66.6%.
+
+> ⚠️ **Do not turn 77.8% into "one in five did not get reasonable
+> adjustments".** The report's own footnote says the remaining proportion
+> "includes both 'No' and 'not known' responses". The honest sentence is that
+> reasonable adjustments were *recorded as provided* in 77.8% of reviews.
+
+**On autistic adults without a learning disability**, the report lists these
+issues with care, in these words:
+
+> "Delays in recognising needs and escalating concerns."
+> "Inconsistent care and continuity of support."
+> "Fragmented and poorly coordinated care across services."
+> "Care and treatment not consistently adapted to autistic adults' needs."
+
+**Why this matters for Hearth, stated carefully.** "Problems with organisational
+systems" in two fifths of reviews, and "fragmented and poorly coordinated care
+across services", describe the gap Hearth is aimed at — information about a
+person not travelling between the organisations around them. What the report
+does **not** say, and what must never be implied, is that a shared About Me
+record would have prevented any of these deaths. The report identifies where
+care broke down; it does not evaluate any intervention, least of all this one.
+
+**One note on citing LeDeR at all.** The 2023 report was published in September
+2025, withdrawn in December 2025 over errors in data collection and reporting,
+and re-released after reanalysis. Quote the 2024 report, quote it exactly, and
+check the year — this is a literature where second-hand figures have already
+gone wrong once.
 
 ---
 
