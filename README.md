@@ -266,6 +266,7 @@ Read the first one before the others.
 | | |
 |---|---|
 | [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [encryption.md](docs/encryption.md) | Design note: locking the record with a key that changes when somebody is removed |
 | [migration-batch.md](docs/migration-batch.md) | Every change waiting for the frozen rules, in one list to decide item by item |
 | [multimedia.md](docs/multimedia.md) | Photos, sound and video in the record: what the standards ask, what was decided, and how it would be built |
 | [licensing.md](docs/licensing.md) | What licence Hearth is under, and what shipping Holochain inside the app asks of us |
@@ -275,12 +276,18 @@ Read the first one before the others.
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
 | [DPIA.md](docs/DPIA.md) | Data protection assessment |
+| [medical-device-determination.md](docs/medical-device-determination.md) | Why this is not a medical device, with the intended purpose statement and the line that would change it |
+| [dtac-position.md](docs/dtac-position.md) | Where Hearth stands against DTAC, and the question DTAC cannot currently answer |
+| [standards-position.md](docs/standards-position.md) | Every standard and regulation that applies, and the honest status of each |
+| [EHIA.md](docs/EHIA.md) | Equality and health inequalities impact assessment — including who this could leave out, and how it could widen the inequality it means to narrow |
 | [latency.md](docs/latency.md) | Why joining takes ninety seconds |
 | [prior-art.md](docs/prior-art.md) | What has been tried before, and what became of it |
 | [what-to-borrow.md](docs/what-to-borrow.md) | What paper got right that we have not |
 | [outer-ring.md](docs/outer-ring.md) | Letting somebody read without joining |
 | [storyboard.md](docs/storyboard.md) | The demonstration, scene by scene |
 | [funding.md](docs/funding.md) | Where the money might come from |
+| [hearth-explained.md](docs/hearth-explained.md) | What Hearth is, how it works, and where to get it — the version to hand to somebody |
+| [the-case.md](docs/the-case.md) | Why Hearth exists, how it differs from what already exists, and the questions anybody will ask — with the honest answers |
 
 ---
 

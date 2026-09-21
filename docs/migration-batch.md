@@ -90,6 +90,41 @@ is written in the circle where everybody can see who gave it and when. It is a
 person's word, like everything else here; what makes it a safeguard is that
 it is a second person, and that it is visible.
 
+## Progress on the `migration-batch` branch
+
+| Item | State |
+| --- | --- |
+| 1. Every write checked wherever it lands | **Built.** Worse than audited: an *update* reached two of the three kinds of device unchecked. Every kind of write now goes through the same rules everywhere, and the catch-all is gone |
+| 2. The name on an invitation is signed | **Built.** Both signatures are over the key and the name together. Test: renaming somebody on an invitation is refused at the door |
+| 3. Limits every device checks | **Built.** 500 words (with an 8,000-character backstop), 200 characters for names, size caps on knocks and invitations, ten knocks per person per door. Five tests |
+| 4. Marking somebody as gone | **Built.** A `Departure` entry only the holder may write, never about herself; the newest decision counts. The Remove box offers this first and moving the circle as the choice for serious cases; the holder can let somebody back. Three tests |
+| 5. Their copy goes | **Built** with 4: their own app switches the circle off, deletes it, and says so |
+| 8. Coded values | **Built** — an empty optional space; saving keeps any codes a record has |
+| 7. Photos, sound and video | **Built, and walked in the demo on 19 September.** Photos shrunk to ~1600 px; sound recorded or chosen, up to two minutes; video recorded at 480p or chosen and shrunk to 480p in Hearth — a 4K phone video came out at 480p quickly, and a second member received it at once. Each with an optional "in words" box; nothing plays by itself. Four tests on the rules |
+| 9. A successor | **Built.** Naming a successor and a checker, starting, "I'm still here", checking in person, and taking over by moving the circle. Every device checks who may do each; the 14-day wait and 7-day "others may answer" are honoured by the app (minutes in the demo). Found in the demo walkthrough and fixed: a check was read back as a "still here" and dropped. Six tests |
+| 6. Encryption | **Design note written**, [encryption.md](encryption.md), with three decisions for Ceri. Not built |
+
+**Tests on the branch, 19 September 2026: 86, all passing.**
+
+**Captured, 19 September 2026, not decided: media in suggestions (7b).**
+Ceri's idea: any member may attach a photo, sound or video to a suggestion,
+and the holder decides whether it goes beside the section — as with text
+suggestions. Possible, and it fits what is built: the holder's item can name
+pieces a member wrote, because pieces are named by the hash of their content.
+
+It needs a limit every device checks, because anything a member sends is
+copied to every device **even if the holder sets it aside** — nothing written
+in a circle can be unwritten. Counted from the member's own chain, like the
+knock limit, so every device reaches the same answer. Example numbers to
+decide: **at most 3 media suggestions per member per 7 days, and 20 MB in
+total.** It changes the frozen rules (today only the holder may write media),
+so it belongs in this batch or costs a migration later.
+
+**A wording to confirm.** What the removed person's app says when it takes
+the circle off their device: *"You are no longer in Margaret Smythe's circle.
+The person who holds it has removed you, so it has been taken off this
+device."* It says what happened and nothing about why.
+
 ## What has to come with it
 
 Not changes to the frozen file, but nothing can be released without them:

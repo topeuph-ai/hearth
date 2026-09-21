@@ -103,7 +103,7 @@ What this does *not* settle is the part that was never software: how a proxy com
 |---|---|---|---|
 | **Nobody online when the record is needed** — every device in the circle asleep at 3am | Low–Medium | High | A liveness problem, not a redundancy one. See below |
 | A member's device is lost or stolen and readable | Medium | High | Device encryption; keep the local store encrypted at rest |
-| A member holding a copy reads content not meant for them | Medium | Medium | Encrypt contents to circle members at application level |
+| A member holding a copy reads content not meant for them | Medium | Medium | Contents are locked to circle members at application level — built on `migration-batch`, not yet released. A member who is *in* the circle holds the key, by design; what this stops is a member who has been removed |
 | Someone is admitted who should not have been | Low | High | Only the person or their proxy can admit |
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
 | A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |
@@ -245,7 +245,20 @@ Two removals are therefore planned, and they are not the same instrument:
 - **Marking somebody as gone** — proportionate for a professional leaving a case. Effective against ordinary use; not erasure; their device keeps receiving what it cannot show.
 - **Re-forming the circle** — for a safeguarding situation, or somebody who should not have been admitted. Excludes them by mathematics, and freezes their copy at the day it happens, because nothing is written to that circle afterwards.
 
-Two further measures are planned alongside them, and neither is built: **encrypting the record with a key that is replaced on removal**, so that material written afterwards cannot be opened on the removed person's device even by modified software; and **deleting the circle from that device** when its software sees the removal, which in Holochain 0.7 removes the local database file.
+Two further measures sit alongside them. Both are now built, on the
+`migration-batch` branch and not yet in a release: **encrypting the record with
+a key that is replaced on removal**, so that material written afterwards cannot
+be opened on the removed person's device even by modified software; and
+**deleting the circle from that device** when its software sees the removal,
+which in Holochain 0.7 removes the local database file.
+
+What is locked is the record, suggestions and why, photos, sound, video and
+their captions. What is not, and cannot be, is who wrote what and when: that is
+how every device checks the rules. How members describe themselves and the role
+on an acknowledgement are still in the open, and are the next to be locked.
+[encryption.md](encryption.md) sets out each of these, and what the change cost:
+limits on the *words* people write are now checked by the app rather than by
+every device, because a device cannot count what it cannot read.
 
 **Even together these must not be recorded or described as erasure.** Deletion depends on the removed person's own software acting on the removal; it does not happen on a modified copy or a device taken offline first. Deleting a file does not wipe the disk. And the platform provides no means of deleting an encryption key from the local keystore. They reduce the risk substantially for ordinary use and for a device examined later; they do not guarantee it.
 
@@ -271,7 +284,12 @@ Entries are held on other members' devices, so "delete everything" is not a sing
 
 **To do, in order**
 
-1. Encrypt entry contents to circle members, so a device holding a copy cannot read it
+1. ~~Encrypt entry contents to circle members, so a device holding a copy cannot
+   read it~~ — built on the `migration-batch` branch for the record,
+   suggestions and media; see [encryption.md](encryption.md). Still to do: the
+   role on an acknowledgement, how members describe themselves, and the
+   password Hearth should offer at startup so the keys are not simply as safe
+   as the device
 2. Document the always-on-device pattern for circles that need overnight availability
 3. Build to WCAG 2.2 AA from the first screen — these users include people with cognitive impairment and exhausted carers
 4. Write down how proxy decision-making works where someone lacks capacity

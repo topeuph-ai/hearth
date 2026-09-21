@@ -135,6 +135,26 @@ hc-spin prints an admin port per conductor into its own output:
 grep -oE 'admin_port":[0-9]+' demo.log | sort -u
 ```
 
+If that finds nothing — the sandbox now asks for port 0 and is given one — ask
+Windows which ports each conductor is listening on, and try each: the admin
+interface answers `listApps`, the app interface closes on you.
+
+```powershell
+Get-Process holochain | ForEach-Object { $p = $_.Id
+  (Get-NetTCPConnection -OwningProcess $p -State Listen |
+    Where-Object { $_.LocalAddress -eq "127.0.0.1" }).LocalPort }
+```
+
+**Each agent in the demo has its own keystore.** hc-spin builds a sandbox per
+agent and starts a `lair-keystore` in each (visible in the log as a `\ks`
+directory per sandbox). That is worth knowing, because it is the one thing the
+Rust test suite cannot reproduce in a single conductor: every agent there shares
+one keystore, so a key made for the holder can be reached by any of them, and
+"this person was never given that key" cannot be shown at all. Tests about keys
+therefore use two conductors — see `a_circle_on_two_devices` in
+`tests/tests/adversarial.rs` — and the demo is the place to watch it happen to
+real people on real screens.
+
 From there, `@holochain/client` will talk to them — it is already in
 `ui/node_modules`, so a script run from `ui/` can import it by name. Two
 things are easy to lose an hour to:
