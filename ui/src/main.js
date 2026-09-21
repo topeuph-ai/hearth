@@ -153,6 +153,36 @@ let keys = null;
 
 const $ = (id) => document.getElementById(id);
 
+/*
+ * Say so, when this is the practice copy.
+ *
+ * `import.meta.env.DEV` is true when the interface is served by the development
+ * server — which is what `npm run demo` does, and what an installed Hearth
+ * never does: it is built, and serves files from inside the app.
+ *
+ * This exists because the two are the same interface and cannot be told apart
+ * by looking. Three demo windows were once opened beside a real Hearth; a
+ * circle was made in one of them, and an invitation to it was sent to somebody
+ * in another town, who could never have reached it. The window said nothing,
+ * so now it does. The title changes too, for the taskbar.
+ */
+if (import.meta.env.DEV) {
+  const banner = $("practice-copy");
+  banner.hidden = false;
+  document.title = "Practice copy — Hearth demo";
+
+  // The announcer is fixed to the top of the window and would land on the
+  // banner. Tell it how far down to start — measured, because the banner wraps
+  // to two lines on a narrow window.
+  const measure = () =>
+    document.documentElement.style.setProperty(
+      "--practice-height",
+      `${banner.offsetHeight}px`,
+    );
+  measure();
+  window.addEventListener("resize", measure);
+}
+
 /** Whether this is your circle. Compares text, never byte arrays. */
 const isHolder = () => Boolean(holder) && holder === asText(me);
 

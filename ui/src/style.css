@@ -607,6 +607,38 @@ output {
 }
 
 /*
+ * The practice-copy banner, in the demo only.
+ *
+ * Deliberately not pretty and deliberately not dismissible. It is here because
+ * a demo window and an installed Hearth are the same interface, and side by
+ * side on one screen there was nothing to tell them apart — so an evening's
+ * work went into a circle nobody outside that machine could reach.
+ *
+ * In the normal flow of the page rather than fixed to the top, so it pushes
+ * everything down and cannot be scrolled out of sight or hidden under the
+ * announcer.
+ */
+#practice-copy {
+  /* Out to the edges, against the body's 1rem side padding, so it reads as a
+   * band across the window rather than as a message inside the page. */
+  margin: 0 -1rem;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  background: #8a2b06;
+  color: #ffffff; /* 6.4:1 on that ground */
+  border-bottom: 3px solid #4d1803;
+  font-size: 0.95rem;
+}
+
+/* The announcer is fixed to the top, so in the demo it would land on top of
+ * the banner. It sits below instead, by however tall the banner actually is —
+ * which is two lines on a narrow window and one on a wide one, so it is
+ * measured rather than assumed. Both are things somebody needs to read. */
+body:has(#practice-copy:not([hidden])) #announcer {
+  top: var(--practice-height, 2.6rem);
+}
+
+/*
  * What just happened, at the top of the window, on whatever page you are on.
  *
  * Not a status indicator and never permanent: it says a thing occurred and
