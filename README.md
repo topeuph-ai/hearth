@@ -283,6 +283,7 @@ Read the first one before the others.
 | [outer-ring.md](docs/outer-ring.md) | Letting somebody read without joining |
 | [storyboard.md](docs/storyboard.md) | The demonstration, scene by scene |
 | [funding.md](docs/funding.md) | Where the money might come from |
+| [hearth-explained.md](docs/hearth-explained.md) | What Hearth is, how it works, and where to get it — the version to hand to somebody |
 | [the-case.md](docs/the-case.md) | Why Hearth exists, how it differs from what already exists, and the questions anybody will ask — with the honest answers |
 
 ---
