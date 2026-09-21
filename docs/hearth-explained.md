@@ -156,9 +156,7 @@ version.
 
 **Not there yet, said plainly.** Nobody outside the project has used it. There
 has been no independent security review and no accessibility audit. It exists
-only in English. And because it lives on devices, it is least available to
-people without one — which is why it should sit alongside paper rather than
-replace it.
+only in English, and it runs on Windows.
 
 All of that is written up in the open, including the parts that are
 unflattering:
