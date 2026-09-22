@@ -273,6 +273,7 @@ Read the first one before the others.
 | [hard-questions.md](docs/hard-questions.md) | The questions a sceptical reviewer would ask, and the honest answer to each — including where the answer is not software |
 | [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
+| [upgrades.md](docs/upgrades.md) | How a circle survives a new version — and why neither a patch nor a minor release does it today |
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
 | [DPIA.md](docs/DPIA.md) | Data protection assessment |
