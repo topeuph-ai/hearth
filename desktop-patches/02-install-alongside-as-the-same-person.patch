@@ -1,0 +1,80 @@
+--- /tmp/const.orig	2026-09-22 19:08:49.750513900 +0100
++++ src/main/const.ts	2026-09-22 19:10:20.149813100 +0100
+@@ -39,7 +39,26 @@
+ );
+ 
+ export const HAPP_PATH = path.join(RESOURCES_DIRECTORY, 'kangaroo.happ');
+-export const HAPP_APP_ID = 'kangaroo.happ';
++/*
++ * HEARTH: the app id carries the rules version, and is bumped by hand.
++ *
++ * Kangaroo installs the hApp once and never again: installHappIfNecessary
++ * returns early if this id is already installed. That is right for an app
++ * whose rules never change, and wrong for this one - shipping new rules under
++ * the same id would mean nobody ever runs them.
++ *
++ * So the id changes when, and only when, the integrity zome changes. The new
++ * version then installs alongside the old one, in the same conductor and the
++ * same keystore, and circles are carried across rather than stranded. See
++ * docs/upgrades.md in the Hearth repository.
++ *
++ * 'kangaroo.happ' is what Hearth 0.2.0 to 0.2.4 installed. It stays on disk
++ * holding the circles made under those rules, and must not be reused.
++ */
++export const HAPP_APP_ID = 'hearth.rules.2';
++
++/** Every earlier rules version, newest first. Their circles still exist. */
++export const HEARTH_PREVIOUS_APP_IDS = ['kangaroo.happ'];
+ 
+ export const UI_DIRECTORY = path.join(RESOURCES_DIRECTORY, 'ui');
+ 
+--- /tmp/hm.orig	2026-09-22 19:08:49.725206000 +0100
++++ src/main/holochainManager.ts	2026-09-22 19:10:20.112410500 +0100
+@@ -7,7 +7,13 @@
+ import split from 'split';
+ import { AdminWebsocket, AppAuthenticationToken, AppInfo } from '@holochain/client';
+ import { KangarooFileSystem } from './filesystem';
+-import { CONDUCTOR_CONFIG_TEMPLATE, HAPP_APP_ID, HAPP_PATH, KANGAROO_CONFIG } from './const';
++import {
++  CONDUCTOR_CONFIG_TEMPLATE,
++  HAPP_APP_ID,
++  HAPP_PATH,
++  HEARTH_PREVIOUS_APP_IDS,
++  KANGAROO_CONFIG,
++} from './const';
+ import { app } from 'electron';
+ 
+ export type AdminPort = number;
+@@ -177,7 +183,31 @@
+     const installedApps = await this.adminWebsocket.listApps({});
+     if (installedApps.map((appInfo) => appInfo.installed_app_id).includes(HAPP_APP_ID)) return;
+     console.log(`Installing happ...`);
+-    const pubKey = await this.adminWebsocket.generateAgentPubKey();
++
++    /*
++     * HEARTH: the same person, across a change of rules.
++     *
++     * Kangaroo generates a new agent key on every install, which is right for
++     * a first install and wrong for this one. When new rules are installed
++     * beside old ones, a new key would make this person a stranger: their
++     * invitations would mean nothing, the people who know them would not
++     * recognise them, and circles they hold could not be carried across.
++     *
++     * So if this conductor already holds an earlier version of Hearth, the key
++     * that version uses is reused. Same keystore, same person; only the rules
++     * are new. See docs/upgrades.md in the Hearth repository.
++     */
++    const earlier = installedApps.find((appInfo) =>
++      HEARTH_PREVIOUS_APP_IDS.includes(appInfo.installed_app_id)
++    );
++    if (earlier) {
++      console.log(
++        `Installing ${HAPP_APP_ID} beside ${earlier.installed_app_id}, as the same agent.`
++      );
++    }
++    const pubKey = earlier
++      ? earlier.agent_pub_key
++      : await this.adminWebsocket.generateAgentPubKey();
+     const appInfo = await this.adminWebsocket.installApp({
+       agent_key: pubKey,
+       installed_app_id: HAPP_APP_ID,

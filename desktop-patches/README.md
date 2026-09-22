@@ -44,3 +44,38 @@ old one in the same directory, and carrying circles across — the rest of
 
 **Applied to the build machine's clone on 22 September 2026. Not yet in any
 release.**
+
+### 02 — install new rules alongside the old, as the same person
+
+Two changes, and neither is finished work on its own: see *What is still
+missing* below before building a release with this.
+
+**The app id now carries the rules version.** `HAPP_APP_ID` was
+`kangaroo.happ`, and Kangaroo installs that id once and never again. Shipping
+new rules under the same id means nobody ever runs them. It is now
+`hearth.rules.2`, and it changes when — and only when — the integrity zome
+changes. `HEARTH_PREVIOUS_APP_IDS` lists what came before, so the app knows
+where the older circles are.
+
+**The agent key is reused.** Kangaroo generates a new one on every install. Beside
+an existing installation that would make the person a stranger: invitations
+would mean nothing, nobody would recognise them, and the circles they hold could
+not be carried across. So if the conductor already holds an earlier version of
+Hearth, its key is reused. Same keystore, same person, new rules.
+
+#### What is still missing
+
+The interface only ever receives a token for one app (`getAppToken` uses
+`HAPP_APP_ID`, and `windows.ts` passes a single `INSTALLED_APP_ID` to the
+renderer). So with these patches applied and nothing else, a person who updates
+would see the new rules and **not** their old circles — which are still on disk,
+intact, and still theirs.
+
+**Do not release on these two patches alone.** What is needed next:
+
+1. A token per installed app, and both passed to the interface.
+2. The interface listing circles from both, with the old ones marked as
+   belonging to a version that is going away.
+3. The move across, using the mechanism that already exists.
+
+Steps 3 and 4 of [docs/upgrades.md](../docs/upgrades.md).

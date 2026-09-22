@@ -1,5 +1,5 @@
 --- /tmp/filesystem.ts.orig	2026-09-22 16:00:00.515090700 +0100
-+++ src/main/filesystem.ts	2026-09-22 16:00:26.952462700 +0100
++++ src/main/filesystem.ts	2026-09-22 19:10:20.177400100 +0100
 @@ -9,6 +9,16 @@
  
  export type Profile = string;
