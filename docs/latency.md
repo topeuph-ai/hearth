@@ -29,11 +29,46 @@ hypothesis.
 > cannot finish inside a twenty-second gossip round over a relay**, so each
 > attempt restarted instead of completing. Size and timeout together.
 >
+> ### Why it relayed: released Holochain cannot find a machine in the same room
+>
+> **Read in the source on 22 September 2026.** The whole of the iroh
+> transport's configuration in kitsune2 0.5.1 is: `relay_url`,
+> `relay_allow_plain_text`, `max_frame_bytes` (100 MiB, so frame size is not
+> the limit), `connect_timeout_s`, and relay auth material.
+>
+> **There is no local discovery of any kind.** No mDNS, no LAN option. That is
+> exactly what the Lightningrod Labs field-test build adds.
+>
+> So two machines on one home wifi:
+>
+> 1. have no way to find each other locally;
+> 2. learn of each other only from the bootstrap server, which gives a **relay
+>    address**;
+> 3. are behind the same router, so a direct path needs hole-punching that
+>    hairpins back through that router — and neither knows the other's local
+>    address to try;
+> 4. end up sending everything out to a relay on the internet and back.
+>
+> A twenty-second gossip round cannot move a two-minute video that way, which
+> is what the 83 timeouts are.
+>
+> **This makes local discovery a performance fix, not only an offline one.** On
+> 19 September, with the field-test build, those same two machines found each
+> other in about a minute *with no internet at all*. With local addresses the
+> media would move at wifi speed instead of through somebody else's data
+> centre.
+>
+> Firewall exclusions would not fix it. They might help hole-punching, but
+> without local discovery the two machines never learn each other's local
+> addresses to punch to.
+>
 > Three levers, in the order they are worth trying:
 >
-> 1. **Find out why it relayed at all.** Two machines on one network should
->    connect directly. If antivirus TLS inspection or NAT prevents
->    hole-punching, that is the whole problem and the rest is unnecessary.
+> 1. **Local discovery.** Build the current rules against the field-test
+>    Holochain and repeat the join with media. If ten minutes becomes seconds,
+>    that is the answer, and the conclusion is that Hearth needs local
+>    discovery in a release — which is already the standing question for
+>    upstream.
 > 2. **Stop making a joiner take the media.** A cell can run at
 >    `target_arc_factor: 0` — read without storing. A professional's laptop
 >    should not be accumulating copies of somebody's family photographs in any
