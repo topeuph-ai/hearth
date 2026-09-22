@@ -350,8 +350,25 @@ function suggestionWords(item) {
  */
 const authorOf = (record) => record?.signed_action?.hashed?.content?.header?.author;
 
+/*
+ * Circles made under earlier rules, and the connection each one needs.
+ *
+ * When the rules a circle is built from change, the new version of the app is
+ * installed beside the old one rather than replacing it, so both are running
+ * in the same conductor against the same keystore — the same person, with two
+ * sets of rules. The circles somebody already has live in the older one.
+ *
+ * Keyed by the circle's own identity, so `call` below can send each question
+ * to the app that can answer it without anything else in here knowing that
+ * two apps exist. See docs/upgrades.md.
+ */
+const earlierClients = new Map();
+
 async function call(fnName, payload, cellId) {
-  return client.callZome({
+  const where = cellId ? earlierClients.get(asText(cellId[0])) : null;
+  const speaking = where?.client ?? client;
+
+  return speaking.callZome({
     ...(cellId ? { cell_id: cellId } : { role_name: ROLE }),
     zome_name: ZOME,
     fn_name: fnName,
@@ -1937,6 +1954,10 @@ async function start() {
   const info = await client.appInfo();
   me = info.agent_pub_key;
 
+  // Circles made before the rules changed live in the older app beside this
+  // one. Reaching them is allowed to fail without stopping anything.
+  await connectToEarlierRules();
+
   await loadCircles();
 
   /*
@@ -3160,6 +3181,70 @@ async function circleAlreadyHere(bundle) {
   return null;
 }
 
+/*
+ * Connect to any earlier version of the rules still installed on this machine.
+ *
+ * The desktop app puts what it knows in `__HEARTH_EARLIER_APPS__`: one entry
+ * per older version that is actually installed, with a token for it. Empty on
+ * a first install, and empty in the browser demo, where there has never been
+ * an older version to keep.
+ *
+ * Failing to connect to an old app must never stop the new one starting. The
+ * circles in it are safe on disk either way, and saying so is better than a
+ * blank screen.
+ */
+async function connectToEarlierRules() {
+  const earlier = globalThis.__HEARTH_EARLIER_APPS__ ?? [];
+  const port = globalThis.__HC_LAUNCHER_ENV__?.APP_INTERFACE_PORT;
+  if (!earlier.length || !port) return;
+
+  for (const app of earlier) {
+    try {
+      const older = await AppWebsocket.connect({
+        url: new URL(`ws://127.0.0.1:${port}`),
+        token: Uint8Array.from(app.token),
+      });
+      const info = await older.appInfo();
+      for (const raw of info.cell_info[ROLE] ?? []) {
+        const cell = raw?.value ?? raw?.cloned ?? raw;
+        if (!cell?.cell_id) continue;
+        earlierClients.set(asText(cell.cell_id[0]), {
+          client: older,
+          installedAppId: app.installed_app_id,
+          info,
+        });
+      }
+    } catch (error) {
+      console.error(`Could not reach ${app.installed_app_id}.`, error);
+    }
+  }
+}
+
+/** The circles in every earlier version, marked as being on their way out. */
+function circlesUnderEarlierRules() {
+  const seen = new Set();
+  const out = [];
+
+  for (const { info } of earlierClients.values()) {
+    if (!info || seen.has(info)) continue;
+    seen.add(info);
+
+    for (const raw of info.cell_info[ROLE] ?? []) {
+      const cell = raw?.value ?? raw?.cloned ?? raw;
+      if (!cell?.clone_id) continue;
+      if (propertiesOf(cell)?.waiting_for) continue;
+      if (cell.enabled === false) continue;
+      out.push({
+        cellId: cell.cell_id,
+        name: cell.name ?? "A circle",
+        asksTwo: Boolean(propertiesOf(cell)?.requires_second_yes),
+        olderRules: true,
+      });
+    }
+  }
+  return out;
+}
+
 async function loadCircles() {
   const info = await client.appInfo();
   const cells = info.cell_info[ROLE] ?? [];
@@ -3191,6 +3276,20 @@ async function loadCircles() {
       asksTwo: Boolean(propertiesOf(c)?.requires_second_yes),
     }));
 
+  /*
+   * And the circles made before the rules changed, which live in the older
+   * app beside this one. They are still hers, still readable, and still
+   * waiting to be carried across — so they belong on the same list rather
+   * than somewhere she has to go looking.
+   */
+  circles = circles.concat(
+    circlesUnderEarlierRules().map((older) => ({
+      ...older,
+      name: labelFor(older.cellId, older.name),
+      madeWith: older.name,
+    })),
+  );
+
   if (circles.length === 0) {
     show("choose");
     return;
@@ -3212,6 +3311,20 @@ function renderCircles() {
     // Just their name. No counts, no badges, no "2 new". She is looking
     // somebody up, not clearing a queue.
     button.textContent = item.name;
+
+    /*
+     * The one exception, and it is not a badge about activity: a circle made
+     * before the rules changed. It still opens and still reads; what it
+     * cannot do is anything the newer rules added, and it will need carrying
+     * across. Saying so on the list is kinder than letting her find out
+     * inside. See docs/upgrades.md.
+     */
+    if (item.olderRules) {
+      const note = document.createElement("span");
+      note.className = "older-rules";
+      note.textContent = "made with an older version";
+      button.append(note);
+    }
     button.addEventListener("click", () => openCircle(item).catch(problem));
     li.append(button);
     list.append(li);

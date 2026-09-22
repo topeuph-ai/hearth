@@ -63,19 +63,25 @@ would mean nothing, nobody would recognise them, and the circles they hold could
 not be carried across. So if the conductor already holds an earlier version of
 Hearth, its key is reused. Same keystore, same person, new rules.
 
+**A token for every installed version.** `getEarlierAppTokens()` issues one per
+earlier version of Hearth that is actually installed, `launch.ts` asks for them,
+and `windows.ts` puts them in the page as `window.__HEARTH_EARLIER_APPS__`
+beside the launcher's own environment. Empty on a first install.
+
+The interface side is in this repository rather than in this patch: it connects
+to each earlier version at startup, lists those circles beside the current ones
+marked *"made with an older version"*, and routes every question about a circle
+to the app that can answer it.
+
 #### What is still missing
 
-The interface only ever receives a token for one app (`getAppToken` uses
-`HAPP_APP_ID`, and `windows.ts` passes a single `INSTALLED_APP_ID` to the
-renderer). So with these patches applied and nothing else, a person who updates
-would see the new rules and **not** their old circles — which are still on disk,
-intact, and still theirs.
+**The move across versions** — step 3 of
+[docs/upgrades.md](../docs/upgrades.md). An older circle can be opened and read;
+it cannot yet be carried to the new rules. The mechanism it will use (moving a
+circle) is built and tested; what is missing is founding the new circle in the
+*new* app rather than the old one.
 
-**Do not release on these two patches alone.** What is needed next:
-
-1. A token per installed app, and both passed to the interface.
-2. The interface listing circles from both, with the old ones marked as
-   belonging to a version that is going away.
-3. The move across, using the mechanism that already exists.
-
-Steps 3 and 4 of [docs/upgrades.md](../docs/upgrades.md).
+**And it has never been run.** These patches type-check and the interface
+passes its own checks, but no build has been made and no machine has been
+through an actual upgrade. Nothing here should be trusted until a circle made
+on 0.2.4 has been opened by a later version on two machines.

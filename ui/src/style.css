@@ -607,6 +607,27 @@ output {
 }
 
 /*
+ * "made with an older version", beside a circle's name.
+ *
+ * Quiet on purpose. It is not a warning and nothing is wrong: the circle
+ * opens, reads and belongs to her exactly as it did. It is here so that
+ * finding out happens on the list rather than inside, when something the
+ * newer rules added turns out not to be there. See docs/upgrades.md.
+ */
+.older-rules {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.circle-link .older-rules {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/*
  * The practice-copy banner, in the demo only.
  *
  * Deliberately not pretty and deliberately not dismissible. It is here because

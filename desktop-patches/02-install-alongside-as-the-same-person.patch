@@ -29,7 +29,7 @@
  export const UI_DIRECTORY = path.join(RESOURCES_DIRECTORY, 'ui');
  
 --- /tmp/hm.orig	2026-09-22 19:08:49.725206000 +0100
-+++ src/main/holochainManager.ts	2026-09-22 19:10:20.112410500 +0100
++++ src/main/holochainManager.ts	2026-09-22 19:16:15.455590300 +0100
 @@ -7,7 +7,13 @@
  import split from 'split';
  import { AdminWebsocket, AppAuthenticationToken, AppInfo } from '@holochain/client';
@@ -78,3 +78,105 @@
      const appInfo = await this.adminWebsocket.installApp({
        agent_key: pubKey,
        installed_app_id: HAPP_APP_ID,
+@@ -212,4 +242,37 @@
+     this.appToken = response.token;
+     return response.token;
+   }
++
++  /*
++   * HEARTH: a way in to the circles made under earlier rules.
++   *
++   * When the rules change, the new version installs beside the old one rather
++   * than replacing it, so the conductor holds both. The circles somebody
++   * already has live in the older app, and the interface cannot see them
++   * without a token of its own for it.
++   *
++   * Returns one entry per earlier version of Hearth that is actually
++   * installed, newest first, so that the interface can list those circles,
++   * mark them as belonging to a version that is going away, and carry them
++   * across. See docs/upgrades.md in the Hearth repository.
++   */
++  async getEarlierAppTokens(): Promise<
++    Array<{ installedAppId: string; token: AppAuthenticationToken }>
++  > {
++    const installed = (await this.adminWebsocket.listApps({})).map(
++      (appInfo) => appInfo.installed_app_id
++    );
++
++    const tokens: Array<{ installedAppId: string; token: AppAuthenticationToken }> = [];
++    for (const installedAppId of HEARTH_PREVIOUS_APP_IDS) {
++      if (!installed.includes(installedAppId)) continue;
++      const response = await this.adminWebsocket.issueAppAuthenticationToken({
++        installed_app_id: installedAppId,
++        single_use: false,
++        expiry_seconds: 0,
++      });
++      tokens.push({ installedAppId, token: response.token });
++    }
++    return tokens;
++  }
+ }
+--- /tmp/windows.orig	2026-09-22 19:14:56.598489300 +0100
++++ src/main/windows.ts	2026-09-22 19:16:15.412976700 +0100
+@@ -29,7 +29,13 @@
+   appId: InstalledAppId,
+   appPort: number,
+   appAuthToken: AppAuthenticationToken,
+-  openDevtools: boolean
++  openDevtools: boolean,
++  /*
++   * HEARTH: earlier versions of the rules that are still installed, so the
++   * interface can reach the circles somebody already has. Empty on a first
++   * install. See docs/upgrades.md in the Hearth repository.
++   */
++  earlierApps: Array<{ installedAppId: string; token: AppAuthenticationToken }> = []
+ ): Promise<BrowserWindow> => {
+   // TODO create mapping between installed-app-id's and window ids
+   if (!appPort) throw new Error('App port not defined.');
+@@ -53,7 +59,14 @@
+         const content = await indexHtmlResponse.text();
+         let modifiedContent = content.replace(
+           '<head>',
+-          `<head><script type="module">window.__HC_LAUNCHER_ENV__ = { APP_INTERFACE_PORT: ${appPort}, INSTALLED_APP_ID: "${appId}", APP_INTERFACE_TOKEN: [${appAuthToken}] };</script>`
++          `<head><script type="module">window.__HC_LAUNCHER_ENV__ = { APP_INTERFACE_PORT: ${appPort}, INSTALLED_APP_ID: "${appId}", APP_INTERFACE_TOKEN: [${appAuthToken}] };` +
++            // HEARTH: how to reach the circles made under earlier rules.
++            `window.__HEARTH_EARLIER_APPS__ = ${JSON.stringify(
++              earlierApps.map((earlier) => ({
++                installed_app_id: earlier.installedAppId,
++                token: Array.from(earlier.token),
++              }))
++            )};</script>`
+         );
+         // remove title attribute to be able to set title to app id later
+         modifiedContent = modifiedContent.replace(/<title>.*?<\/title>/i, '');
+--- /tmp/launch.orig	2026-09-22 19:14:56.566367900 +0100
++++ src/main/launch.ts	2026-09-22 19:16:15.382148200 +0100
+@@ -93,6 +93,18 @@
+ 
+   const appToken = await holochainManager.getAppToken();
+ 
++  /*
++   * HEARTH: a way in to the circles made under earlier rules, if this machine
++   * has any. Empty on a first install. See docs/upgrades.md.
++   */
++  const earlierApps = await holochainManager.getEarlierAppTokens();
++  if (earlierApps.length) {
++    console.log(
++      'Earlier Hearth rules still installed:',
++      earlierApps.map((earlier) => earlier.installedAppId).join(', ')
++    );
++  }
++
+   console.log('Starting main window...');
+ 
+   if (splashscreenWindow) splashscreenWindow.close();
+@@ -105,7 +117,8 @@
+     HAPP_APP_ID,
+     holochainManager.appPort,
+     appToken,
+-    false
++    false,
++    earlierApps
+   );
+ 
+   return {
