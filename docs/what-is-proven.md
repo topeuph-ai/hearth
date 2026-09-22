@@ -283,6 +283,39 @@ That changes what to do about it, and the first thing is not about media at
 all: **find out why two machines on one network were talking through a relay.**
 See [`latency.md`](latency.md) for the three levers and the order to try them.
 
+### ✅ With local discovery, the same media moved quickly — 22 September 2026
+
+The same two machines, the same rules, the same photograph and video. The only
+difference: a build using the Lightningrod Labs field-test Holochain, with
+`mdnsBootstrap` and `irohTransport.enableLanDiscovery` switched on, so the
+machines can find each other on the wifi instead of being introduced through a
+relay on the internet.
+
+**The video reached the laptop very quickly**, against about ten minutes on the
+released build an hour earlier.
+
+**Two honest caveats.** The PC's wifi adapter switched itself off partway
+through, so the run began looking like a failure and recovered when the adapter
+came back — which is evidence of its own about recovering after a network
+interruption, but it means **nothing was timed with a stopwatch**. And it is one
+run, not a measurement.
+
+**What it supports.** The ten-minute join was not caused by media being large.
+It was caused by media being large *and* having to travel through a relay in
+twenty-second gossip rounds that never completed. Given a direct path on the
+local network, the same data moves at wifi speed.
+
+**What would make it conclusive:** the two builds back to back, same circle,
+same media, timed. Worth doing before the claim is repeated anywhere that
+matters.
+
+**What it means for the project.** Local discovery is not only the thing that
+makes Hearth work with no internet — it is what makes photographs, sound and
+video usable at all when everybody is in the same building, which is the
+ordinary case for a person and the people looking after them. Released
+Holochain 0.7.0 has no local discovery, so this remains a field-test build.
+See [`latency.md`](latency.md).
+
 ### It conforms to the standard it claims
 
 Checked field by field against the PRSB About Me JSON. See
