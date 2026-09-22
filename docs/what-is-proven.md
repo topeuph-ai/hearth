@@ -235,6 +235,13 @@ A new circle was then made under the new rules and joined from the other
 machine, which is also the first time **the locked record has run on two real
 machines**.
 
+**Done twice, on two separate apps.** The field-test build later the same
+evening carries the same packaging changes under its own app id
+(`uk.topeuph.hearthlan`), and installing it over the LAN build from 19 September
+did the same thing: the older circles listed, marked *"made with an older
+version"*, and the marking on the right ones. Two apps, two machines, one
+result.
+
 **What this does not show.** An old circle cannot yet be *carried across* to the
 new rules — it can only be opened and read where it is. That is step 3 of
 [`upgrades.md`](upgrades.md) and it is not built. And this was an upgrade within
