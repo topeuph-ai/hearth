@@ -290,6 +290,9 @@ cd hearth-desktop
 # In kangaroo.config.ts: appId 'uk.topeuph.hearth', productName 'Hearth',
 # and version — bump it every release, or the installer keeps the old name.
 gh release download --repo topeuph-ai/hearth --pattern 'hearth.webhapp' --dir pouch/
+# Hearth's own changes to Kangaroo. The first one stops a version bump from
+# destroying every circle on the machine - see docs/upgrades.md.
+git apply ../aboutme/desktop-patches/*.patch
 npx yarn@1 install
 npx yarn@1 setup       # fetches and checksums the Holochain binaries
 npx yarn@1 build:win   # or build:linux, build:mac-arm64, build:mac-x64
