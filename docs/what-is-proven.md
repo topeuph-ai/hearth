@@ -262,9 +262,26 @@ that makes joining slowest. The known lever is that a joiner need not store the
 whole circle — Holochain can run a cell at `target_arc_factor: 0`, reading
 without holding, which is also a privacy improvement. Not attempted.
 
-**Still to do: read the laptop's log from that join, and time a join with and
-without media.** Until then this is a suspicion with a plausible mechanism, not
-a diagnosis.
+**The log was read the same evening, and the suspicion was half right.** From
+the laptop's own log:
+
+- **83 gossip rounds timed out**, one about every twenty seconds, from 18:40:33
+  to 18:56:30 — sixteen minutes of rounds starting and failing.
+- Every one of them names the peer as
+  `https://dev-test-bootstrap2.holochain.org:443/…`, so the address went
+  **through Holochain's public development relay** — for two machines on the
+  same home wifi.
+- `ERROR integrate_dht_ops_consumer: database is locked` during a fifty-second
+  stall: the workflow that files arriving data was also fighting for the
+  database.
+
+So it is **not simply that the video is large. A large payload cannot finish
+inside a twenty-second gossip round over a relay**, so each attempt restarted
+rather than completing. Size and timeout together.
+
+That changes what to do about it, and the first thing is not about media at
+all: **find out why two machines on one network were talking through a relay.**
+See [`latency.md`](latency.md) for the three levers and the order to try them.
 
 ### It conforms to the standard it claims
 
