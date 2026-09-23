@@ -4479,3 +4479,40 @@ async fn the_words_behind_a_pass_are_not_a_back_door() {
         "a member's device cannot hand out a record it does not hold"
     );
 }
+
+/// Found in review, 23 September 2026: a device without the circle's newest key
+/// used to lock with the newest one it had. After a removal, that older key is
+/// exactly the one the removed person still holds. Now nothing is written with
+/// an older key: a member waits a moment for the new one, and the removed
+/// person's own device cannot write anything its old key opens.
+#[tokio::test(flavor = "multi_thread")]
+async fn nothing_is_locked_with_a_key_older_than_the_newest() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
+
+    let _: Record = conductors
+        .get(0)
+        .unwrap()
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob_cell.agent_pubkey().to_string(),
+                removed: true,
+            },
+        )
+        .await;
+
+    // His device hears that there is a key 2. It is never sealed to him.
+    keys_until_on(&conductors, 1, &bob_cell, |k| k.epoch == 2).await;
+
+    let written: Result<Record, _> = conductors
+        .get(1)
+        .unwrap()
+        .call_fallible(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+    assert!(
+        written.is_err(),
+        "nothing may be locked with key 1 once the circle has key 2"
+    );
+}

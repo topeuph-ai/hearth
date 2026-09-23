@@ -73,6 +73,8 @@ record.** This is first because it is first.
 
 ### What is waiting for the next version of the integrity zome
 
+**Closed in the migration batch (Hearth 0.2.5 onwards, test release 0.2.7).** Every kind of write now goes through the same rules wherever it lands, and the catch-all is gone — see item 1 in [migration-batch.md](migration-batch.md). What follows is kept as it was written, because it is the record of why. It still describes 0.2.4 and earlier, which is the recommended release until the batch has been tested.
+
 Because the file cannot be touched, things found in it queue up here rather
 than getting fixed. There is one so far, found in an audit on 2026-09-09.
 
@@ -573,6 +575,8 @@ means "the tests pass" and "the shipped app is correct" were never quite the
 same sentence.
 
 ## 1. The record is not encrypted at rest
+
+**Largely addressed in the migration batch (test release 0.2.7 onwards):** the record, suggestions, media and roles are locked to the circle with keys that change when somebody is removed — see [encryption.md](encryption.md). Not yet independently reviewed, so it should be described as an encryption design and implementation under review, not as secure. What members hold from before a removal they keep; that cannot be undone by anybody. The text below describes 0.2.4 and earlier.
 
 Entries are validated, signed, and reachable only by people the membrane
 admitted. But **every member's machine holds the contents in the clear**, and
