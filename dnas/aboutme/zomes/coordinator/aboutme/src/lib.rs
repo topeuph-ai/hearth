@@ -6,6 +6,8 @@
 //! which is the thing to resolve before this becomes a product.
 
 use aboutme_integrity::*;
+use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
 
@@ -171,17 +173,18 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
     })?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), invitee.clone())?;
+    let name = input.name.trim().to_string();
+    // Over the key and the name together, so neither can be changed on the way
+    // to the person who has to agree.
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: invitee.clone(),
+            name: name.clone(),
+        },
+    )?;
 
-    let about = match get_circle_about_me(())?.first() {
-        Some(original) => get_current_about_me(original.clone())?
-            .record
-            .and_then(|r| r.entry().as_option().cloned())
-            .and_then(|e| AboutMe::try_from(e).ok())
-            .map(|a| a.display_name)
-            .unwrap_or_default(),
-        None => String::new(),
-    };
+    let about = the_name_here()?;
 
     let appointed = appointment_now()?;
     let seconder = appointed.as_ref().map(|(_, key)| key.to_string());
@@ -202,7 +205,7 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
         founder: me.to_string(),
         inviter,
         invitee: invitee.to_string(),
-        invitee_name: input.name.trim().to_string(),
+        invitee_name: name.clone(),
         seconder,
         requires_second_yes: asks_two,
         network_seed: dna_info()?.modifiers.network_seed,
@@ -213,15 +216,25 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
             // invitation is incomplete until they do.
             seconded: None,
             appointment: appointed.map(|(hash, _)| hash),
+            name,
         },
     })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SecondInput {
+    /// Their identifier, as text.
+    pub invitee: String,
+    /// The name the holder gave them, exactly as she signed it.
+    #[serde(default)]
+    pub name: String,
 }
 
 /// Add the second agreement to an invitation somebody else has started.
 ///
 /// Called by whoever the circle named as its seconder, on their own machine,
 /// with the invitee's identifier in front of them. They are signing the same
-/// thing the holder signed — that person's key, and nothing else.
+/// thing the holder signed — that person's key and the name she gave them.
 ///
 /// Deliberately not a "vote" or an "approval workflow". There is nothing to
 /// approve and nobody to approve it to: two people sign, or the invitation
@@ -234,12 +247,18 @@ pub fn invite(input: InviteInput) -> ExternResult<InvitationBundle> {
 /// like any other. The check that matters is in the membrane, where every peer
 /// makes it independently.
 #[hdk_extern]
-pub fn second_an_invitation(invitee: String) -> ExternResult<Signature> {
-    let invitee = AgentPubKey::try_from(invitee.trim())
+pub fn second_an_invitation(input: SecondInput) -> ExternResult<Signature> {
+    let invitee = AgentPubKey::try_from(input.invitee.trim())
         .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    sign(me, invitee)
+    sign(
+        me,
+        WhoIsLetIn {
+            invitee,
+            name: input.name.trim().to_string(),
+        },
+    )
 }
 
 /// Whether this circle asks two people to agree, and who the second is.
@@ -428,9 +447,13 @@ pub fn get_members(_: ()) -> ExternResult<Vec<Record>> {
     Ok(out)
 }
 
+/// Write the record. The words are locked with the circle's key on the way in.
+///
+/// The app passes the words as they were typed; nothing outside this zome ever
+/// handles the locked form, and nothing inside it writes the words in the open.
 #[hdk_extern]
 pub fn create_about_me(about_me: AboutMe) -> ExternResult<Record> {
-    let action_hash = create_entry(EntryTypes::AboutMe(about_me))?;
+    let action_hash = create_entry(EntryTypes::AboutMe(lock_about_me(&about_me)?))?;
 
     let path = circle_path()?;
     path.ensure()?;
@@ -456,7 +479,7 @@ pub struct UpdateAboutMeInput {
 
 #[hdk_extern]
 pub fn update_about_me(input: UpdateAboutMeInput) -> ExternResult<Record> {
-    let updated = update_entry(input.previous_action_hash, &input.about_me)?;
+    let updated = update_entry(input.previous_action_hash, &lock_about_me(&input.about_me)?)?;
 
     create_link(
         input.original_action_hash,
@@ -558,6 +581,16 @@ pub fn get_about_me_versions(original_action_hash: ActionHash) -> ExternResult<V
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CurrentAboutMe {
     pub record: Option<Record>,
+    /// The words, opened with the circle's key.
+    ///
+    /// What the record says is here and not in `record`, whose entry holds the
+    /// locked form. Empty where there is no record, and where this device
+    /// cannot open the one there is — a device that has been removed from the
+    /// circle, or has not caught up with its keys yet. The screen says which,
+    /// because the two are nothing alike to the person looking.
+    pub about_me: Option<AboutMe>,
+    /// True where there is a record this device cannot open.
+    pub locked_out: bool,
     /// How many versions have nothing written on top of them.
     ///
     /// One is the ordinary case however many times the record has been
@@ -604,9 +637,20 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .count()
         .max(1);
 
+    // Already in hand from the batch above, so no second trip for it.
+    let record = fetched.into_iter().find(|r| r.action_address() == &newest);
+
+    let written = record
+        .as_ref()
+        .and_then(|r| r.entry().as_option().cloned())
+        .and_then(|e| AboutMe::try_from(e).ok());
+    let about_me = written.as_ref().and_then(|w| unlock_about_me(w).ok());
+    let locked_out = written.is_some() && about_me.is_none();
+
     Ok(CurrentAboutMe {
-        // Already in hand from the batch above, so no second trip for it.
-        record: fetched.into_iter().find(|r| r.action_address() == &newest),
+        record,
+        about_me,
+        locked_out,
         divergent_versions,
     })
 }
@@ -621,9 +665,20 @@ pub struct AcknowledgeInput {
 #[hdk_extern]
 pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
     let role = input.role.clone();
+    // Checked here, since nothing can check it once it is locked.
+    if name_too_long(&role) {
+        return Err(wasm_error!(
+            "What you say you are can be up to 200 characters"
+        ));
+    }
     let ack = Acknowledgement {
         about_me: input.about_me.clone(),
-        role: input.role,
+        role: String::new(),
+        locked: Some(lock(
+            ExternIO::encode(&role)
+                .map_err(|e| wasm_error!(format!("Could not pack the role to lock it: {e:?}")))?
+                .into_vec(),
+        )?),
     };
     let action_hash = create_entry(EntryTypes::Acknowledgement(ack))?;
 
@@ -656,9 +711,21 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("Could not read the acknowledgement just written"))
 }
 
+/// Somebody's "I have read this", with the role they claimed opened.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WhoRead {
+    pub record: Record,
+    /// What they said they were. Empty where this device cannot open it, which
+    /// the screen shows as a read by somebody whose claim it cannot see —
+    /// never as somebody who claimed nothing.
+    pub role: String,
+    /// True where there is a role this device cannot open.
+    pub locked_out: bool,
+}
+
 /// Who has read a given version of About Me.
 #[hdk_extern]
-pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
+pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<WhoRead>> {
     let wanted = about_me.clone();
     let links = get_links(
         LinkQuery::try_new(about_me, LinkTypes::AboutMeToAcknowledgement)?,
@@ -688,7 +755,33 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<Record>> {
     // Who read it, in the order they read it, the same way on every device.
     oldest_first(&mut records);
 
-    Ok(records)
+    Ok(records
+        .into_iter()
+        .map(|record| {
+            let ack = record
+                .entry()
+                .to_app_option::<Acknowledgement>()
+                .ok()
+                .flatten();
+            let (role, locked_out) = match ack.as_ref().and_then(|a| a.locked.as_ref()) {
+                Some(locked) => match unlock(locked).and_then(|w| {
+                    ExternIO::from(w)
+                        .decode::<String>()
+                        .map_err(|e| wasm_error!(format!("{e:?}")))
+                }) {
+                    Ok(role) => (role, false),
+                    Err(_) => (String::new(), true),
+                },
+                // Written before the roles were locked.
+                None => (ack.map(|a| a.role).unwrap_or_default(), false),
+            };
+            WhoRead {
+                record,
+                role,
+                locked_out,
+            }
+        })
+        .collect())
 }
 
 /// Delete a record. Validation permits this only to the record's own author,
@@ -860,11 +953,16 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
      * nothing and can say something useful.
      */
     let me = agent_info()?.agent_initial_pubkey;
+    // What both signatures are over: this key, and the name the holder gave it.
+    let who = WhoIsLetIn {
+        invitee: me.clone(),
+        name: input.invitation.name.clone(),
+    };
 
     if !verify_signature(
         founder.clone(),
         input.invitation.signature.clone(),
-        me.clone(),
+        who.clone(),
     )? {
         return Err(wasm_error!(
             "This invitation was not made for you, or not by the person whose \
@@ -904,7 +1002,7 @@ pub fn join_circle(input: JoinCircleInput) -> ExternResult<ClonedCell> {
             ));
         };
 
-        if !verify_signature(seconder, seconded, me)? {
+        if !verify_signature(seconder, seconded, who)? {
             return Err(wasm_error!(
                 "The second agreement on this invitation is not from the person \
                  this circle asks to give it."
@@ -957,6 +1055,29 @@ pub fn leave_circle(dna_hash: DnaHash) -> ExternResult<()> {
 #[hdk_extern]
 pub fn rejoin_circle(dna_hash: DnaHash) -> ExternResult<ClonedCell> {
     enable_clone_cell(EnableCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash),
+    })
+}
+
+/// Take a circle off this device for good — for somebody who has been removed.
+///
+/// Leaving switches a circle off and keeps it, so that somebody who changes
+/// their mind finds it as it was. Being removed is different: the holder has
+/// decided, and what is on this device should go with the decision. So the
+/// circle is switched off and then deleted, and Holochain 0.7 removes its
+/// database from this device (`delete_clone_cell` calls
+/// `delete_cell_databases`, checked in the conductor source).
+///
+/// Carried out by this device's own app, because nothing else can reach it.
+/// A modified app need not call it, and deleting a file is not wiping a disk;
+/// see docs/how-it-works.md. If they are ever let back in, they start fresh.
+#[hdk_extern]
+pub fn forget_circle(dna_hash: DnaHash) -> ExternResult<()> {
+    // Already switched off is fine; deleting needs it off either way.
+    let _ = disable_clone_cell(DisableCloneCellInput {
+        clone_cell_id: CloneCellId::DnaHash(dna_hash.clone()),
+    });
+    delete_clone_cell(DeleteCloneCellInput {
         clone_cell_id: CloneCellId::DnaHash(dna_hash),
     })
 }
@@ -1056,6 +1177,17 @@ pub enum Signal {
         #[serde(default)]
         removed: String,
     },
+    /// Somebody used a pass to read part of the record.
+    ///
+    /// Emitted by the holder's own device to the holder's own screen, never
+    /// sent between devices: it is the holder's device that answered, so it is
+    /// the only one that knows. See `read_with_a_pass`.
+    PassUsed {
+        /// Who the pass was made for, in the holder's words.
+        for_whom: String,
+        sections: Vec<AboutMeField>,
+        at: Timestamp,
+    },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -1113,6 +1245,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Appointed { by, .. }
         | Signal::Answered { by, .. }
         | Signal::Moved { by, .. } => by,
+        // Only ever raised by this device to its own screen. Arriving from
+        // another machine it can only be a forgery, and is dropped.
+        Signal::PassUsed { .. } => return Ok(()),
     };
 
     if claimed != &caller {
@@ -1134,13 +1269,36 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
      * checks the other half: that the new circle is hers too.
      */
     if let Signal::Moved { .. } = &signal {
-        match membrane()? {
-            Membrane::Founder(founder, _) if founder == caller => {}
-            _ => return Ok(()),
+        if !may_move_this_circle(&caller)? {
+            return Ok(());
         }
     }
 
     emit_signal(signal)
+}
+
+/// Whether this agent may move this circle: its holder, or a successor whose
+/// taking over stands.
+///
+/// For a successor that means: named by the holder in the newest naming, a
+/// claim by them under it, no "I'm still here" from the holder, and at least
+/// one person — neither of them — having checked and said she cannot carry
+/// on. The waiting period is checked by the app as well, because time is a
+/// question each device answers for itself; see `get_succession`.
+fn may_move_this_circle(agent: &AgentPubKey) -> ExternResult<bool> {
+    let Membrane::Founder(founder, _) = membrane()? else {
+        return Ok(false);
+    };
+    if &founder == agent {
+        return Ok(true);
+    }
+    let state = get_succession(())?;
+    let Some(claim) = state.claim else {
+        return Ok(false);
+    };
+    Ok(claim.by == agent.to_string()
+        && !claim.still_here
+        && claim.checks.iter().any(|c| !c.holder_can_carry_on))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1177,13 +1335,11 @@ pub fn tell_them_it_moved(input: MovedInput) -> ExternResult<()> {
 
     // Their apps would drop it anyway. Saying so here turns a silent nothing
     // into a sentence.
-    match membrane()? {
-        Membrane::Founder(founder, _) if founder == me => {}
-        _ => {
-            return Err(wasm_error!(
-                "Only the person who holds a circle can move it"
-            ))
-        }
+    if !may_move_this_circle(&me)? {
+        return Err(wasm_error!(
+            "Only the person who holds a circle, or a successor whose taking \
+             over stands, can move it"
+        ));
     }
 
     send_remote_signal(
@@ -1213,7 +1369,7 @@ fn suggestion_path() -> ExternResult<TypedPath> {
 
 #[hdk_extern]
 pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
-    let action_hash = create_entry(EntryTypes::Suggestion(suggestion.clone()))?;
+    let action_hash = create_entry(EntryTypes::Suggestion(lock_suggestion(&suggestion)?))?;
 
     let path = suggestion_path()?;
     path.ensure()?;
@@ -1248,6 +1404,12 @@ pub fn suggest(suggestion: Suggestion) -> ExternResult<Record> {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SuggestionWithOutcome {
     pub suggestion: Record,
+    /// What was offered, opened with the circle's key.
+    ///
+    /// Where the words are, as with the record: the entry holds the sealed
+    /// form. None where this device cannot open it, and the screen says so
+    /// rather than showing a suggestion with nothing in it.
+    pub words: Option<Suggestion>,
     /// None means the holder has not looked at it yet.
     pub outcome: Option<Record>,
 }
@@ -1371,8 +1533,16 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
                 .cloned();
         }
 
+        let words = suggestion
+            .entry()
+            .to_app_option::<Suggestion>()
+            .ok()
+            .flatten()
+            .and_then(|s| unlock_suggestion(&s).ok());
+
         out.push(SuggestionWithOutcome {
             suggestion,
+            words,
             outcome,
         });
     }
@@ -1472,15 +1642,7 @@ fn bundle_around(
 ) -> ExternResult<InvitationBundle> {
     let me = agent_info()?.agent_initial_pubkey;
 
-    let about = match get_circle_about_me(())?.first() {
-        Some(original) => get_current_about_me(original.clone())?
-            .record
-            .and_then(|r| r.entry().as_option().cloned())
-            .and_then(|e| AboutMe::try_from(e).ok())
-            .map(|a| a.display_name)
-            .unwrap_or_default(),
-        None => String::new(),
-    };
+    let about = the_name_here()?;
 
     let seconder = appointment_now()?.map(|(_, key)| key.to_string());
     let asks_two = matches!(membrane()?, Membrane::Founder(_, true));
@@ -1532,8 +1694,14 @@ pub fn propose_member(input: ProposeInput) -> ExternResult<Record> {
     })?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), invitee.clone())?;
     let name = input.name.trim().to_string();
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: invitee.clone(),
+            name: name.clone(),
+        },
+    )?;
 
     let action_hash = create_entry(EntryTypes::ProposedMember(ProposedMember {
         invitee: invitee.clone(),
@@ -1587,7 +1755,14 @@ pub fn endorse(proposed: ActionHash) -> ExternResult<Record> {
         .ok_or_else(|| wasm_error!("That is not somebody put forward to join"))?;
 
     let me = agent_info()?.agent_initial_pubkey;
-    let signature = sign(me.clone(), entry.invitee.clone())?;
+    // The same key and name the holder signed.
+    let signature = sign(
+        me.clone(),
+        WhoIsLetIn {
+            invitee: entry.invitee.clone(),
+            name: entry.name.clone(),
+        },
+    )?;
 
     let (appointment, _) = appointment_now()?
         .ok_or_else(|| wasm_error!("This circle has not asked anybody to agree to who joins"))?;
@@ -1728,6 +1903,7 @@ pub fn get_pending_members(_: ()) -> ExternResult<Vec<PendingMember>> {
                     // whichever is in force now. They can differ, and the
                     // door checks against the first.
                     appointment: under.clone(),
+                    name: proposed.name.clone(),
                 },
             )?),
             None => None,
@@ -2177,6 +2353,1491 @@ const APPOINTMENT_ANCHOR: &str = "appointments";
 
 fn appointment_path() -> ExternResult<TypedPath> {
     anchored(APPOINTMENT_ANCHOR, LinkTypes::CircleToAppointment)
+}
+
+// ---------------------------------------------------------------------------
+// Photos, sound and video (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// A file goes in as pieces of at most three megabytes, one call each, and
+// then the item that names them in order. One call per piece keeps a
+// two-minute video from having to squeeze through a single message.
+//
+// Shrinking happens on the device that records it, before any of this is
+// called: a photo to about 1600 pixels, video to 480p. See docs/multimedia.md.
+
+const MEDIA_ANCHOR: &str = "media";
+
+fn media_path() -> ExternResult<TypedPath> {
+    anchored(MEDIA_ANCHOR, LinkTypes::CircleToMedia)
+}
+
+/// Raw bytes, sent and received as bytes rather than a list of numbers.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Bytes(#[serde(with = "serde_bytes")] pub Vec<u8>);
+
+/// Write one piece of a file, and say which hash names it.
+#[hdk_extern]
+pub fn add_media_piece(bytes: Bytes) -> ExternResult<EntryHash> {
+    // Said here as well as by every device, so somebody who cannot add a file
+    // is told that, rather than being told something about keys.
+    if !i_am_the_holder()? {
+        return Err(wasm_error!(
+            "Only the person whose circle this is may add a photo, sound or video"
+        ));
+    }
+    // The plain size, checked before locking. Every device still checks the
+    // locked size, but locking adds a little to it, and the limit people were
+    // promised is about the file — so it is measured on the file.
+    if bytes.0.is_empty() || bytes.0.len() > MOST_BYTES_IN_A_PIECE {
+        return Err(wasm_error!("A piece of a file is at most three megabytes"));
+    }
+    let piece = MediaPiece {
+        bytes: Vec::new(),
+        locked: Some(lock(bytes.0)?),
+    };
+    let hash = hash_entry(&piece)?;
+    create_entry(EntryTypes::MediaPiece(piece))?;
+    Ok(hash)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AddMediaInput {
+    pub section: AboutMeField,
+    pub kind: MediaKind,
+    pub mime_type: String,
+    #[serde(default)]
+    pub file_name: String,
+    #[serde(default)]
+    pub in_words: String,
+    #[serde(default)]
+    pub seconds: u32,
+    pub pieces: Vec<EntryHash>,
+    pub size: u64,
+}
+
+/// Put a photo, sound or video beside a section, once its pieces are written.
+#[hdk_extern]
+pub fn add_media(input: AddMediaInput) -> ExternResult<Record> {
+    let file_name = input.file_name.trim().to_string();
+    let in_words = input.in_words.trim().to_string();
+    // Checked here, because once locked nothing else can check them.
+    if name_too_long(&file_name) {
+        return Err(wasm_error!("A file name can be up to 200 characters"));
+    }
+    if too_long(&in_words) {
+        return Err(wasm_error!("What it says in words can be up to 500 words"));
+    }
+    let words = ExternIO::encode((&file_name, &in_words)).map_err(|e| {
+        wasm_error!(format!(
+            "Could not pack the file's words to lock them: {e:?}"
+        ))
+    })?;
+
+    let action_hash = create_entry(EntryTypes::MediaItem(MediaItem {
+        section: input.section,
+        kind: input.kind,
+        mime_type: input.mime_type,
+        file_name: String::new(),
+        in_words: String::new(),
+        seconds: input.seconds,
+        pieces: input.pieces,
+        size: input.size,
+        locked: Some(lock(words.into_vec())?),
+    }))?;
+
+    let path = media_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToMedia,
+        (),
+    )?;
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just added"))
+}
+
+/// One photo, sound or video, as a reader needs it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MediaHere {
+    /// What to pass to `remove_media`.
+    pub item: ActionHash,
+    pub added: Timestamp,
+    pub media: MediaItem,
+}
+
+/// Everything beside the record now, oldest first.
+///
+/// Only the holder's, checked again here because validation already refuses
+/// anybody else's and a list is the place a mistake would show.
+#[hdk_extern]
+pub fn get_media(_: ()) -> ExternResult<Vec<MediaHere>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(media_path()?.path_entry_hash()?, LinkTypes::CircleToMedia)?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+
+    /*
+     * Mine too, so the holder sees a photo the moment she adds it — minus any
+     * she has removed. Removing takes away the link the list is read from, but
+     * her own chain still holds the item, and without this a removed photo
+     * would come straight back on her own screen.
+     */
+    let removed: std::collections::HashSet<ActionHash> =
+        query(ChainQueryFilter::new().action_type(ActionType::Delete))?
+            .into_iter()
+            .filter_map(|r| match &r.action().data {
+                ActionData::Delete(d) => Some(d.deletes_address.clone()),
+                _ => None,
+            })
+            .collect();
+    let mine: Vec<Record> = on_my_own_chain(UnitEntryTypes::MediaItem)?
+        .into_iter()
+        .filter(|r| !removed.contains(r.action_address()))
+        .collect();
+    and_my_own(&mut found, mine);
+    oldest_first(&mut found);
+
+    Ok(found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder && !removed.contains(r.action_address()))
+        .filter_map(|r| {
+            let mut media = r.entry().to_app_option::<MediaItem>().ok().flatten()?;
+            // The file name and what it says in words, opened. A device that
+            // cannot open them still gets the player: a photo whose caption
+            // cannot be read is better than no photo, and the bytes are locked
+            // with the same key anyway, so this is not a way round anything.
+            if let Some(locked) = media.locked.take() {
+                if let Ok((file_name, in_words)) = unlock(&locked).and_then(|w| {
+                    ExternIO::from(w)
+                        .decode::<(String, String)>()
+                        .map_err(|e| wasm_error!(format!("{e:?}")))
+                }) {
+                    media.file_name = file_name;
+                    media.in_words = in_words;
+                }
+            }
+            Some(MediaHere {
+                item: r.action_address().clone(),
+                added: r.action().timestamp(),
+                media,
+            })
+        })
+        .collect())
+}
+
+/// One piece of a file, by the hash that names it.
+#[hdk_extern]
+pub fn get_media_piece(hash: EntryHash) -> ExternResult<Bytes> {
+    let record = get(hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("That piece has not arrived on this device yet"))?;
+    let piece = record
+        .entry()
+        .to_app_option::<MediaPiece>()
+        .map_err(|e| wasm_error!(format!("{e:?}")))?
+        .ok_or_else(|| wasm_error!("That is not a piece of a file"))?;
+    match &piece.locked {
+        Some(locked) => Ok(Bytes(unlock(locked)?)),
+        // A piece written before encryption. The bytes really are in the open.
+        None => Ok(Bytes(piece.bytes)),
+    }
+}
+
+/// Take a photo, sound or video away from beside the record.
+///
+/// The link the list is read from goes, and the item is marked deleted.
+/// Every member's device still holds what it already received, as with
+/// everything in a circle; this stops it being shown.
+#[hdk_extern]
+pub fn remove_media(item: ActionHash) -> ExternResult<()> {
+    let links = get_links(
+        LinkQuery::try_new(media_path()?.path_entry_hash()?, LinkTypes::CircleToMedia)?,
+        GetStrategy::Local,
+    )?;
+    for link in links {
+        if link.target.clone().into_action_hash().as_ref() == Some(&item) {
+            delete_link(link.create_link_hash, GetOptions::default())?;
+        }
+    }
+    delete_entry(item)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A professional passing through — a ward nurse at 2am, a locum, a paramedic —
+// is not a member of anybody's family and should not have to become one. A
+// pass lets them read chosen parts of the record without joining, and without
+// being given a copy of anything. See docs/outer-ring.md.
+//
+// How it works, with nothing added to the rules:
+//
+// - The holder makes a pass in her circle's **door** — the one place anybody
+//   with the address can already reach. It is a Holochain capability grant for
+//   one function, `read_with_a_pass`, and what it allows is written in the
+//   grant's tag.
+// - The reader enters the same door and asks the holder's device, presenting
+//   the pass. Holochain checks it before the function runs at all.
+// - The holder's device reads those sections from the circle, sends back the
+//   words and nothing else, and tells its own screen that the pass was used.
+// - Stopping a pass deletes the grant; the next request is refused by
+//   Holochain itself.
+//
+// The honest cost, not to be buried: **it only works while the holder's device
+// is on and reachable.** A pass has no copy behind it, by design. Anybody who
+// must be able to read this when nobody can answer belongs in the circle.
+
+/// What a pass allows, written into the grant so the holder's device can read
+/// it back when the pass is presented. Nothing here is trusted from the reader.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PassTerms {
+    /// The circle the words come from, as text.
+    pub circle: String,
+    pub sections: Vec<AboutMeField>,
+    /// Who the holder made it for, in her words. Shown back to her; never
+    /// checked, since the pass works for whoever holds it.
+    pub for_whom: String,
+    /// When it stops working, in microseconds, or none for "until I stop it".
+    pub until: Option<i64>,
+    pub made: i64,
+}
+
+/// The name of the function a pass unlocks, and nothing else.
+const PASS_FUNCTION: &str = "read_with_a_pass";
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MakePassInput {
+    /// The circle to read from, as text. Must be one this device holds.
+    pub circle: String,
+    pub sections: Vec<AboutMeField>,
+    pub for_whom: String,
+    /// Microseconds, or none for "until I stop it".
+    pub until: Option<i64>,
+}
+
+/// A pass, as the holder hands it over. The secret is the pass: whoever holds
+/// it can ask, until it runs out or is stopped.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassMade {
+    pub grant: ActionHash,
+    pub secret: CapSecret,
+    pub holder: AgentPubKey,
+}
+
+/// Make a pass. Called in the circle's door, by the person who holds it.
+#[hdk_extern]
+pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
+    let me = agent_info()?.agent_initial_pubkey;
+    match membrane()? {
+        Membrane::WaitingRoom(holder) if holder == me => {}
+        _ => {
+            return Err(wasm_error!(
+                "A pass can only be made at the door of a circle you hold"
+            ))
+        }
+    }
+    if input.sections.is_empty() {
+        return Err(wasm_error!(
+            "Choose at least one part of the record to show"
+        ));
+    }
+    if input.for_whom.trim().is_empty() {
+        return Err(wasm_error!("Say who the pass is for, so you know later"));
+    }
+    DnaHash::try_from(input.circle.trim())
+        .map_err(|_| wasm_error!("That is not a circle this app can read"))?;
+
+    let terms = PassTerms {
+        circle: input.circle.trim().to_string(),
+        sections: input.sections,
+        for_whom: input.for_whom.trim().to_string(),
+        until: input.until,
+        made: sys_time()?.as_micros(),
+    };
+    let tag = yaml_serde::to_string(&terms)
+        .map_err(|e| wasm_error!(format!("Could not write the pass: {e:?}")))?;
+
+    let secret = generate_cap_secret()?;
+    let mut functions = HashSet::new();
+    functions.insert((zome_info()?.name, PASS_FUNCTION.into()));
+
+    let grant = create_cap_grant(CapGrantEntry {
+        tag,
+        // Transferable: it works for whoever holds the secret. The holder does
+        // not know the nurse's key in advance, and cannot be asked to.
+        access: CapAccess::Transferable { secret },
+        functions: GrantedFunctions::Listed(functions),
+    })?;
+
+    Ok(PassMade {
+        grant,
+        secret,
+        holder: me,
+    })
+}
+
+/// One pass this device has made, as the holder's screen shows it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassHere {
+    pub grant: ActionHash,
+    pub terms: PassTerms,
+    pub run_out: bool,
+}
+
+/// Every pass made at this door and not stopped, newest first.
+#[hdk_extern]
+pub fn passes_here(_: ()) -> ExternResult<Vec<PassHere>> {
+    let stopped: BTreeSet<ActionHash> =
+        query(ChainQueryFilter::new().action_type(ActionType::Delete))?
+            .into_iter()
+            .filter_map(|r| match &r.action().data {
+                ActionData::Delete(d) => Some(d.deletes_address.clone()),
+                _ => None,
+            })
+            .collect();
+
+    let now = sys_time()?.as_micros();
+    let mut out: Vec<PassHere> = query(
+        ChainQueryFilter::new()
+            .entry_type(EntryType::CapGrant)
+            .include_entries(true),
+    )?
+    .into_iter()
+    .filter(|r| !stopped.contains(r.action_address()))
+    .filter_map(|r| {
+        let Some(Entry::CapGrant(grant)) = r.entry().as_option() else {
+            return None;
+        };
+        // Only passes: the grant that lets members send signals is not one.
+        let is_pass = matches!(&grant.functions, GrantedFunctions::Listed(f)
+            if f.iter().any(|(_, name)| name.0 == PASS_FUNCTION));
+        if !is_pass {
+            return None;
+        }
+        let terms: PassTerms = yaml_serde::from_str(&grant.tag).ok()?;
+        Some(PassHere {
+            grant: r.action_address().clone(),
+            run_out: terms.until.is_some_and(|until| now > until),
+            terms,
+        })
+    })
+    .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(p.terms.made));
+    Ok(out)
+}
+
+/// "Stop showing it." The next time the pass is presented, Holochain refuses it.
+#[hdk_extern]
+pub fn stop_a_pass(grant: ActionHash) -> ExternResult<ActionHash> {
+    delete_cap_grant(grant)
+}
+
+/// What a pass lets somebody read.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassedWords {
+    /// Whose record this is.
+    pub name: String,
+    pub sections: Vec<PassedSection>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassedSection {
+    pub section: AboutMeField,
+    pub words: String,
+}
+
+/// Answer a pass. Runs on the holder's device, in the door, and only when
+/// Holochain has already checked the pass presented against a live grant.
+#[hdk_extern]
+pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
+    // The grant that let this call through. Its terms are the holder's, written
+    // when she made it, and nothing the reader sends can change them.
+    let terms: PassTerms = match call_info()?.cap_grant {
+        CapGrant::RemoteAgent(grant) => {
+            yaml_serde::from_str(&grant.tag).map_err(|_| wasm_error!("That pass cannot be read"))?
+        }
+        CapGrant::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
+    };
+
+    let now = sys_time()?;
+    if terms.until.is_some_and(|until| now.as_micros() > until) {
+        return Err(wasm_error!("This pass has run out"));
+    }
+
+    let circle = DnaHash::try_from(terms.circle.as_str())
+        .map_err(|_| wasm_error!("That pass names a circle this app cannot read"))?;
+    let me = agent_info()?.agent_initial_pubkey;
+
+    let words: PassedWords = match call(
+        CallTargetCell::OtherCell(CellId::new(circle, me)),
+        zome_info()?.name,
+        "words_for_a_pass".into(),
+        None,
+        terms.sections.clone(),
+    )? {
+        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}")))?,
+        _ => return Err(wasm_error!("The record could not be read just now")),
+    };
+
+    // Tell the holder's own screen. The circle's wider knowledge of who read
+    // what would need a new kind of entry in the rules, and is left for then.
+    let _ = emit_signal(Signal::PassUsed {
+        for_whom: terms.for_whom,
+        sections: terms.sections,
+        at: now,
+    });
+
+    Ok(words)
+}
+
+/// The words of chosen sections, from this circle.
+///
+/// Called only by the same person's own door, through `read_with_a_pass`, which
+/// is the one place a pass is checked. Refused from anybody else, so it can
+/// never be used to read around a pass.
+#[hdk_extern]
+pub fn words_for_a_pass(sections: Vec<AboutMeField>) -> ExternResult<PassedWords> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if call_info()?.provenance != me {
+        return Err(wasm_error!("Only this device's own door may ask this"));
+    }
+    // Only a circle this person holds. Being a member of somebody else's
+    // circle gives nobody the right to hand its words to a stranger.
+    match membrane()? {
+        Membrane::Founder(holder, _) if holder == me => {}
+        _ => return Err(wasm_error!("A pass can only show a record you hold")),
+    }
+
+    let Some(original) = get_circle_about_me(())?.first().cloned() else {
+        return Err(wasm_error!("Nothing has been written yet"));
+    };
+    let about_me = get_current_about_me(original)?
+        .about_me
+        .ok_or_else(|| wasm_error!("The record could not be opened on this device"))?;
+
+    Ok(PassedWords {
+        name: about_me.display_name.clone(),
+        sections: sections
+            .into_iter()
+            .map(|section| PassedSection {
+                words: words_in(&about_me, &section),
+                section,
+            })
+            .collect(),
+    })
+}
+
+fn words_in(about_me: &AboutMe, section: &AboutMeField) -> String {
+    match section {
+        AboutMeField::WhatMattersToMe => &about_me.what_matters_to_me,
+        AboutMeField::PeopleWhoMatter => &about_me.people_who_matter,
+        AboutMeField::HowToCommunicateWithMe => &about_me.how_to_communicate_with_me,
+        AboutMeField::MyWellness => &about_me.my_wellness,
+        AboutMeField::PleaseDoAndPleaseDoNot => &about_me.please_do_and_please_do_not,
+        AboutMeField::HowToSupportMe => &about_me.how_to_support_me,
+        AboutMeField::AlsoWorthKnowing => &about_me.also_worth_knowing,
+    }
+    .clone()
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AskWithPassInput {
+    /// Whose device to ask, as text.
+    pub holder: String,
+    pub secret: CapSecret,
+}
+
+/// Present a pass. Called by the reader, in the door they have entered.
+#[hdk_extern]
+pub fn ask_with_a_pass(input: AskWithPassInput) -> ExternResult<PassedWords> {
+    let holder = AgentPubKey::try_from(input.holder.trim())
+        .map_err(|_| wasm_error!("That pass names nobody this app can read"))?;
+
+    match call_remote(
+        holder,
+        zome_info()?.name,
+        PASS_FUNCTION.into(),
+        Some(input.secret),
+        (),
+    )? {
+        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}"))),
+        ZomeCallResponse::Unauthorized(..) => Err(wasm_error!(
+            "This pass does not work any more. It may have been stopped, or it may have run out."
+        )),
+        ZomeCallResponse::NetworkError(_) => Err(wasm_error!(
+            "The device that holds this record could not be reached. It may be switched off. \
+             Try again in a little while."
+        )),
+        _ => Err(wasm_error!("The record could not be read just now")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Keys, so the record can be locked (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The circle's words are locked with a key every member holds. Removing
+// somebody starts a new key, sealed to everybody but them, so that what is
+// written afterwards cannot be opened on their device even by a changed app.
+// See docs/encryption.md for what this does and does not protect.
+//
+// Nothing secret passes through here. The keys are made, sealed and opened
+// inside the keystore; this code only ever holds references to them.
+//
+// Succession needs no key of its own. A successor does not become the holder
+// of this circle — she moves it, which founds a different circle with a
+// different identity, and so with its own key 1 that the old circle's members
+// were never given. The key names below include the circle's identity for the
+// same reason: two circles on one device can never reach for each other's
+// keys.
+
+const BOX_KEY_ANCHOR: &str = "box-keys";
+const EPOCH_KEY_ANCHOR: &str = "epoch-keys";
+
+fn box_key_path() -> ExternResult<TypedPath> {
+    anchored(BOX_KEY_ANCHOR, LinkTypes::CircleToBoxKey)
+}
+
+fn epoch_key_path() -> ExternResult<TypedPath> {
+    anchored(EPOCH_KEY_ANCHOR, LinkTypes::CircleToEpochKey)
+}
+
+/// What the keystore calls one of this circle's keys.
+///
+/// The circle's own identity is in the name, so two circles on one device
+/// never reach for each other's keys, and the number says which key it is.
+fn key_ref_for(epoch: u32) -> ExternResult<XSalsa20Poly1305KeyRef> {
+    let mut name = b"hearth-circle-".to_vec();
+    name.extend_from_slice(dna_info()?.hash.get_raw_39());
+    name.extend_from_slice(b"-epoch-");
+    name.extend_from_slice(&epoch.to_be_bytes());
+    Ok(XSalsa20Poly1305KeyRef::from(name))
+}
+
+/// My own encryption key, made and published the first time it is needed.
+///
+/// The secret half never leaves the keystore. The public half goes into the
+/// circle so the holder can seal the circle's key to me.
+fn my_box_key() -> ExternResult<X25519PubKey> {
+    if let Some(mine) = on_my_own_chain(UnitEntryTypes::BoxKey)?
+        .last()
+        .and_then(|r| r.entry().to_app_option::<BoxKey>().ok().flatten())
+    {
+        return Ok(mine.key);
+    }
+
+    let key = create_x25519_keypair()?;
+    let action_hash = create_entry(EntryTypes::BoxKey(BoxKey { key }))?;
+    let path = box_key_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash,
+        LinkTypes::CircleToBoxKey,
+        (),
+    )?;
+    Ok(key)
+}
+
+/// Make sure this device has published an encryption key. Safe to call often.
+#[hdk_extern]
+pub fn publish_my_box_key(_: ()) -> ExternResult<X25519PubKey> {
+    my_box_key()
+}
+
+/// Everybody's encryption key, newest per person.
+fn box_keys() -> ExternResult<std::collections::BTreeMap<AgentPubKey, X25519PubKey>> {
+    let links = get_links(
+        LinkQuery::try_new(
+            box_key_path()?.path_entry_hash()?,
+            LinkTypes::CircleToBoxKey,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::BoxKey)?);
+    oldest_first(&mut found);
+
+    let mut out = std::collections::BTreeMap::new();
+    for r in found {
+        if let Some(k) = r.entry().to_app_option::<BoxKey>().ok().flatten() {
+            out.insert(r.action().author().clone(), k.key);
+        }
+    }
+    Ok(out)
+}
+
+/// Every sealed key in the circle, written by the holder.
+fn epoch_keys() -> ExternResult<Vec<EpochKey>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+    let links = get_links(
+        LinkQuery::try_new(
+            epoch_key_path()?.path_entry_hash()?,
+            LinkTypes::CircleToEpochKey,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::EpochKey)?);
+    oldest_first(&mut found);
+
+    Ok(found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder)
+        .filter_map(|r| r.entry().to_app_option::<EpochKey>().ok().flatten())
+        .collect())
+}
+
+/// The newest key the holder has handed out, or 0 before there is one.
+fn newest_epoch() -> ExternResult<u32> {
+    Ok(epoch_keys()?.iter().map(|k| k.epoch).max().unwrap_or(0))
+}
+
+/// Which of the circle's keys this device can actually use.
+///
+/// Asked of the keystore, not worked out from what is written in the circle:
+/// there is no way to list what a keystore holds, but locking a single byte
+/// with a key succeeds only if the key is there. So this asks the only
+/// question that cannot be wrong.
+#[hdk_extern]
+pub fn keys_i_can_use(_: ()) -> ExternResult<Vec<u32>> {
+    let mut usable = Vec::new();
+    for epoch in 1..=newest_epoch()? {
+        if x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, vec![0u8].into()).is_ok() {
+            usable.push(epoch);
+        }
+    }
+    Ok(usable)
+}
+
+/// Take up every key sealed to me that this device has not opened yet.
+///
+/// Opening a key this device already holds fails, and that is not a problem
+/// worth reporting: it means the key is there. What the device can use is
+/// asked afterwards, of the keystore. Returns the newest key it can now use.
+#[hdk_extern]
+pub fn take_up_keys(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(0);
+    };
+    let keys = box_keys()?;
+    let Some(holder_box) = keys.get(&holder).copied() else {
+        return Ok(0);
+    };
+    let mine = my_box_key()?;
+
+    for key in epoch_keys()? {
+        if key.for_member != me {
+            continue;
+        }
+        let _ = x_salsa20_poly1305_shared_secret_ingest(
+            mine,
+            holder_box,
+            key.sealed.clone(),
+            Some(key_ref_for(key.epoch)?),
+        );
+    }
+    Ok(keys_i_can_use(())?.into_iter().max().unwrap_or(0))
+}
+
+/// Seal the circle's keys to everybody who has published an encryption key.
+///
+/// Every key, not only the newest: somebody who joins later can read what the
+/// record used to say, which is Ceri's decision of 20 September 2026 — the
+/// history is part of the record.
+///
+/// Idempotent, and safe to call whenever the circle is read: a key already
+/// sealed to somebody is left alone.
+#[hdk_extern]
+pub fn hand_out_keys(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(0);
+    };
+    if holder != me {
+        return Ok(0);
+    }
+
+    let mine = my_box_key()?;
+    let already: std::collections::BTreeSet<(u32, AgentPubKey)> = epoch_keys()?
+        .into_iter()
+        .map(|k| (k.epoch, k.for_member))
+        .collect();
+    let removed: std::collections::BTreeSet<String> = get_departures(())?
+        .into_iter()
+        .filter(|s| s.removed)
+        .map(|s| s.who)
+        .collect();
+
+    let epochs: Vec<u32> = (1..=newest_epoch()?).collect();
+    let mut sealed = 0;
+    for (member, their_box) in box_keys()? {
+        if removed.contains(&member.to_string()) {
+            continue;
+        }
+        for epoch in &epochs {
+            if already.contains(&(*epoch, member.clone())) {
+                continue;
+            }
+            let data =
+                x_salsa20_poly1305_shared_secret_export(mine, their_box, key_ref_for(*epoch)?)?;
+            write_epoch_key(*epoch, member.clone(), data)?;
+            sealed += 1;
+        }
+    }
+    Ok(sealed)
+}
+
+fn write_epoch_key(
+    epoch: u32,
+    for_member: AgentPubKey,
+    sealed: XSalsa20Poly1305EncryptedData,
+) -> ExternResult<()> {
+    let action_hash = create_entry(EntryTypes::EpochKey(EpochKey {
+        epoch,
+        for_member,
+        sealed,
+    }))?;
+    let path = epoch_key_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash,
+        LinkTypes::CircleToEpochKey,
+        (),
+    )?;
+    Ok(())
+}
+
+/// Start a new key for this circle, sealed to everybody except those removed.
+///
+/// The first call makes key 1. Every removal calls it again, which is what
+/// stops the person removed from reading what is written next.
+#[hdk_extern]
+pub fn new_key(_: ()) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Err(wasm_error!("Only a circle has keys"));
+    };
+    if holder != me {
+        return Err(wasm_error!(
+            "Only the person who holds a circle hands out its keys"
+        ));
+    }
+
+    let epoch = newest_epoch()? + 1;
+    let key = key_ref_for(epoch)?;
+    // Making a key under a name the keystore already has fails, and it must:
+    // a second key of the same name would stop everything written with the
+    // first one opening. But this key may have been made a moment ago by a
+    // call that then failed to hand it out, so a name already there is only
+    // a mistake if it cannot be used.
+    if x_salsa20_poly1305_shared_secret_create_random(Some(key.clone())).is_err() {
+        x_salsa20_poly1305_encrypt(key.clone(), vec![0u8].into()).map_err(|_| {
+            wasm_error!("This circle's next key could not be made or used; nothing was changed")
+        })?;
+    }
+
+    let mine = my_box_key()?;
+    let removed: std::collections::BTreeSet<String> = get_departures(())?
+        .into_iter()
+        .filter(|s| s.removed)
+        .map(|s| s.who)
+        .collect();
+
+    for (member, their_box) in box_keys()? {
+        if removed.contains(&member.to_string()) {
+            continue;
+        }
+        let data = x_salsa20_poly1305_shared_secret_export(mine, their_box, key_ref_for(epoch)?)?;
+        write_epoch_key(epoch, member, data)?;
+    }
+    Ok(epoch)
+}
+
+/// Where this device stands on keys.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KeysHere {
+    /// The newest key the circle has. 0 before there is one.
+    pub epoch: u32,
+    /// The newest key this device can actually use.
+    pub mine: u32,
+    /// Members who have not published an encryption key yet, so the holder
+    /// cannot seal anything to them. Ordinarily seconds, on joining.
+    pub waiting_for: Vec<String>,
+}
+
+/// Everything about keys that ought to happen when the circle is opened.
+///
+/// Publishes this device's encryption key, takes up anything sealed to it,
+/// and — if this device holds the circle — makes the first key and seals
+/// every key to everybody who is owed one. Safe to call as often as you like;
+/// on a circle where nothing has changed it writes nothing.
+#[hdk_extern]
+pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
+    my_box_key()?;
+
+    let me = agent_info()?.agent_initial_pubkey;
+    if let Membrane::Founder(holder, _) = membrane()? {
+        if holder == me {
+            if newest_epoch()? == 0 {
+                new_key(())?;
+            }
+            hand_out_keys(())?;
+        }
+    }
+
+    let mine = take_up_keys(())?;
+    let have_keys = box_keys()?;
+    let mut waiting_for: Vec<String> = get_members(())?
+        .into_iter()
+        .map(|r| r.action().author().clone())
+        .filter(|who| !have_keys.contains_key(who))
+        .map(|who| who.to_string())
+        .collect();
+    waiting_for.sort();
+    waiting_for.dedup();
+
+    Ok(KeysHere {
+        epoch: newest_epoch()?,
+        mine,
+        waiting_for,
+    })
+}
+
+/// Lock something with the newest key this device can use.
+///
+/// The newest key it *can use*, not the newest the circle has: a member whose
+/// key has not arrived yet would otherwise be unable to write anything at all,
+/// and everybody who can read the circle holds every key, so an older one
+/// leaves nobody out. The holder always has the newest, being the one who
+/// made it.
+fn lock(data: Vec<u8>) -> ExternResult<Locked> {
+    let mut epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
+
+    // The holder writing the first thing in a circle makes its first key. It
+    // used to be the record that did this, which was true of every circle made
+    // in the app and would have been false the day anything else came first.
+    if epoch == 0 && i_am_the_holder()? && newest_epoch()? == 0 {
+        epoch = new_key(())?;
+    }
+
+    if epoch == 0 {
+        return Err(wasm_error!(
+            "This device has no key for this circle yet. Wait a moment and try again"
+        ));
+    }
+    // A key of its own for this one entry, kept nowhere. The keystore locks it
+    // with the circle's key, and the content is locked with it here. See
+    // `Locked` in the rules for why it is two steps: the keystore refuses any
+    // message over 8 KiB, and a full-length record is several times that.
+    let one_use = random_bytes(BYTES_IN_A_ONE_USE_KEY as u32)?.into_vec();
+    let nonce = random_bytes(BYTES_IN_A_NONCE as u32)?.into_vec();
+    let sealed_key = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, one_use.clone().into())?;
+
+    let cipher = XChaCha20Poly1305::new_from_slice(&one_use)
+        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
+    let body = cipher
+        .encrypt(XNonce::from_slice(&nonce), data.as_ref())
+        .map_err(|_| wasm_error!("Could not lock what was written"))?;
+
+    Ok(Locked {
+        epoch,
+        sealed_key,
+        nonce,
+        body,
+    })
+}
+
+/// Open something locked with one of the circle's keys.
+///
+/// Fails rather than returning anything when this device has not got the key.
+/// Every caller treats that as "cannot be read here" and says so; none of them
+/// guesses at what was in it.
+fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
+    // Every device refuses an entry whose nonce is the wrong size, so this
+    // cannot come from the circle. It could come from a build of this app that
+    // once wrote something else, and asking the cipher would panic rather than
+    // say so.
+    if locked.nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!(
+            "This was not locked in a way this app can open"
+        ));
+    }
+
+    let one_use =
+        x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed_key.clone())?
+            .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
+
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use.as_ref())
+        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    cipher
+        .decrypt(XNonce::from_slice(&locked.nonce), locked.body.as_ref())
+        // Either this device has the wrong key or the bytes were changed on the
+        // way. Not worth telling apart: neither of them gives anything to show.
+        .map_err(|_| wasm_error!("This could not be opened on this device"))
+}
+
+/// Whether this device is the one that holds the circle.
+fn i_am_the_holder() -> ExternResult<bool> {
+    let me = agent_info()?.agent_initial_pubkey;
+    Ok(matches!(membrane()?, Membrane::Founder(holder, _) if holder == me))
+}
+
+/// A record with nothing in the open: the shell a locked record is written as.
+fn nothing_in_the_open() -> AboutMe {
+    AboutMe {
+        display_name: String::new(),
+        what_matters_to_me: String::new(),
+        people_who_matter: String::new(),
+        how_to_communicate_with_me: String::new(),
+        my_wellness: String::new(),
+        please_do_and_please_do_not: String::new(),
+        how_to_support_me: String::new(),
+        also_worth_knowing: String::new(),
+        supported_to_write_this_by: String::new(),
+        codes: Vec::new(),
+        locked: None,
+    }
+}
+
+/// Lock a record, so what goes into the circle is the sealed form of it.
+///
+/// The holder's first record makes the circle's first key, because nobody
+/// should have to press anything to have a locked record.
+fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+    // The words are checked here because from here on nothing can check them.
+    // Every device used to count them as the record arrived; a device cannot
+    // count what it cannot read, so the app counts them before locking and the
+    // rules keep the one limit that survives — how big the sealed bytes may be.
+    // The messages are the same ones the rules gave, because they are shown to
+    // the same person for the same reason.
+    if about_me.display_name.trim().is_empty() {
+        return Err(wasm_error!("About Me must have a display name"));
+    }
+    if name_too_long(&about_me.display_name) || name_too_long(&about_me.supported_to_write_this_by)
+    {
+        return Err(wasm_error!("A name here can be up to 200 characters"));
+    }
+    for section in [
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+    ] {
+        if too_long(section) {
+            return Err(wasm_error!("Each part of the record holds up to 500 words"));
+        }
+    }
+    if about_me.codes.len() > MOST_CODES {
+        return Err(wasm_error!("A record can carry up to 50 coded values"));
+    }
+    for coded in &about_me.codes {
+        if coded.code.trim().is_empty()
+            || name_too_long(&coded.system)
+            || name_too_long(&coded.code)
+            || name_too_long(&coded.display)
+        {
+            return Err(wasm_error!(
+                "A coded value needs a code, and each part of it is short"
+            ));
+        }
+    }
+
+    let words = ExternIO::encode(about_me)
+        .map_err(|e| wasm_error!(format!("Could not pack the record to lock it: {e:?}")))?;
+    Ok(AboutMe {
+        locked: Some(lock(words.into_vec())?),
+        ..nothing_in_the_open()
+    })
+}
+
+/// Open a record read from the circle, where it is locked and this device can.
+///
+/// A record from before encryption is returned as it is: that is what "in the
+/// open" looks like, and hiding it would only mean showing nothing.
+fn unlock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+    let Some(locked) = &about_me.locked else {
+        return Ok(about_me.clone());
+    };
+    let words = unlock(locked)?;
+    let mut opened: AboutMe = ExternIO::from(words)
+        .decode()
+        .map_err(|e| wasm_error!(format!("The record opened but could not be read: {e:?}")))?;
+    // Nothing nested: what comes back is the words, not another locked shell.
+    opened.locked = None;
+    Ok(opened)
+}
+
+/// Lock a suggestion. Which section it is about stays in the open.
+fn lock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+    // Checked here for the same reason the record's words are: after this,
+    // nothing can read them to check.
+    if suggestion.text.trim().is_empty() {
+        return Err(wasm_error!("A suggestion needs something in it"));
+    }
+    if too_long(&suggestion.text) || too_long(&suggestion.because) {
+        return Err(wasm_error!(
+            "A suggestion, and why, can be up to 500 words each"
+        ));
+    }
+
+    let words = ExternIO::encode((&suggestion.text, &suggestion.because))
+        .map_err(|e| wasm_error!(format!("Could not pack the suggestion to lock it: {e:?}")))?;
+    Ok(Suggestion {
+        field: suggestion.field.clone(),
+        text: String::new(),
+        because: String::new(),
+        locked: Some(lock(words.into_vec())?),
+    })
+}
+
+/// Open a suggestion, where it is locked and this device can.
+fn unlock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+    let Some(locked) = &suggestion.locked else {
+        return Ok(suggestion.clone());
+    };
+    let (text, because): (String, String) =
+        ExternIO::from(unlock(locked)?).decode().map_err(|e| {
+            wasm_error!(format!(
+                "The suggestion opened but could not be read: {e:?}"
+            ))
+        })?;
+    Ok(Suggestion {
+        field: suggestion.field.clone(),
+        text,
+        because,
+        locked: None,
+    })
+}
+
+/// The name of the person this circle is about, as this device can read it.
+///
+/// Empty where there is no record yet, and where this device cannot open it —
+/// which is the same to a reader either way.
+fn the_name_here() -> ExternResult<String> {
+    let Some(original) = get_circle_about_me(())?.first().cloned() else {
+        return Ok(String::new());
+    };
+    Ok(get_current_about_me(original)?
+        .about_me
+        .map(|a| a.display_name)
+        .unwrap_or_default())
+}
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// The holder names somebody to take over if she cannot, and somebody to check
+// on her. The successor may start; the holder can stop it with "I'm still
+// here"; the checker — or, if the checker cannot, anybody else — checks on her
+// and says whether she can carry on. After the waiting period, with a "she
+// cannot" and no "still here", the successor moves the circle and holds the
+// new one.
+
+const SUCCESSION_ANCHOR: &str = "succession";
+
+fn succession_path() -> ExternResult<TypedPath> {
+    anchored(SUCCESSION_ANCHOR, LinkTypes::CircleToSuccession)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NameSuccessorInput {
+    /// Who, as text, or nobody.
+    #[serde(default)]
+    pub successor: Option<String>,
+    /// Who checks on her, as text, or nobody.
+    #[serde(default)]
+    pub checker: Option<String>,
+}
+
+fn key_from(text: &Option<String>) -> ExternResult<Option<AgentPubKey>> {
+    text.as_deref()
+        .map(|t| {
+            AgentPubKey::try_from(t.trim())
+                .map_err(|_| wasm_error!("That is not an identifier this circle can read"))
+        })
+        .transpose()
+}
+
+fn file_under_succession(action_hash: &ActionHash) -> ExternResult<()> {
+    let path = succession_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToSuccession,
+        (),
+    )?;
+    Ok(())
+}
+
+/// Name who takes over, and who checks. Naming nobody removes them.
+#[hdk_extern]
+pub fn name_successor(input: NameSuccessorInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::Succession(Succession {
+        successor: key_from(&input.successor)?,
+        checker: key_from(&input.checker)?,
+    }))?;
+    file_under_succession(&action_hash)?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the naming just written"))
+}
+
+/// The successor starts taking over.
+#[hdk_extern]
+pub fn start_taking_over(_: ()) -> ExternResult<Record> {
+    let state = get_succession(())?;
+    let naming = state
+        .naming
+        .ok_or_else(|| wasm_error!("Nobody has been named to take over this circle"))?;
+    let action_hash = create_entry(EntryTypes::SuccessionClaim(SuccessionClaim { naming }))?;
+    file_under_succession(&action_hash)?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+/// The holder: "I'm still here."
+#[hdk_extern]
+pub fn still_here(claim: ActionHash) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::StillHere(StillHere {
+        claim: claim.clone(),
+    }))?;
+    create_link(claim, action_hash.clone(), LinkTypes::ClaimToAnswer, ())?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckInput {
+    pub claim: ActionHash,
+    pub holder_can_carry_on: bool,
+}
+
+/// Somebody has checked on her, and says whether she can carry on.
+#[hdk_extern]
+pub fn check_on_holder(input: CheckInput) -> ExternResult<Record> {
+    let action_hash = create_entry(EntryTypes::CheckedOn(CheckedOn {
+        claim: input.claim.clone(),
+        holder_can_carry_on: input.holder_can_carry_on,
+    }))?;
+    create_link(
+        input.claim,
+        action_hash.clone(),
+        LinkTypes::ClaimToAnswer,
+        (),
+    )?;
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read what was just written"))
+}
+
+/// One check on the holder.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Check {
+    pub by: String,
+    pub at: Timestamp,
+    pub holder_can_carry_on: bool,
+}
+
+/// Somebody taking over, and what has been said about it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClaimState {
+    pub claim: ActionHash,
+    pub by: String,
+    pub at: Timestamp,
+    /// Whether the holder has said she is still here.
+    pub still_here: bool,
+    pub checks: Vec<Check>,
+}
+
+/// Who is named, and whether anybody is taking over.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SuccessionState {
+    /// The newest naming by the holder, if any.
+    pub naming: Option<ActionHash>,
+    pub successor: Option<String>,
+    pub checker: Option<String>,
+    /// The newest claim by the person named now, under a naming that still
+    /// names them. A claim by somebody the holder has since un-named is void.
+    pub claim: Option<ClaimState>,
+}
+
+fn with_my_own(links: Vec<Link>, mine: Vec<Record>) -> ExternResult<Vec<Record>> {
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, mine);
+    oldest_first(&mut found);
+    Ok(found)
+}
+
+#[hdk_extern]
+pub fn get_succession(_: ()) -> ExternResult<SuccessionState> {
+    let empty = SuccessionState {
+        naming: None,
+        successor: None,
+        checker: None,
+        claim: None,
+    };
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(empty);
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(
+            succession_path()?.path_entry_hash()?,
+            LinkTypes::CircleToSuccession,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut mine = on_my_own_chain(UnitEntryTypes::Succession)?;
+    mine.extend(on_my_own_chain(UnitEntryTypes::SuccessionClaim)?);
+    let found = with_my_own(links, mine)?;
+
+    // The newest naming by the holder.
+    let Some((naming_hash, naming)) = found
+        .iter()
+        .rev()
+        .filter(|r| r.action().author() == &holder)
+        .find_map(|r| {
+            let s = r.entry().to_app_option::<Succession>().ok().flatten()?;
+            Some((r.action_address().clone(), s))
+        })
+    else {
+        return Ok(empty);
+    };
+
+    let mut state = SuccessionState {
+        naming: Some(naming_hash),
+        successor: naming.successor.as_ref().map(|k| k.to_string()),
+        checker: naming.checker.as_ref().map(|k| k.to_string()),
+        claim: None,
+    };
+    let Some(successor) = naming.successor else {
+        return Ok(state);
+    };
+
+    // The newest claim by the person named now.
+    let Some((claim_hash, at)) = found
+        .iter()
+        .rev()
+        .filter(|r| r.action().author() == &successor)
+        .find_map(|r| {
+            r.entry()
+                .to_app_option::<SuccessionClaim>()
+                .ok()
+                .flatten()?;
+            Some((r.action_address().clone(), r.action().timestamp()))
+        })
+    else {
+        return Ok(state);
+    };
+
+    let answer_links = get_links(
+        LinkQuery::try_new(claim_hash.clone(), LinkTypes::ClaimToAnswer)?,
+        GetStrategy::Network,
+    )?;
+    let mut mine = on_my_own_chain(UnitEntryTypes::StillHere)?;
+    mine.extend(on_my_own_chain(UnitEntryTypes::CheckedOn)?);
+    let answers = with_my_own(answer_links, mine)?;
+
+    let mut still_here = false;
+    let mut checks = Vec::new();
+    /*
+     * CheckedOn is tried before StillHere, and the order is the fix for a
+     * real fault.
+     *
+     * Reading an entry "as" a type only asks whether its fields fit, and a
+     * check — a claim and a yes-or-no — fits the shape of "still here" (just a
+     * claim) with a field to spare, which is ignored. Asked the other way
+     * round first, every check was taken for a "still here" from somebody
+     * who is not the holder, and quietly dropped: the first check ever given,
+     * in the demo, vanished. "Still here" cannot pass for a check, because it
+     * has no yes-or-no to read.
+     */
+    for r in answers {
+        let by = r.action().author().clone();
+        if let Some(c) = r.entry().to_app_option::<CheckedOn>().ok().flatten() {
+            if c.claim == claim_hash && by != successor && by != holder {
+                checks.push(Check {
+                    by: by.to_string(),
+                    at: r.action().timestamp(),
+                    holder_can_carry_on: c.holder_can_carry_on,
+                });
+            }
+        } else if let Some(s) = r.entry().to_app_option::<StillHere>().ok().flatten() {
+            if s.claim == claim_hash && by == holder {
+                still_here = true;
+            }
+        }
+    }
+
+    state.claim = Some(ClaimState {
+        claim: claim_hash,
+        by: successor.to_string(),
+        at,
+        still_here,
+        checks,
+    });
+    Ok(state)
+}
+
+// ---------------------------------------------------------------------------
+// Who has been removed (migration batch, item 4)
+// ---------------------------------------------------------------------------
+//
+// The everyday removal. A decision the holder writes where the whole circle
+// sees it, honoured by every copy of Hearth: the person drops out of every
+// list, what they write afterwards is not shown, and their own app takes the
+// circle off their device. Moving the circle is for when that is not enough.
+
+const DEPARTURE_ANCHOR: &str = "departures";
+
+fn departure_path() -> ExternResult<TypedPath> {
+    anchored(DEPARTURE_ANCHOR, LinkTypes::CircleToDeparture)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepartureInput {
+    /// Who, as text.
+    pub who: String,
+    /// True to remove them; false to let them back.
+    pub removed: bool,
+}
+
+/// Remove somebody from this circle, or let them back.
+#[hdk_extern]
+pub fn decide_departure(input: DepartureInput) -> ExternResult<Record> {
+    let who = AgentPubKey::try_from(input.who.trim())
+        .map_err(|_| wasm_error!("That is not an identifier this circle can read"))?;
+
+    let action_hash = create_entry(EntryTypes::Departure(Departure {
+        who,
+        removed: input.removed,
+    }))?;
+
+    let path = departure_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToDeparture,
+        (),
+    )?;
+
+    // A new key from here on, so what the circle writes next cannot be opened
+    // on the removed person's device even by a changed app. Letting somebody
+    // back needs no new key; they are simply owed the ones they missed.
+    //
+    // A key that could not be made does not undo the removal: the removal is
+    // what the holder asked for, and it holds on its own. The next open of the
+    // circle tries again, and until it succeeds keep_keys_up_to_date reports a
+    // key older than the circle's newest, which is what the screen shows.
+    if input.removed {
+        let _ = new_key(());
+    } else {
+        let _ = hand_out_keys(());
+    }
+
+    get(action_hash, GetOptions::default())?
+        .ok_or_else(|| wasm_error!("Could not read the decision just written"))
+}
+
+/// Where somebody stands, from the newest decision about them.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Standing {
+    /// Who, as text.
+    pub who: String,
+    /// Whether they are removed now.
+    pub removed: bool,
+    /// When the newest decision about them was made, in microseconds. Things
+    /// they wrote after this are not shown while they are removed.
+    pub since: Timestamp,
+}
+
+/// Everybody the holder has ever removed or let back, as they stand now.
+///
+/// Only decisions the holder wrote count. Validation already refuses anybody
+/// else's, but this is also the one list whose mistakes would hide a real
+/// member, so it checks again rather than trusting what arrived.
+#[hdk_extern]
+pub fn get_departures(_: ()) -> ExternResult<Vec<Standing>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+
+    let links = get_links(
+        LinkQuery::try_new(
+            departure_path()?.path_entry_hash()?,
+            LinkTypes::CircleToDeparture,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    // Mine too, so the holder sees her decision the moment she makes it.
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::Departure)?);
+    oldest_first(&mut found);
+
+    let mut newest: std::collections::BTreeMap<String, Standing> =
+        std::collections::BTreeMap::new();
+    for record in found {
+        if record.action().author() != &holder {
+            continue;
+        }
+        let Some(departure) = record.entry().to_app_option::<Departure>().ok().flatten() else {
+            continue;
+        };
+        let who = departure.who.to_string();
+        newest.insert(
+            who.clone(),
+            Standing {
+                who,
+                removed: departure.removed,
+                since: record.action().timestamp(),
+            },
+        );
+    }
+
+    Ok(newest.into_values().collect())
 }
 
 /// Ask somebody to agree to who joins, from now on.

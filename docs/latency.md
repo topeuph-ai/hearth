@@ -5,6 +5,81 @@
 checked against the pinned versions, the explanation of the delay is a
 hypothesis.
 
+> ## ⚠️ Measured on 22 September 2026, and it is a different problem
+>
+> The section below is about two machines *finding* each other. A test that
+> day found them finding each other quickly and then taking **about ten
+> minutes for the joiner to actually be in the circle** — with a photograph
+> and a two-minute video in the record.
+>
+> **The laptop's log says what happened**, and it is not the bootstrap
+> backoff described below:
+>
+> - **83 gossip rounds timed out**, one roughly every twenty seconds, from
+>   18:40:33 to 18:56:30. Sixteen minutes of rounds starting and failing.
+> - Every one names the peer as
+>   `https://dev-test-bootstrap2.holochain.org:443/…` — the address goes
+>   through **Holochain's public development relay**, for two machines on the
+>   same home wifi.
+> - `ERROR integrate_dht_ops_consumer: database is locked` during a
+>   fifty-second stall, so the workflow that files arriving data was fighting
+>   for the database as well.
+>
+> **The cause is not that the video is large. It is that a large payload
+> cannot finish inside a twenty-second gossip round over a relay**, so each
+> attempt restarted instead of completing. Size and timeout together.
+>
+> ### Why it relayed: released Holochain cannot find a machine in the same room
+>
+> **Read in the source on 22 September 2026.** The whole of the iroh
+> transport's configuration in kitsune2 0.5.1 is: `relay_url`,
+> `relay_allow_plain_text`, `max_frame_bytes` (100 MiB, so frame size is not
+> the limit), `connect_timeout_s`, and relay auth material.
+>
+> **There is no local discovery of any kind.** No mDNS, no LAN option. That is
+> exactly what the Lightningrod Labs field-test build adds.
+>
+> So two machines on one home wifi:
+>
+> 1. have no way to find each other locally;
+> 2. learn of each other only from the bootstrap server, which gives a **relay
+>    address**;
+> 3. are behind the same router, so a direct path needs hole-punching that
+>    hairpins back through that router — and neither knows the other's local
+>    address to try;
+> 4. end up sending everything out to a relay on the internet and back.
+>
+> A twenty-second gossip round cannot move a two-minute video that way, which
+> is what the 83 timeouts are.
+>
+> **This makes local discovery a performance fix, not only an offline one.** On
+> 19 September, with the field-test build, those same two machines found each
+> other in about a minute *with no internet at all*. With local addresses the
+> media would move at wifi speed instead of through somebody else's data
+> centre.
+>
+> Firewall exclusions would not fix it. They might help hole-punching, but
+> without local discovery the two machines never learn each other's local
+> addresses to punch to.
+>
+> Three levers, in the order they are worth trying:
+>
+> 1. **Local discovery.** Build the current rules against the field-test
+>    Holochain and repeat the join with media. If ten minutes becomes seconds,
+>    that is the answer, and the conclusion is that Hearth needs local
+>    discovery in a release — which is already the standing question for
+>    upstream.
+> 2. **Stop making a joiner take the media.** A cell can run at
+>    `target_arc_factor: 0` — read without storing. A professional's laptop
+>    should not be accumulating copies of somebody's family photographs in any
+>    case.
+> 3. **Smaller pieces.** Three megabytes per piece is fixed in the rules, so it
+>    can only change in this migration batch, before release. If a round cannot
+>    move 3 MB in twenty seconds, it may move 512 KB.
+>
+> The rest of this page stands: it is about a different part of the same
+> journey, and that part behaved well in the same test.
+
 Prompted by an observation from walking the app: after Dave pastes his
 invitation, it takes roughly a minute and a half before Pam's machine knows
 anything about him. The fair objection alongside it: Volla phones were making

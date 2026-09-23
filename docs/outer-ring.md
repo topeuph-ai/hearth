@@ -1,8 +1,10 @@
 # The outer ring
 
-**Status: design note, not built, 2026-09-08.** Written down so it can be
-proposed, argued with, and costed before anybody writes code. The idea is
-adapted from the capability-token sharing in the 2022 IEEE Access paper — see
+**Status: first version built 23 September 2026, on the `migration-batch`
+branch, not yet tried on two machines.** The design below was written on
+2026-09-08, before any code; [what was built](#what-was-built-23-september-2026)
+is at the end, with what it does not do yet. The idea is adapted from the
+capability-token sharing in the 2022 IEEE Access paper — see
 [`prior-art.md`](prior-art.md).
 
 ---
@@ -133,7 +135,8 @@ the second yes. The default walk gains nothing and loses nothing.
 
 ## What to do with it
 
-**Do not build it yet.** In order:
+*Written 2026-09-08. Overtaken: the first version is built — see the next
+section.* The original order was:
 
 1. **Publish a release.** Nothing else matters until somebody outside this room
    can run the thing. See [`what-is-proven.md`](what-is-proven.md).
@@ -145,6 +148,76 @@ the second yes. The default walk gains nothing and loses nothing.
    of it. See [`funding.md`](funding.md).
 3. **Then build it**, with the discovery problem treated as part of the work
    rather than assumed away.
+
+---
+
+## What was built, 23 September 2026
+
+Five decisions, taken by Ceri before any code:
+
+1. **Only the holder makes a pass.** Being in the circle does not make the
+   record yours to hand out.
+2. **A week by default**, with "just today" and "until I stop it" offered.
+3. **Three sections ticked by default** — how to talk with me, please do and
+   please do not, how and when to support me — because those are what somebody
+   meeting the person for the first time needs. The holder can tick others.
+4. **The use is seen.** "Ward 7 read this" appears on the holder's screen.
+5. **Words only.** No photographs, sound or video through a pass.
+
+### How it works
+
+**Nothing in the frozen rules changed.** The integrity hash is the same before
+and after; everything is in the coordinator zome and the interface.
+
+- **A pass is a Holochain capability grant**, made in the circle's **door** —
+  the one network anybody with the address can already enter. It unlocks
+  exactly one function, `read_with_a_pass`, and what it allows (which circle,
+  which sections, who it is for, when it stops) is written in the grant's tag
+  by the holder's own device.
+- **The reader enters the door and asks the holder's device**, presenting the
+  pass. Holochain checks the secret against a live grant *before our code runs
+  at all*; a stopped pass is refused there.
+- **The holder's device reads the chosen sections from the circle** and sends
+  back those words and nothing else. It reads the terms from the grant it made,
+  never from the reader, so no reader can ask for more than was given.
+- **The reader's screen keeps nothing.** The words are shown and are gone when
+  the screen is left.
+
+What travels is a pass of twelve short rows starting with the word PASS —
+the same self-checking letters as an address, so a typing mistake is pointed at
+by row — and the same thing as a code for a camera.
+
+### Tested
+
+Six tests, in `tests/tests/adversarial.rs` under *Passes*: a pass reads the
+chosen sections and nothing else, and the holder's screen hears it; a stopped
+pass opens nothing; a pass past its time opens nothing; a guessed secret opens
+nothing; a member cannot make a pass, and a pass cannot be made inside the
+circle; and the function that fetches the words cannot be used by a member as a
+way round the pass.
+
+### What it does not do yet — said plainly
+
+- **It works only while the holder's device is on, with Hearth open.** This is
+  the cost described above, and it is now real rather than predicted.
+- **Only the holder's own screen sees a pass being used**, and only on that
+  computer. Decision 4 wanted the *circle* to see it. That needs a new kind of
+  entry in the circle — a change to the frozen rules — so it belongs in the
+  migration batch rather than being faked here.
+- **The name on the pass is the holder's label, not a checked identity.** "Ward
+  7" is what she typed. A pass works for whoever holds it, like a key.
+- **A pass is shown once.** If it is lost, stop it and make another.
+- **Discovery is still the hard part.** A nurse who has Hearth and is handed a
+  pass can read. Getting Hearth onto a ward's machine is not solved by this.
+- **Not yet tried on two machines.** The tests run in one conductor.
+
+### A note on the funding answers
+
+The NLnet answers drafted in September describe the outer ring as the work to be
+funded. A first version now exists, so those answers should say so: the funded
+work becomes the parts above that are not done — the circle seeing its use,
+reaching a device that is off, and getting a pass onto a ward — rather than the
+idea itself.
 
 ---
 

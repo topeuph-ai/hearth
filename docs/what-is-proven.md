@@ -206,6 +206,123 @@ What this does **not** yet show, so nobody reads more into it:
   they can.
 - **Two machines, not twenty.** Nothing here is evidence about scale.
 
+### ✅ A change to the rules, survived — on two machines, 22 September 2026
+
+**The thing the freeze exists to protect, done on purpose for the first time.**
+
+Until today the honest position was that Hearth could not be updated at all
+without destroying what people had: a patch release would ship new rules the
+conductor never installs, and a minor release would start a fresh conductor with
+a fresh keystore and a fresh agent key, leaving every circle on disk where
+nothing would ever look again. Both facts were read in the packaging source
+rather than assumed — see [`upgrades.md`](upgrades.md).
+
+With the data directory pinned, the new rules installed beside the old ones, and
+the agent key reused, **0.2.5 was installed over 0.2.4 on two Windows machines**:
+
+- **Every circle survived.** Nine cells before, nine after, listed on screen and
+  each marked *"made with an older version"*.
+- **They open and read.** The record shows as it did, through the same screens.
+- **The person stayed the same person.** Asked of the conductor rather than
+  inferred: both installed apps report the same agent key.
+
+```
+hearth.rules.2  | agent hCAkJbUeLrTY1ln9 | cells 1 | enabled
+kangaroo.happ   | agent hCAkJbUeLrTY1ln9 | cells 9 | enabled
+```
+
+A new circle was then made under the new rules and joined from the other
+machine, which is also the first time **the locked record has run on two real
+machines**.
+
+**Done twice, on two separate apps.** The field-test build later the same
+evening carries the same packaging changes under its own app id
+(`uk.topeuph.hearthlan`), and installing it over the LAN build from 19 September
+did the same thing: the older circles listed, marked *"made with an older
+version"*, and the marking on the right ones. Two apps, two machines, one
+result.
+
+**What this does not show.** An old circle cannot yet be *carried across* to the
+new rules — it can only be opened and read where it is. That is step 3 of
+[`upgrades.md`](upgrades.md) and it is not built. And this was an upgrade within
+0.2.x; the pinned directory means a later version number should behave the same,
+but nobody has done it.
+
+### ⚠️ Joining took about ten minutes, and the media is the suspect
+
+Recorded here because it happened during the test above and it is not a small
+thing.
+
+The two machines **found each other quickly** — none of the ninety-second
+bootstrap delay in [`latency.md`](latency.md) — and the key handshake the
+encryption adds was **also quick**. What took about ten minutes was the joiner
+actually being in the circle.
+
+**The circle contained a photograph and a video.** A joining device receives and
+validates what is in the circle, and a two-minute 480p video is tens of
+megabytes arriving in three-megabyte pieces. That is the obvious suspect and it
+has not yet been confirmed from the logs.
+
+If it is right, it is an uncomfortable finding: media exists for people who
+cannot read a screen, so the feature built for the least able users is the one
+that makes joining slowest. The known lever is that a joiner need not store the
+whole circle — Holochain can run a cell at `target_arc_factor: 0`, reading
+without holding, which is also a privacy improvement. Not attempted.
+
+**The log was read the same evening, and the suspicion was half right.** From
+the laptop's own log:
+
+- **83 gossip rounds timed out**, one about every twenty seconds, from 18:40:33
+  to 18:56:30 — sixteen minutes of rounds starting and failing.
+- Every one of them names the peer as
+  `https://dev-test-bootstrap2.holochain.org:443/…`, so the address went
+  **through Holochain's public development relay** — for two machines on the
+  same home wifi.
+- `ERROR integrate_dht_ops_consumer: database is locked` during a fifty-second
+  stall: the workflow that files arriving data was also fighting for the
+  database.
+
+So it is **not simply that the video is large. A large payload cannot finish
+inside a twenty-second gossip round over a relay**, so each attempt restarted
+rather than completing. Size and timeout together.
+
+That changes what to do about it, and the first thing is not about media at
+all: **find out why two machines on one network were talking through a relay.**
+See [`latency.md`](latency.md) for the three levers and the order to try them.
+
+### ✅ With local discovery, the same media moved quickly — 22 September 2026
+
+The same two machines, the same rules, the same photograph and video. The only
+difference: a build using the Lightningrod Labs field-test Holochain, with
+`mdnsBootstrap` and `irohTransport.enableLanDiscovery` switched on, so the
+machines can find each other on the wifi instead of being introduced through a
+relay on the internet.
+
+**The video reached the laptop very quickly**, against about ten minutes on the
+released build an hour earlier.
+
+**Two honest caveats.** The PC's wifi adapter switched itself off partway
+through, so the run began looking like a failure and recovered when the adapter
+came back — which is evidence of its own about recovering after a network
+interruption, but it means **nothing was timed with a stopwatch**. And it is one
+run, not a measurement.
+
+**What it supports.** The ten-minute join was not caused by media being large.
+It was caused by media being large *and* having to travel through a relay in
+twenty-second gossip rounds that never completed. Given a direct path on the
+local network, the same data moves at wifi speed.
+
+**What would make it conclusive:** the two builds back to back, same circle,
+same media, timed. Worth doing before the claim is repeated anywhere that
+matters.
+
+**What it means for the project.** Local discovery is not only the thing that
+makes Hearth work with no internet — it is what makes photographs, sound and
+video usable at all when everybody is in the same building, which is the
+ordinary case for a person and the people looking after them. Released
+Holochain 0.7.0 has no local discovery, so this remains a field-test build.
+See [`latency.md`](latency.md).
+
 ### It conforms to the standard it claims
 
 Checked field by field against the PRSB About Me JSON. See
@@ -238,20 +355,29 @@ in front of a screen wondering whether something has gone wrong.
 
 ## Not built
 
-### The record is not encrypted
+### The record is not encrypted — **in the released version**
 
-**The largest gap, stated first because it is the one a reviewer should ask
-about.**
+**Built and tested, and not in anybody's hands yet.** The released 0.2.4 stores
+the contents in the clear on every member's machine: entries are validated,
+signed and only reachable through the membrane, so a circle does not leak to the
+network at large, but anybody in a circle — and afterwards, if they keep their
+copy — has the plain text.
 
-Entries are validated, signed, and only reachable by people admitted through the
-membrane, so a circle's contents do not leak to the network at large. But the
-contents themselves are stored in the clear on every member's machine. Once
-somebody is in a circle — and afterwards, if they keep their copy — they have
-the plain text.
+On the `migration-batch` branch that is fixed, and as of 22 September 2026 it has
+run on two real machines. The record, suggestions, photographs, sound, video and
+acknowledgement roles are locked with a key every member holds, and **removing
+somebody starts a new key sealed to everybody but them**, so what the circle
+writes next cannot be read on their device by any software. Proven by 94
+adversarial tests, including two on separate conductors, which is the only way to
+show that a key was never given. See [`encryption.md`](encryption.md).
 
-For the About Me scope that is a smaller exposure than it sounds: no
-medications, no diagnoses, nothing clinical, by design. It is still the thing
-standing between this and a record anybody should trust with more.
+What it does not do, and cannot: the removed person keeps every key they were
+already given, so what they could read before, they still can. There is no way to
+delete a key from a keystore.
+
+For the About Me scope the exposure in the released version is smaller than it
+sounds — no medications, no diagnoses, nothing clinical, by design. It is still
+the reason nobody should put a real person's record into 0.2.4.
 
 ### Nothing is revocable in the ordinary sense
 

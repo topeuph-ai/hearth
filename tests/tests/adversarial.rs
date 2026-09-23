@@ -7,7 +7,7 @@
 //! been implemented far more strongly than authorship, plus two holes it
 //! missed: link creation and deletes were entirely unvalidated.
 
-use aboutme_integrity::{AboutMe, CircleProperties, Invitation};
+use aboutme_integrity::{AboutMe, CircleProperties, Invitation, Suggestion};
 use holochain::prelude::*;
 use holochain::sweettest::*;
 use std::collections::HashMap;
@@ -34,6 +34,10 @@ fn an_about_me(name: &str) -> AboutMe {
         how_to_support_me: "Give me time to answer".into(),
         also_worth_knowing: "I was a district nurse for thirty years".into(),
         supported_to_write_this_by: "My daughter Ruth".into(),
+        codes: Vec::new(),
+        // The words as they are typed. The zome locks them on the way in, so
+        // nothing a test writes is ever the locked form.
+        locked: None,
     }
 }
 
@@ -156,7 +160,28 @@ async fn a_circle_with_a_member() -> (SweetConductor, CellId, CellId) {
         .await
         .expect("an invited agent should be admitted");
 
+    // Keys, as the app does on every pass. Everything written in a circle is
+    // locked, so without this a member cannot offer a suggestion and the holder
+    // cannot write the record — which is a fact about the app worth knowing,
+    // not something to work around: see `keep_keys_up_to_date`.
+    keys_flowing(&conductor, &alice_cell, &[&bob_cell]).await;
+
     (conductor, alice_cell, bob_cell)
+}
+
+/// Get the circle's keys to everybody, the way the app does when it opens one.
+///
+/// The member's device publishes its encryption key, the holder makes the
+/// circle's key and seals it to whoever is owed one, and the member takes it up.
+/// In one conductor this takes one pass each way.
+async fn keys_flowing(conductor: &SweetConductor, holder: &CellId, members: &[&CellId]) {
+    for cell in members {
+        let _: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+    }
+    keys_until(conductor, holder, |k| k.epoch >= 1 && k.mine >= 1).await;
+    for cell in members {
+        keys_until(conductor, cell, |k| k.mine >= 1).await;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -593,7 +618,14 @@ async fn two_people_agreeing_lets_somebody_in() {
     // Ruth signs from the lobby, never having joined the circle: she is
     // agreeing to who gets in without being able to read a word of it.
     let seconded: Signature = conductor
-        .call(&zome(&ruth_lobby), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&ruth_lobby),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let invitation = Invitation {
@@ -603,6 +635,7 @@ async fn two_people_agreeing_lets_somebody_in() {
         // Bob in on Alice's signature alone — which would make this test pass
         // without proving anything about Ruth at all.
         appointment: Some(appointment),
+        name: String::new(),
     };
 
     assert!(
@@ -675,7 +708,14 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
     // signatures. This is the attack the feature exists for: the holder under
     // pressure, waiving her own safeguard.
     let forged: Signature = conductor
-        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     let invitation = Invitation {
@@ -685,6 +725,7 @@ async fn the_holder_cannot_give_the_second_yes_herself() {
         // her forged signature against. Without it there is no second
         // agreement being claimed at all, and nothing to catch.
         appointment: Some(appointment),
+        name: String::new(),
     };
 
     assert!(
@@ -728,7 +769,14 @@ async fn an_invitation_that_loses_its_appointment_is_not_checked_for_a_second_ye
     );
 
     let forged: Signature = conductor
-        .call(&zome(&alice_cell), "second_an_invitation", bob.to_string())
+        .call(
+            &zome(&alice_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
         .await;
 
     // What the waiting room used to hand over: both signatures, no appointment.
@@ -736,6 +784,7 @@ async fn an_invitation_that_loses_its_appointment_is_not_checked_for_a_second_ye
         signature: bundle.invitation.signature.clone(),
         seconded: Some(forged),
         appointment: None,
+        name: String::new(),
     };
 
     assert!(
@@ -1357,6 +1406,7 @@ fn a_suggestion() -> aboutme_integrity::Suggestion {
         field: aboutme_integrity::AboutMeField::WhatMattersToMe,
         text: "Her allotment. She talked about it all summer.".to_string(),
         because: "I am her son.".to_string(),
+        locked: None,
     }
 }
 
@@ -1568,10 +1618,15 @@ async fn the_whole_journey() {
         )
         .await;
 
-    let readers: Vec<Record> = conductor
+    let readers: Vec<aboutme::WhoRead> = conductor
         .call(&zome(&alice), "get_acknowledgements", original)
         .await;
     assert_eq!(readers.len(), 1, "the holder should know it was read");
+    assert_eq!(
+        readers[0].role, "her son",
+        "and what he said he was, which is locked in the circle and opened here"
+    );
+    assert!(!readers[0].locked_out);
 }
 
 // ---------------------------------------------------------------------------
@@ -1966,16 +2021,26 @@ async fn a_circle_with_both_people_in_it() -> (
         )
         .await;
     let seconded: Signature = conductor
-        .call(&zome(&ruth_cell), "second_an_invitation", dave.to_string())
+        .call(
+            &zome(&ruth_cell),
+            "second_an_invitation",
+            aboutme::SecondInput {
+                invitee: dave.to_string(),
+                name: "Dave".to_string(),
+            },
+        )
         .await;
     let dave_invitation = aboutme_integrity::Invitation {
         signature: for_dave.invitation.signature.clone(),
         seconded: Some(seconded),
         appointment: None,
+        name: "Dave".to_string(),
     };
     let dave_cell = join(&conductor, "dave", &dave, &dna, Some(&dave_invitation))
         .await
         .expect("two agreements admit an ordinary member");
+
+    keys_flowing(&conductor, &alice_cell, &[&ruth_cell, &dave_cell]).await;
 
     (conductor, alice_cell, ruth_cell, dave_cell, ronnie)
 }
@@ -3075,5 +3140,1342 @@ async fn knocking_without_saying_who_you_are_is_refused() {
     assert!(
         result.is_err(),
         "a knock with nobody's name on it tells the holder nothing she can act on"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// How much anybody may write (migration batch, item 3)
+// ---------------------------------------------------------------------------
+//
+// Everything written in a circle is copied to every member's device. The app
+// keeps to these limits already; these tests are about a copy that does not,
+// so every call below goes straight to the zome with nothing in between.
+
+fn words(n: usize) -> String {
+    vec!["word"; n].join(" ")
+}
+
+/// Five hundred words a section, and not one more.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_section_holds_five_hundred_words_and_no_more() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let mut fits = an_about_me("Alice Bell");
+    fits.what_matters_to_me = words(500);
+    let fitted: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", fits)
+        .await;
+    assert!(fitted.is_ok(), "five hundred words is the limit, not over it");
+
+    let mut over = an_about_me("Alice Bell");
+    over.my_wellness = words(501);
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", over)
+        .await;
+    assert!(
+        refused.is_err(),
+        "one section of one person's record is copied to every device in the circle"
+    );
+}
+
+/// A wall of text with no spaces in it is still too long.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_without_spaces_cannot_dodge_the_limit() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let mut wall = an_about_me("Alice Bell");
+    wall.also_worth_knowing = "x".repeat(8_001);
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "create_about_me", wall)
+        .await;
+    assert!(
+        refused.is_err(),
+        "one word eight thousand characters long is not a way round five hundred words"
+    );
+}
+
+/// A suggestion is held to the same limit as the section it is about.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suggestion_holds_five_hundred_words_and_no_more() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "suggest",
+            aboutme_integrity::Suggestion {
+                field: aboutme_integrity::AboutMeField::WhatMattersToMe,
+                text: words(501),
+                because: String::new(),
+                locked: None,
+            },
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "any member may suggest, so any member could otherwise fill everybody's disk"
+    );
+}
+
+/// A name is a name.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_name_is_not_a_place_to_write_an_essay() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "introduce_myself",
+            aboutme_integrity::Member {
+                name: "B".repeat(201),
+                relationship: "her nephew".to_string(),
+            },
+        )
+        .await;
+    assert!(refused.is_err(), "a name can be up to two hundred characters");
+}
+
+/// Ten knocks by one person at one door, and no more.
+///
+/// Every knock sits on the holder's device. Somebody who knocks a few times
+/// because nobody answered is fine; somebody who knocks a thousand times is
+/// filling her disk and burying the people she is waiting for.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_person_cannot_bury_a_door_in_knocks() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let ronnie = SweetAgents::one(conductor.keystore()).await;
+
+    let room = a_waiting_room(&alice).await;
+    let ronnie_cell = join(&conductor, "ronnie-room", &ronnie, &room, None)
+        .await
+        .expect("a waiting room is open");
+
+    for n in 1..=10 {
+        let knocked: Result<Record, _> = conductor
+            .call_fallible(&zome(&ronnie_cell), "knock", a_knock())
+            .await;
+        assert!(knocked.is_ok(), "knock {n} of ten should be allowed");
+    }
+
+    let eleventh: Result<Record, _> = conductor
+        .call_fallible(&zome(&ronnie_cell), "knock", a_knock())
+        .await;
+    assert!(
+        eleventh.is_err(),
+        "an eleventh knock by the same person at the same door is refused"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The name on an invitation is signed (migration batch, item 2)
+// ---------------------------------------------------------------------------
+
+/// Change the name on the way, and the invitation stops working.
+///
+/// The second person is asked to agree to "Ronnie, her cousin", not to a key.
+/// Whoever carries an invitation between the two of them could once rename
+/// the person on it without breaking anything. Now both signatures are over
+/// the key and the name together.
+#[tokio::test(flavor = "multi_thread")]
+async fn renaming_somebody_on_an_invitation_breaks_it() {
+    let conductor = SweetConductor::standard().await;
+    let alice = SweetAgents::one(conductor.keystore()).await;
+    let bob = SweetAgents::one(conductor.keystore()).await;
+    let dna = circle_dna(&alice).await;
+
+    let alice_cell = join(&conductor, "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let bundle: aboutme::InvitationBundle = conductor
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: "Bob, her nephew".to_string(),
+            },
+        )
+        .await;
+    assert_eq!(bundle.invitation.name, "Bob, her nephew");
+
+    let mut renamed = bundle.invitation.clone();
+    renamed.name = "The district nurse".to_string();
+
+    assert!(
+        join(&conductor, "bob-renamed", &bob, &dna, Some(&renamed))
+            .await
+            .is_err(),
+        "the name the holder signed is part of what she signed"
+    );
+    // The invitation as she made it opening the door is covered by every
+    // other test that joins somebody by name.
+}
+
+// ---------------------------------------------------------------------------
+// Removing somebody, the ordinary way (migration batch, item 4)
+// ---------------------------------------------------------------------------
+
+/// The holder removes somebody, lets them back, and the newest decision is
+/// the one every app reads.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_remove_somebody_and_let_them_back() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().to_string();
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.clone(),
+                removed: true,
+            },
+        )
+        .await;
+    let standing: Vec<aboutme::Standing> =
+        conductor.call(&zome(&alice_cell), "get_departures", ()).await;
+    assert_eq!(standing.len(), 1);
+    assert!(standing[0].removed, "Bob has been removed");
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob,
+                removed: false,
+            },
+        )
+        .await;
+    let standing: Vec<aboutme::Standing> =
+        conductor.call(&zome(&alice_cell), "get_departures", ()).await;
+    assert_eq!(standing.len(), 1, "one line per person, not one per decision");
+    assert!(!standing[0].removed, "the newest decision is the one that counts");
+}
+
+/// Only the holder removes anybody.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_remove_anybody() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: alice_cell.agent_pubkey().to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "a member removing the holder, or anybody, is not a decision they can make"
+    );
+}
+
+/// The holder cannot remove herself: that would leave a circle nobody may
+/// write in, and it is what a successor is for.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_remove_herself() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: alice_cell.agent_pubkey().to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Photos, sound and video (migration batch, item 7)
+// ---------------------------------------------------------------------------
+
+use aboutme_integrity::{AboutMeField, MediaKind};
+
+fn a_photo(pieces: Vec<EntryHash>, size: u64) -> aboutme::AddMediaInput {
+    aboutme::AddMediaInput {
+        section: AboutMeField::PeopleWhoMatter,
+        kind: MediaKind::Photo,
+        mime_type: "image/jpeg".to_string(),
+        file_name: "ruth-and-me.jpg".to_string(),
+        in_words: "Me with my daughter Ruth at the allotment".to_string(),
+        seconds: 0,
+        pieces,
+        size,
+    }
+}
+
+/// The holder adds a photo, and it reads back exactly as it went in.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_can_add_a_photo_and_read_it_back() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let picture: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
+
+    let piece: EntryHash = conductor
+        .call(&zome(&alice_cell), "add_media_piece", aboutme::Bytes(picture.clone()))
+        .await;
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "add_media", a_photo(vec![piece.clone()], 50_000))
+        .await;
+
+    let here: Vec<aboutme::MediaHere> =
+        conductor.call(&zome(&alice_cell), "get_media", ()).await;
+    assert_eq!(here.len(), 1);
+    assert_eq!(here[0].media.pieces, vec![piece.clone()]);
+
+    let back: aboutme::Bytes = conductor
+        .call(&zome(&alice_cell), "get_media_piece", piece.clone())
+        .await;
+    assert_eq!(back.0, picture, "the photo comes back byte for byte");
+
+    // The words beside it are locked too, and read back as they were written.
+    assert_eq!(
+        here[0].media.in_words,
+        "Me with my daughter Ruth at the allotment",
+        "the caption is locked in the circle and opened for a member"
+    );
+
+    let _: () = conductor
+        .call(&zome(&alice_cell), "remove_media", here[0].item.clone())
+        .await;
+    let after: Vec<aboutme::MediaHere> =
+        conductor.call(&zome(&alice_cell), "get_media", ()).await;
+    assert!(after.is_empty(), "a removed photo does not come back on her own screen");
+}
+
+/// A photo added after somebody is removed cannot be opened on their device.
+///
+/// The same rule as the record, applied to the thing people mind most about: a
+/// photograph of somebody in their own home. On two devices, so that his
+/// keystore is his — see `a_circle_on_two_devices`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_cannot_open_a_photo_added_afterwards() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let his = conductors.get(1).unwrap();
+    let bob = bob_cell.agent_pubkey().clone();
+
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
+
+    let _: Record = hers
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
+
+    let picture: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+    let piece: EntryHash = hers
+        .call(
+            &zome(&alice_cell),
+            "add_media_piece",
+            aboutme::Bytes(picture),
+        )
+        .await;
+    let _: Record = hers
+        .call(
+            &zome(&alice_cell),
+            "add_media",
+            a_photo(vec![piece.clone()], 20_000),
+        )
+        .await;
+
+    // It reaches his device like everything else does; it is the opening of it
+    // that fails. Waiting for it to arrive first is what makes that the claim.
+    let mut arrived = false;
+    for _ in 0..60 {
+        let here: Vec<aboutme::MediaHere> = his.call(&zome(&bob_cell), "get_media", ()).await;
+        if here.iter().any(|m| m.media.pieces.contains(&piece)) {
+            arrived = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    assert!(
+        arrived,
+        "the photo reaches his device, as everything here does"
+    );
+
+    let asked: Result<aboutme::Bytes, _> = his
+        .call_fallible(&zome(&bob_cell), "get_media_piece", piece)
+        .await;
+    assert!(
+        asked.is_err(),
+        "a removed member must not be able to open a photo added after he went"
+    );
+}
+
+/// Media is part of the person's account of themselves: only the holder adds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_add_media() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+    let refused: Result<EntryHash, _> = conductor
+        .call_fallible(&zome(&bob_cell), "add_media_piece", aboutme::Bytes(vec![1; 1000]))
+        .await;
+    assert!(refused.is_err(), "a member cannot put files on everybody's device");
+}
+
+/// A piece is at most three megabytes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_piece_over_three_megabytes_is_refused() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let refused: Result<EntryHash, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "add_media_piece",
+            aboutme::Bytes(vec![7; 3_000_001]),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// Each kind has its own limits: types, length, pieces.
+#[tokio::test(flavor = "multi_thread")]
+async fn media_is_held_to_the_limits_of_its_kind() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let piece: EntryHash = conductor
+        .call(&zome(&alice_cell), "add_media_piece", aboutme::Bytes(vec![3; 1000]))
+        .await;
+
+    // A photo that says it is a video file.
+    let mut wrong_type = a_photo(vec![piece.clone()], 1000);
+    wrong_type.mime_type = "video/webm".to_string();
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", wrong_type)
+        .await;
+    assert!(refused.is_err(), "a photo is an image file");
+
+    // A recording longer than two minutes.
+    let mut too_long = a_photo(vec![piece.clone()], 1000);
+    too_long.kind = MediaKind::Sound;
+    too_long.mime_type = "audio/webm".to_string();
+    too_long.seconds = 121;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", too_long)
+        .await;
+    assert!(refused.is_err(), "two minutes at most");
+
+    // A video in more pieces than thirty megabytes needs.
+    let mut too_many = a_photo(vec![piece; 11], 11_000);
+    too_many.kind = MediaKind::Video;
+    too_many.mime_type = "video/webm".to_string();
+    too_many.seconds = 60;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&alice_cell), "add_media", too_many)
+        .await;
+    assert!(refused.is_err(), "ten pieces at most");
+}
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+
+fn naming(successor: Option<&AgentPubKey>) -> aboutme::NameSuccessorInput {
+    aboutme::NameSuccessorInput {
+        successor: successor.map(|k| k.to_string()),
+        checker: None,
+    }
+}
+
+/// The holder names a successor; the successor starts; the holder says she is
+/// still here — and every step is where the circle can see it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_successor_can_start_and_the_holder_can_stop_it() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "still_here", claim.action_address().clone())
+        .await;
+    let state: aboutme::SuccessionState =
+        conductor.call(&zome(&alice_cell), "get_succession", ()).await;
+    let seen = state.claim.expect("the claim is where she can see it");
+    assert_eq!(seen.by, bob.to_string());
+    assert!(seen.still_here, "and so is her answer");
+}
+
+/// Only the holder names a successor.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_name_themselves_successor() {
+    let (conductor, _, bob_cell) = a_circle_with_a_member().await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "name_successor",
+            naming(Some(bob_cell.agent_pubkey())),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// The holder cannot be her own successor.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_holder_cannot_succeed_herself() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "name_successor",
+            naming(Some(alice_cell.agent_pubkey())),
+        )
+        .await;
+    assert!(refused.is_err());
+}
+
+/// Nobody can start taking over who was not named.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_person_named_can_start_taking_over() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    // Named: nobody.
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(None))
+        .await;
+    let refused: Result<Record, _> = conductor
+        .call_fallible(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+    assert!(refused.is_err(), "Bob was never named");
+}
+
+/// The successor cannot also be the one who checks on her, and she cannot
+/// check on herself: the point is a second person.
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_checks_on_the_holder_but_a_second_person() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+
+    let by_successor: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: false,
+            },
+        )
+        .await;
+    assert!(by_successor.is_err(), "the successor cannot vouch for his own claim");
+
+    let by_holder: Result<Record, _> = conductor
+        .call_fallible(
+            &zome(&alice_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: true,
+            },
+        )
+        .await;
+    assert!(by_holder.is_err(), "she answers with I'm still here");
+}
+
+/// A check by a third person is seen — by everybody, including whoever gave it.
+///
+/// The first check ever given, in the demo, vanished: reading answers back
+/// took a check for a "still here" from the wrong person and dropped it. This
+/// is the test that would have caught it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_on_the_holder_is_seen() {
+    let (conductor, alice_cell, ruth_cell, dave_cell, _) =
+        a_circle_with_both_people_in_it().await;
+    let dave = dave_cell.agent_pubkey().clone();
+    let ruth = ruth_cell.agent_pubkey().clone();
+
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "name_successor",
+            aboutme::NameSuccessorInput {
+                successor: Some(dave.to_string()),
+                checker: Some(ruth.to_string()),
+            },
+        )
+        .await;
+    let claim: Record = conductor
+        .call(&zome(&dave_cell), "start_taking_over", ())
+        .await;
+    let _: Record = conductor
+        .call(
+            &zome(&ruth_cell),
+            "check_on_holder",
+            aboutme::CheckInput {
+                claim: claim.action_address().clone(),
+                holder_can_carry_on: false,
+            },
+        )
+        .await;
+
+    let state: aboutme::SuccessionState =
+        conductor.call(&zome(&ruth_cell), "get_succession", ()).await;
+    let seen = state.claim.expect("the claim stands");
+    assert_eq!(seen.checks.len(), 1, "the check is there");
+    assert!(!seen.checks[0].holder_can_carry_on);
+    assert!(!seen.still_here, "and it was not mistaken for 'still here'");
+}
+
+// ---------------------------------------------------------------------------
+// Keys (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The one thing encryption adds over the everyday removal: what the circle
+// writes after somebody is removed reaches their device locked with a key they
+// were never given. These tests are about who ends up holding which key,
+// because that is the whole of it.
+
+/// A circle on two devices, each with a keystore of its own.
+///
+/// Every other test in this file runs both people inside one conductor, which is
+/// right for rules: they are checked by code, and the code is the same. It is
+/// useless for keys. One conductor has one keystore, and a key is stored there
+/// under a name — so a key the holder made is reachable from any agent in that
+/// conductor, and "he was never given this key" cannot be shown at all. Two
+/// conductors are two keystores, which is what being given a key means.
+///
+/// Returns the batch (the calls have to go to the conductor that owns the cell),
+/// the holder's cell, and the member's.
+async fn a_circle_on_two_devices() -> (SweetConductorBatch, CellId, CellId) {
+    let conductors = SweetConductorBatch::standard(2).await;
+    let alice = SweetAgents::one(conductors.get(0).unwrap().keystore()).await;
+    let bob = SweetAgents::one(conductors.get(1).unwrap().keystore()).await;
+    let dna = circle_dna(&alice).await;
+
+    let alice_cell = join(conductors.get(0).unwrap(), "alice", &alice, &dna, None)
+        .await
+        .expect("the founder needs no invitation to her own circle");
+
+    let bundle: aboutme::InvitationBundle = conductors
+        .get(0)
+        .unwrap()
+        .call(
+            &zome(&alice_cell),
+            "invite",
+            aboutme::InviteInput {
+                invitee: bob.to_string(),
+                name: String::new(),
+            },
+        )
+        .await;
+
+    let bob_cell = join(
+        conductors.get(1).unwrap(),
+        "bob",
+        &bob,
+        &dna,
+        Some(&bundle.invitation),
+    )
+    .await
+    .expect("an invited agent should be admitted");
+
+    // Two conductors do not find each other on their own here.
+    conductors.exchange_peer_info().await;
+
+    (conductors, alice_cell, bob_cell)
+}
+
+/// Get the circle's key to the member, across two conductors.
+///
+/// The order matters and is the app's own: the member's device publishes its
+/// encryption key first, because until it has, the holder has nothing to seal
+/// to; then the holder makes the circle's key and seals it; then the member
+/// takes it up. Waiting on the member first can never finish, which is exactly
+/// what four of these tests did before this existed.
+async fn keys_flowing_on_two(
+    conductors: &SweetConductorBatch,
+    holder: &CellId,
+    member: &CellId,
+) -> aboutme::KeysHere {
+    both_until(conductors, holder, member, |k| k.mine >= 1).await
+}
+
+/// Refresh both devices until the member's own state is what is wanted.
+///
+/// Both, in turn, because that is how this works in life: the member's device
+/// publishes its encryption key, and the holder's device has to *see* that
+/// before it can seal anything to them — which on two machines is a moment
+/// later, not instantly. Polling the member alone waits for something nobody
+/// is doing, which is how two of these tests failed with
+/// `KeysHere { epoch: 1, mine: 0 }`: the circle had a key and he had not been
+/// given it, because nothing asked her device to look again.
+async fn both_until(
+    conductors: &SweetConductorBatch,
+    holder: &CellId,
+    member: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..60 {
+        let _: aboutme::KeysHere = conductors
+            .get(0)
+            .unwrap()
+            .call(&zome(holder), "keep_keys_up_to_date", ())
+            .await;
+        let his: aboutme::KeysHere = conductors
+            .get(1)
+            .unwrap()
+            .call(&zome(member), "keep_keys_up_to_date", ())
+            .await;
+        if enough(&his) {
+            return his;
+        }
+        last = Some(his);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("the member's keys never reached what the test waited for: {last:?}");
+}
+
+/// The same as `keys_until`, for a cell in a batch of conductors.
+async fn keys_until_on(
+    conductors: &SweetConductorBatch,
+    which: usize,
+    cell: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let conductor = conductors.get(which).expect("that conductor exists");
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..60 {
+        let here: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+        if enough(&here) {
+            return here;
+        }
+        last = Some(here);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("keys never reached the state the test waited for: {last:?}");
+}
+
+/// Ask a cell about keys until it says what the test is waiting for, or give up.
+///
+/// Keys travel as entries, so one member's device learns about another's a
+/// moment later, as with everything else here.
+async fn keys_until(
+    conductor: &SweetConductor,
+    cell: &CellId,
+    enough: impl Fn(&aboutme::KeysHere) -> bool,
+) -> aboutme::KeysHere {
+    let mut last: Option<aboutme::KeysHere> = None;
+    for _ in 0..20 {
+        let here: aboutme::KeysHere = conductor.call(&zome(cell), "keep_keys_up_to_date", ()).await;
+        if enough(&here) {
+            return here;
+        }
+        last = Some(here);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    panic!("keys never reached the state the test waited for: {last:?}");
+}
+
+/// The holder makes the first key, and every member ends up able to use it.
+#[tokio::test(flavor = "multi_thread")]
+async fn everybody_in_the_circle_can_use_the_key() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // Bob's device publishes its encryption key; without it the holder has
+    // nothing to seal to.
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+
+    let hers = keys_until(&conductor, &alice_cell, |k| k.epoch == 1 && k.mine == 1).await;
+    assert!(
+        hers.waiting_for.is_empty(),
+        "the holder should not still be waiting for anybody's key: {:?}",
+        hers.waiting_for
+    );
+
+    let his = keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+    assert_eq!(his.epoch, 1, "one key, and Bob can use it");
+}
+
+/// Somebody removed is not given the key the circle uses from then on.
+///
+/// On two devices, because that is the only way this can be shown. See
+/// `a_circle_on_two_devices`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_is_not_given_the_next_key() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
+
+    let _: Record = conductors
+        .get(0)
+        .unwrap()
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+
+    let hers = keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
+    assert_eq!(hers.epoch, 2, "removing somebody starts a new key");
+
+    // Bob's device sees that the circle has moved on, and cannot follow: no
+    // amount of asking gives him key 2, because nothing in the circle carries
+    // it to him.
+    // Both devices refresh, so this is not waiting on something nobody does: she
+    // hands out keys and he takes up whatever is his. Key 2 is not.
+    let his = both_until(&conductors, &alice_cell, &bob_cell, |k| k.epoch == 2).await;
+    assert_eq!(
+        his.mine, 1,
+        "a removed member keeps what he had and is given nothing after"
+    );
+    let held: Vec<u32> = conductors
+        .get(1)
+        .unwrap()
+        .call(&zome(&bob_cell), "keys_i_can_use", ())
+        .await;
+    assert_eq!(
+        held,
+        vec![1],
+        "key 1 only, which he was given while he was in"
+    );
+}
+
+/// Somebody owed the circle's history is given every past key, not only the
+/// one in use.
+///
+/// Ceri's decision of 20 September 2026: the record's history is part of the
+/// record, so a new district nurse can read how it used to read. Shown here by
+/// removing somebody and letting them back, which is the same code path a
+/// genuinely new member takes — the holder seals every epoch to anybody who is
+/// owed one. On two devices, because what is being tested is which keys reach
+/// his keystore.
+#[tokio::test(flavor = "multi_thread")]
+async fn somebody_owed_the_history_is_given_every_past_key() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let bob = bob_cell.agent_pubkey().clone();
+
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
+
+    // He goes, which starts key 2 without him; then he is let back in, and is
+    // owed both keys.
+    for removed in [true, false] {
+        let _: Record = hers
+            .call(
+                &zome(&alice_cell),
+                "decide_departure",
+                aboutme::DepartureInput {
+                    who: bob.to_string(),
+                    removed,
+                },
+            )
+            .await;
+    }
+
+    let his = both_until(&conductors, &alice_cell, &bob_cell, |k| k.mine == 2).await;
+    assert_eq!(
+        his.mine, 2,
+        "back in the circle, and able to read what it says now"
+    );
+
+    // And key 1 as well, which is what "the history" means: both keys were
+    // sealed to him, not only the one the circle is using now.
+    let held: Vec<u32> = conductors
+        .get(1)
+        .unwrap()
+        .call(&zome(&bob_cell), "keys_i_can_use", ())
+        .await;
+    assert_eq!(held, vec![1, 2], "the history, and the present");
+
+    let sealed_again: u32 = hers.call(&zome(&alice_cell), "hand_out_keys", ()).await;
+    assert_eq!(
+        sealed_again, 0,
+        "and nothing is handed out twice, however often the circle is opened"
+    );
+}
+
+/// Only the person who holds the circle hands out its keys.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_hand_out_keys() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+
+    let refused: Result<u32, _> = conductor.call_fallible(&zome(&bob_cell), "new_key", ()).await;
+    assert!(
+        refused.is_err(),
+        "a member starting a new key would lock the holder out of her own circle"
+    );
+
+    let sealed: u32 = conductor.call(&zome(&bob_cell), "hand_out_keys", ()).await;
+    assert_eq!(sealed, 0, "and he seals nothing to anybody");
+}
+
+/// The record goes into the circle locked, and nothing of it in the open.
+///
+/// This is the test that would catch the worst mistake available here: words
+/// written where anybody receiving the circle could read them, with every
+/// screen still looking exactly right.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_record_is_written_locked() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+
+    let written = AboutMe::try_from(
+        created
+            .entry()
+            .as_option()
+            .cloned()
+            .expect("the record has an entry"),
+    )
+    .expect("and it is an About Me");
+
+    assert!(
+        written.locked.is_some(),
+        "the record must be locked with the circle's key"
+    );
+    assert!(
+        written.display_name.is_empty()
+            && written.what_matters_to_me.is_empty()
+            && written.supported_to_write_this_by.is_empty(),
+        "and nothing of it may be left in the open: {written:?}"
+    );
+
+    // And it reads back as what was typed, for the person who holds the key.
+    let current: aboutme::CurrentAboutMe = conductor
+        .call(
+            &zome(&alice_cell),
+            "get_current_about_me",
+            created.action_address().clone(),
+        )
+        .await;
+    let words = current.about_me.expect("she can open her own record");
+    assert_eq!(words.display_name, "Alice Bell");
+    assert_eq!(words.what_matters_to_me, "Seeing my grandchildren");
+    assert!(!current.locked_out);
+}
+
+/// A suggestion goes into the circle locked, and reads back as it was offered.
+///
+/// A suggestion carries what somebody noticed about a person — often the most
+/// candid words in the circle — so it is locked like the record. Which section
+/// it is about stays in the open, because that is a heading.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suggestion_is_written_locked() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+
+    // Keys first: Bob cannot lock anything until he has one.
+    let _: aboutme::KeysHere = conductor
+        .call(&zome(&bob_cell), "keep_keys_up_to_date", ())
+        .await;
+    keys_until(&conductor, &alice_cell, |k| k.epoch == 1).await;
+    keys_until(&conductor, &bob_cell, |k| k.mine == 1).await;
+
+    let offered: Record = conductor
+        .call(&zome(&bob_cell), "suggest", a_suggestion())
+        .await;
+
+    let written = Suggestion::try_from(
+        offered
+            .entry()
+            .as_option()
+            .cloned()
+            .expect("the suggestion has an entry"),
+    )
+    .expect("and it is a suggestion");
+    assert!(written.locked.is_some(), "it must be locked");
+    assert!(
+        written.text.is_empty() && written.because.is_empty(),
+        "and nothing of what he wrote may be left in the open: {written:?}"
+    );
+    assert_eq!(
+        written.field,
+        aboutme_integrity::AboutMeField::WhatMattersToMe,
+        "the section it is about is a heading, and stays readable"
+    );
+
+    // And the holder reads what he actually offered.
+    let hash = offered.action_address().clone();
+    let mut seen = None;
+    for _ in 0..20 {
+        let list: Vec<aboutme::SuggestionWithOutcome> =
+            conductor.call(&zome(&alice_cell), "get_suggestions", ()).await;
+        if let Some(found) = list
+            .into_iter()
+            .find(|s| s.suggestion.action_address() == &hash)
+        {
+            seen = found.words;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    let words = seen.expect("the holder can open what was offered to her");
+    assert_eq!(words.text, "Her allotment. She talked about it all summer.");
+    assert_eq!(words.because, "I am her son.");
+}
+
+/// Somebody removed cannot read what the circle writes afterwards.
+///
+/// The whole of what encryption adds over the everyday removal. Everything else
+/// in this file is about an app behaving itself; this one holds whatever the app
+/// on the other device does. On two devices, so that "his keystore" means
+/// something — see `a_circle_on_two_devices`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_member_cannot_open_what_is_written_next() {
+    let (conductors, alice_cell, bob_cell) = a_circle_on_two_devices().await;
+    let hers = conductors.get(0).unwrap();
+    let his = conductors.get(1).unwrap();
+    let bob = bob_cell.agent_pubkey().clone();
+
+    keys_flowing_on_two(&conductors, &alice_cell, &bob_cell).await;
+
+    let created: Record = hers
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let original = created.action_address().clone();
+
+    // While he is in the circle, Bob reads it. Nothing takes that back.
+    let mut read_it = false;
+    for _ in 0..60 {
+        let current: aboutme::CurrentAboutMe = his
+            .call(&zome(&bob_cell), "get_current_about_me", original.clone())
+            .await;
+        if current.about_me.is_some() {
+            read_it = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    assert!(read_it, "a member reads the record he is there to read");
+
+    // Then he is removed, which starts a new key, and she writes again.
+    let _: Record = hers
+        .call(
+            &zome(&alice_cell),
+            "decide_departure",
+            aboutme::DepartureInput {
+                who: bob.to_string(),
+                removed: true,
+            },
+        )
+        .await;
+    keys_until_on(&conductors, 0, &alice_cell, |k| {
+        k.epoch == 2 && k.mine == 2
+    })
+    .await;
+
+    let mut after = an_about_me("Alice Bell");
+    after.my_wellness = "Written after he was removed".into();
+    let updated: Record = hers
+        .call(
+            &zome(&alice_cell),
+            "update_about_me",
+            aboutme::UpdateAboutMeInput {
+                original_action_hash: original.clone(),
+                previous_action_hash: original.clone(),
+                about_me: after,
+            },
+        )
+        .await;
+
+    // His device receives it — replication does not choose person by person —
+    // and cannot open it. Not "is not shown it": cannot open it.
+    let mut arrived = None;
+    for _ in 0..60 {
+        let current: aboutme::CurrentAboutMe = his
+            .call(&zome(&bob_cell), "get_current_about_me", original.clone())
+            .await;
+        if current.record.as_ref().map(|r| r.action_address()) == Some(updated.action_address()) {
+            arrived = Some(current);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    let current = arrived.expect("the new version reaches his device, as everything does");
+    assert!(
+        current.about_me.is_none(),
+        "a removed member must not be able to open what was written after he went"
+    );
+    assert!(
+        current.locked_out,
+        "and his app should say so, rather than showing an empty record"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A pass lets somebody passing through — a ward nurse, a paramedic — read
+// chosen sections without joining. It is a capability grant in the circle's
+// door, so nearly every one of these is a test that something is *refused*:
+// the sections not chosen, a pass that was stopped or has run out, a guessed
+// secret, anybody but the holder making one. See docs/outer-ring.md.
+
+/// Alice's circle, with her record written, and her door open on this device.
+/// Nia, a nurse who is in nothing, has entered the same door.
+async fn a_record_and_a_door() -> (SweetConductor, CellId, CellId, CellId, CellId) {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+
+    let alice = alice_cell.agent_pubkey().clone();
+    let nia = SweetAgents::one(conductor.keystore()).await;
+    let door = a_waiting_room(&alice).await;
+    let alice_door = join(&conductor, "alice-door", &alice, &door, None)
+        .await
+        .expect("the holder may open her own door");
+    let nia_door = join(&conductor, "nia-door", &nia, &door, None)
+        .await
+        .expect("anybody may stand at a door");
+
+    (conductor, alice_cell, bob_cell, alice_door, nia_door)
+}
+
+fn a_pass_for(circle: &CellId, until: Option<Timestamp>) -> aboutme::MakePassInput {
+    aboutme::MakePassInput {
+        circle: circle.dna_hash().to_string(),
+        sections: vec![
+            aboutme_integrity::AboutMeField::HowToCommunicateWithMe,
+            aboutme_integrity::AboutMeField::PleaseDoAndPleaseDoNot,
+        ],
+        for_whom: "Ward 7".to_string(),
+        until: until.map(|t| t.as_micros()),
+    }
+}
+
+fn seconds_from_now(seconds: u64) -> Timestamp {
+    (Timestamp::now() + std::time::Duration::from_secs(seconds)).expect("a time in range")
+}
+
+async fn ask(
+    conductor: &SweetConductor,
+    nia_door: &CellId,
+    holder: &AgentPubKey,
+    secret: CapSecret,
+) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
+    conductor
+        .call_fallible(
+            &zome(nia_door),
+            "ask_with_a_pass",
+            aboutme::AskWithPassInput {
+                holder: holder.to_string(),
+                secret,
+            },
+        )
+        .await
+}
+
+/// The whole point: the sections chosen, in the holder's words, and nothing
+/// else — and the holder's own screen is told it happened.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pass_reads_what_it_was_made_for_and_nothing_else() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+    let mut alice_hears = conductor.subscribe_to_app_signals("alice-door".to_string());
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(3600))),
+        )
+        .await;
+
+    let words = ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("a live pass, presented by whoever holds it, is answered");
+
+    assert_eq!(words.name, "Alice Bell");
+    assert_eq!(words.sections.len(), 2, "only the sections the pass was made for");
+    assert_eq!(
+        words.sections[0].words,
+        "Speak to my left side, I'm deaf on the right"
+    );
+    assert_eq!(words.sections[1].words, "Please do not move my chair");
+    let everything = format!("{words:?}");
+    assert!(
+        !everything.contains("grandchildren") && !everything.contains("district nurse"),
+        "nothing from a section that was not chosen may travel"
+    );
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(30), alice_hears.recv())
+        .await
+        .expect("the holder's screen should hear that the pass was used")
+        .expect("the signal channel should stay open");
+    let Signal::App { signal, .. } = signal else {
+        panic!("expected an app signal");
+    };
+    let decoded: aboutme::Signal = signal.into_inner().decode().expect("one of ours");
+    let aboutme::Signal::PassUsed { for_whom, .. } = decoded else {
+        panic!("expected PassUsed, got {decoded:?}");
+    };
+    assert_eq!(for_whom, "Ward 7");
+}
+
+/// "Stop it" means stopped, by Holochain itself, before any of our code runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_pass_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+    ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("it works before it is stopped");
+
+    let _: ActionHash = conductor
+        .call(&zome(&alice_door), "stop_a_pass", pass.grant.clone())
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "a stopped pass must read nothing"
+    );
+
+    let listed: Vec<aboutme::PassHere> = conductor
+        .call(&zome(&alice_door), "passes_here", ())
+        .await;
+    assert!(listed.is_empty(), "and it is no longer listed as given");
+}
+
+/// A pass with a time on it stops at that time, without anybody doing anything.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pass_that_has_run_out_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(2))),
+        )
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "a pass past its time must read nothing"
+    );
+
+    let listed: Vec<aboutme::PassHere> = conductor
+        .call(&zome(&alice_door), "passes_here", ())
+        .await;
+    assert!(listed[0].run_out, "and the holder's list says it has run out");
+}
+
+/// Without the secret there is no pass, whoever you are.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guessed_pass_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let _: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), [7u8; 64].into())
+            .await
+            .is_err(),
+        "a secret nobody was given must read nothing"
+    );
+}
+
+/// Only the person whose record it is gives it out.
+///
+/// Bob is in Alice's circle and can read everything in it. That does not make
+/// it his to hand to a stranger.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_holder_can_make_a_pass() {
+    let (conductor, alice_cell, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let door = a_waiting_room(alice_cell.agent_pubkey()).await;
+    let bob_at_her_door = join(&conductor, "bob-door", bob_cell.agent_pubkey(), &door, None)
+        .await
+        .expect("anybody may stand at a door");
+    let from_bob: Result<aboutme::PassMade, _> = conductor
+        .call_fallible(
+            &zome(&bob_at_her_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, None),
+        )
+        .await;
+    assert!(from_bob.is_err(), "a member cannot make a pass at her door");
+
+    // Nor inside the circle itself: a pass is made at the door, which is the
+    // only place the person it is given to can reach.
+    let inside: Result<aboutme::PassMade, _> = conductor
+        .call_fallible(&zome(&alice_cell), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+    assert!(inside.is_err(), "a pass is made at the door, not in the circle");
+}
+
+/// The function a pass reaches for the words must not be a way round the pass.
+///
+/// It answers only the device's own agent, and only in a circle that agent
+/// holds — so Bob, calling it in his copy of Alice's circle, gets nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_words_behind_a_pass_are_not_a_back_door() {
+    let (conductor, _, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let bob_asks: Result<aboutme::PassedWords, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "words_for_a_pass",
+            vec![aboutme_integrity::AboutMeField::WhatMattersToMe],
+        )
+        .await;
+    assert!(
+        bob_asks.is_err(),
+        "a member's device cannot hand out a record it does not hold"
     );
 }

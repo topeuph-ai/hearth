@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Who holds the record?</title>
+<!--
+  One page, for people who will grasp this faster from a picture than from a
+  paragraph: the difference between a record somebody holds and a record
+  nobody holds, and what a new key on removal actually does.
+
+  Print to PDF at A4 portrait. Drawn to survive greyscale printing: nothing
+  depends on colour alone, and every distinction is also carried by weight,
+  dashing or a label.
+-->
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  svg { display: block; width: 100%; height: auto; }
+  @media screen { body { max-width: 840px; margin: 1rem auto; } }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 794 1123" xmlns="http://www.w3.org/2000/svg"
+     font-family="Segoe UI, system-ui, sans-serif" fill="#1a1a1a">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="arrowred" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a2b06"/>
+    </marker>
+  </defs>
+
+  <!-- ============================ TITLE ============================ -->
+  <text x="48" y="62" font-size="27" font-weight="700" fill="#1f4e79">Who holds the record?</text>
+  <text x="48" y="88" font-size="14" fill="#444">Hearth — a care record shared across organisations that share no system</text>
+  <line x1="48" y1="104" x2="746" y2="104" stroke="#1f4e79" stroke-width="2"/>
+
+  <!-- ======================= 1. WITH AN OPERATOR ==================== -->
+  <text x="48" y="140" font-size="17" font-weight="700">1. Every previous attempt: somebody has to hold it</text>
+
+  <!-- contributors -->
+  <g font-size="12.5" text-anchor="middle">
+    <rect x="48"  y="176" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="123" y="201">GP surgery</text>
+    <rect x="48"  y="240" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="123" y="265">Hospital ward</text>
+    <rect x="48"  y="304" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="123" y="329">Care agency</text>
+    <rect x="596" y="176" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="671" y="201">District nurse</text>
+    <rect x="596" y="240" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="671" y="265">Day service</text>
+    <rect x="596" y="304" width="150" height="40" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="671" y="329">Family</text>
+  </g>
+
+  <!-- the operator -->
+  <rect x="297" y="212" width="200" height="96" rx="8" fill="#fdf0ea" stroke="#8a2b06" stroke-width="2.5"/>
+  <text x="397" y="242" font-size="15" font-weight="700" text-anchor="middle" fill="#8a2b06">THE OPERATOR</text>
+  <text x="397" y="264" font-size="11.5" text-anchor="middle" fill="#8a2b06">a company, or a state body</text>
+  <text x="397" y="284" font-size="11.5" text-anchor="middle" fill="#8a2b06">holds the data for everyone</text>
+  <text x="397" y="300" font-size="11.5" text-anchor="middle" fill="#8a2b06">and carries the liability</text>
+
+  <!-- arrows in -->
+  <g stroke="#8a2b06" stroke-width="1.6" marker-end="url(#arrowred)" fill="none">
+    <path d="M 202 196 L 293 232"/>
+    <path d="M 202 260 L 293 260"/>
+    <path d="M 202 324 L 293 288"/>
+    <path d="M 592 196 L 501 232"/>
+    <path d="M 592 260 L 501 260"/>
+    <path d="M 592 324 L 501 288"/>
+  </g>
+  <text x="397" y="196" font-size="11.5" text-anchor="middle" fill="#8a2b06" font-style="italic">each organisation deposits into somebody else's system</text>
+
+  <text x="48" y="372" font-size="12.5">The blocker was never technical. Whoever holds it is legally responsible for data about a</text>
+  <text x="48" y="390" font-size="12.5">vulnerable person, contributed by seven organisations, and must still exist in twenty years.</text>
+  <text x="48" y="414" font-size="12.5" font-weight="600">Microsoft HealthVault was not that party. It closed in 2019 and took the records with it.</text>
+  <text x="48" y="432" font-size="12.5">To give citizens data pods, Flanders created a state-owned company to host them.</text>
+
+  <line x1="48" y1="456" x2="746" y2="456" stroke="#ccc" stroke-width="1"/>
+
+  <!-- ======================= 2. NO OPERATOR ========================= -->
+  <text x="48" y="492" font-size="17" font-weight="700">2. Hearth: nobody holds it</text>
+
+  <!-- mesh of devices -->
+  <g font-size="12.5" text-anchor="middle">
+    <rect x="120" y="528" width="150" height="46" rx="6" fill="#eef2f6" stroke="#1f4e79" stroke-width="1.8"/>
+    <text x="195" y="549">Her daughter</text>
+    <text x="195" y="566" font-size="10.5" fill="#444">full copy on her phone</text>
+
+    <rect x="524" y="528" width="150" height="46" rx="6" fill="#eef2f6" stroke="#1f4e79" stroke-width="1.8"/>
+    <text x="599" y="549">District nurse</text>
+    <text x="599" y="566" font-size="10.5" fill="#444">full copy on her laptop</text>
+
+    <rect x="120" y="664" width="150" height="46" rx="6" fill="#eef2f6" stroke="#1f4e79" stroke-width="1.8"/>
+    <text x="195" y="685">Support worker</text>
+    <text x="195" y="702" font-size="10.5" fill="#444">full copy on his phone</text>
+
+    <rect x="524" y="664" width="150" height="46" rx="6" fill="#eef2f6" stroke="#1f4e79" stroke-width="1.8"/>
+    <text x="599" y="685">Margaret herself</text>
+    <text x="599" y="702" font-size="10.5" fill="#444">full copy, and she decides</text>
+  </g>
+
+  <!-- peer links, both ways -->
+  <g stroke="#1f4e79" stroke-width="1.5" fill="none"
+     marker-start="url(#arrow)" marker-end="url(#arrow)" opacity="0.85">
+    <path d="M 274 551 L 520 551"/>
+    <path d="M 274 687 L 520 687"/>
+    <path d="M 195 578 L 195 660"/>
+    <path d="M 599 578 L 599 660"/>
+    <path d="M 274 574 L 520 664"/>
+    <path d="M 274 664 L 520 574"/>
+  </g>
+
+  <!-- the hole in the middle -->
+  <circle cx="397" cy="619" r="52" fill="#fff" stroke="#8a2b06" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="397" y="613" font-size="12.5" font-weight="700" text-anchor="middle" fill="#8a2b06">nothing</text>
+  <text x="397" y="631" font-size="12.5" font-weight="700" text-anchor="middle" fill="#8a2b06">here</text>
+
+  <text x="48" y="748" font-size="12.5">No server, no database, no account, no company. A professional reads what the person shared</text>
+  <text x="48" y="766" font-size="12.5">with them, rather than depositing into another organisation's system. Every entry is signed by</text>
+  <text x="48" y="784" font-size="12.5">whoever wrote it, and <tspan font-weight="600">every device checks the rules independently</tspan>, so a modified copy of the</text>
+  <text x="48" y="802" font-size="12.5">app cannot write what the rules forbid. Nothing to procure, host, breach, compel or close.</text>
+
+  <line x1="48" y1="826" x2="746" y2="826" stroke="#ccc" stroke-width="1"/>
+
+  <!-- ================== 3. WHAT REMOVAL ACTUALLY DOES =============== -->
+  <text x="48" y="862" font-size="17" font-weight="700">3. What removing somebody actually does</text>
+
+  <g font-size="11.5" text-anchor="middle">
+    <!-- state 1 -->
+    <rect x="48" y="884" width="210" height="150" rx="8" fill="#fafafa" stroke="#bbb"/>
+    <text x="153" y="908" font-size="12.5" font-weight="700">Everyone in the circle</text>
+    <rect x="72" y="922" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="110" y="942">daughter</text>
+    <rect x="158" y="922" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="196" y="942">nurse</text>
+    <rect x="72" y="960" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="110" y="980">worker</text>
+    <rect x="158" y="960" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="196" y="980">Margaret</text>
+    <text x="153" y="1014" font-size="11.5" font-weight="600" fill="#1f4e79">all hold key 1</text>
+
+    <!-- state 2 -->
+    <rect x="292" y="884" width="210" height="150" rx="8" fill="#fafafa" stroke="#bbb"/>
+    <text x="397" y="908" font-size="12.5" font-weight="700">The worker is removed</text>
+    <rect x="316" y="922" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="354" y="942">daughter</text>
+    <rect x="402" y="922" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="440" y="942">nurse</text>
+    <rect x="316" y="960" width="76" height="30" rx="5" fill="#f7f7f7" stroke="#8a2b06" stroke-dasharray="4 3"/>
+    <text x="354" y="980" fill="#8a2b06">worker</text>
+    <rect x="402" y="960" width="76" height="30" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="440" y="980">Margaret</text>
+    <text x="397" y="1008" font-size="11.5" font-weight="600" fill="#1f4e79">a new key 2, sealed</text>
+    <text x="397" y="1024" font-size="11.5" font-weight="600" fill="#1f4e79">to everyone but him</text>
+
+    <!-- state 3 -->
+    <rect x="536" y="884" width="210" height="150" rx="8" fill="#fafafa" stroke="#bbb"/>
+    <text x="641" y="908" font-size="12.5" font-weight="700">She writes something new</text>
+    <rect x="560" y="926" width="162" height="44" rx="5" fill="#eef2f6" stroke="#1f4e79"/>
+    <text x="641" y="944">reaches his device,</text>
+    <text x="641" y="960">like everything else</text>
+    <text x="641" y="992" font-size="12.5" font-weight="700" fill="#8a2b06">and cannot be opened on it</text>
+    <text x="641" y="1014" font-size="11.5" fill="#444">not hidden by an app. Locked.</text>
+  </g>
+
+  <text x="48" y="1064" font-size="11.5" fill="#444">What it does not do: the removed person keeps every key they were already given, so what they could read before, they still can.</text>
+  <text x="48" y="1080" font-size="11.5" fill="#444">That limit is stated in the project's own documentation rather than glossed over.</text>
+
+  <line x1="48" y1="1096" x2="746" y2="1096" stroke="#ccc"/>
+  <text x="48" y="1112" font-size="11" fill="#666">github.com/topeuph-ai/hearth — free, open source, Apache-2.0. Every claim above is checkable there.</text>
+</svg>
+</body>
+</html>

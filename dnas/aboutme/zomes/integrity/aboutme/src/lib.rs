@@ -48,7 +48,141 @@ pub struct AboutMe {
     ///
     /// Self-declared like everything else here, and never inferred.
     pub supported_to_write_this_by: String,
+
+    /// Coded values, which the standard allows beside every section.
+    ///
+    /// Empty in almost every record, and nothing in the app fills it yet. It
+    /// is here because adding a field later means another migration, and a
+    /// space costs nothing now. A code is a claim like everything else in the
+    /// record: it says which terminology and which term, and nobody checks it
+    /// against anything.
+    #[serde(default)]
+    pub codes: Vec<CodedValue>,
+
+    /// The whole of the above, locked with the circle's key.
+    ///
+    /// When this is here, every field above is empty and the words live inside
+    /// it — so there is exactly one place a reader can look, and no way to
+    /// write a record that is half locked and half not.
+    ///
+    /// Left empty by older versions of the app, which is why it is optional:
+    /// a circle written before encryption still reads.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
+
+/// Something written in the circle that only its members can read.
+///
+/// **Why it is in two parts.** Holochain's keystore will lock data for you and
+/// never let the key out — but every request to it travels down a channel that
+/// refuses a single message over 8 KiB (lair_keystore_api 0.7.1,
+/// `sodium_secretstream.rs`), and a full-length record is several times that; a
+/// photograph is a thousand times. So each thing written here gets its own
+/// short key, used once: the keystore locks that key with the circle's key
+/// (`sealed_key`, well under the limit), and the content is locked with it
+/// (`body`). Opening it is the same two steps backwards.
+///
+/// The circle's own key therefore never leaves the keystore, which is the
+/// property that matters. What does pass through the app is the one-use key for
+/// the thing being written or read at that moment.
+///
+/// **The key number is not secret.** A member who joined after key 3 holds keys
+/// 1, 2 and 3 and has to know which to reach for. That the circle changed its
+/// key on Tuesday is visible to anybody receiving the circle in any case, and
+/// hiding it would only stop the record opening.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Locked {
+    pub epoch: u32,
+    /// The one-use key for this entry, locked with the circle's key.
+    pub sealed_key: XSalsa20Poly1305EncryptedData,
+    /// The number used once, for the content.
+    #[serde(with = "serde_bytes")]
+    pub nonce: Vec<u8>,
+    /// The content, locked with the one-use key.
+    #[serde(with = "serde_bytes")]
+    pub body: Vec<u8>,
+}
+
+/// A nonce for the content: 24 bytes, so random ones never collide in practice.
+pub const BYTES_IN_A_NONCE: usize = 24;
+/// The one-use key: 32 bytes.
+pub const BYTES_IN_A_ONE_USE_KEY: usize = 32;
+/// The sealed one-use key is 32 bytes and what locking adds to them.
+const MOST_BYTES_IN_A_SEALED_ONE_USE_KEY: usize = 128;
+
+/// What every device can check about something locked, whatever it is.
+///
+/// Not the content — no device can read that. Its shape: that it names a key
+/// that could exist, that it carries a nonce of the right size and a sealed
+/// key no bigger than a sealed key, and that the content is not larger than
+/// that kind of content could be.
+fn locked_is_the_right_shape(
+    locked: &Locked,
+    most_bytes: usize,
+    too_big: &str,
+) -> ExternResult<ValidateCallbackResult> {
+    if locked.epoch == 0 {
+        return invalid("Something locked has to say which key locked it");
+    }
+    if locked.nonce.len() != BYTES_IN_A_NONCE {
+        return invalid("That is not a number used once");
+    }
+    if locked.sealed_key.as_encrypted_data_ref().is_empty()
+        || locked.sealed_key.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_SEALED_ONE_USE_KEY
+    {
+        return invalid("That is not a key for one entry");
+    }
+    if locked.body.is_empty() || locked.body.len() > most_bytes {
+        return invalid(too_big);
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// The ceiling on a locked record, in bytes.
+///
+/// A device cannot count the words of something it cannot read, so the word
+/// limits become one limit every device *can* check: no more than the whole
+/// record could ever be. Nine sections of 8,000 characters, at four bytes a
+/// character for the longest characters there are, and room for the shape the
+/// fields are packed in.
+///
+/// It is a looser rule than 500 words a section, and deliberately: a changed
+/// app could write nonsense inside it. What it cannot do is fill anybody's
+/// disk, which is what the limit is for. The words themselves are checked by
+/// the app, as everything about locked content must be.
+///
+/// The arithmetic, so the next person can check it rather than trust it:
+///
+/// - nine text fields, 8,000 characters each, four bytes for the longest
+///   characters there are — 288,000
+/// - fifty coded values, each a section and three strings of up to 200
+///   characters — about 120,000
+/// - the field names they are packed under, and room to spare — 8,192
+///
+/// Half a megabyte, rounded up from about 416,000. An earlier version of this
+/// left the coded values out and would have refused a record that was entirely
+/// within the rules.
+const MOST_BYTES_IN_A_LOCKED_RECORD: usize = 512_000;
+
+/// One coded value, beside one section of the record.
+///
+/// The standard's coded values come from a terminology — usually SNOMED CT —
+/// so a system can recognise what a section is about without reading it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CodedValue {
+    /// Which section it sits beside.
+    pub section: AboutMeField,
+    /// Which terminology, for example `http://snomed.info/sct`.
+    pub system: String,
+    /// The code itself.
+    pub code: String,
+    /// What the code means, in words, as the terminology says it.
+    pub display: String,
+}
+
+/// More codes than this beside one record is not coding, it is filling.
+pub const MOST_CODES: usize = 50;
 
 /// A professional's "I have read this."
 ///
@@ -62,6 +196,17 @@ pub struct Acknowledgement {
     pub about_me: ActionHash,
     /// Free text, e.g. "district nurse". Not a verified credential.
     pub role: String,
+
+    /// The role, locked with the circle's key. When this is here, `role` is
+    /// empty.
+    ///
+    /// Which version was read, and by whom, stays in the open: they are what
+    /// every device checks, and they are the evidence the whole acknowledgement
+    /// exists to be. What is hidden is the claim — that the person who read it
+    /// says they are a district nurse, which together with a name and a date is
+    /// exactly the sort of thing a removed member should not keep receiving.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
 
 /// Who somebody in the circle is, in their own words.
@@ -268,6 +413,243 @@ pub struct Endorsement {
     pub signature: Signature,
 }
 
+/// Somebody the holder has removed from the circle — or let back.
+///
+/// **The everyday removal** (migration batch, item 4). A support worker moves
+/// on; a relative falls out with the family. Moving the whole circle is for
+/// the serious cases; this is for the ordinary ones, and it costs nobody
+/// anything.
+///
+/// **What it can and cannot do, said plainly.** Nothing can take a person out
+/// of a network they are already in: there is no operator to reach across,
+/// and validation cannot ask "has this person been removed?" because the
+/// answer changes over time, and every device must reach the same answer
+/// forever. So this is a statement, written where the whole circle can see it,
+/// that every copy of Hearth honours: the person drops out of every list,
+/// anything they write afterwards is not shown, and their own app takes the
+/// circle off their device. A modified app can ignore it, and that is exactly
+/// what moving the circle is for.
+///
+/// Append-only, like every other decision here. The newest one about a person
+/// is the one that counts, so letting somebody back is writing another.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Departure {
+    /// Who.
+    pub who: AgentPubKey,
+    /// True when they are removed; false when they are let back.
+    pub removed: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Keys, so the record can be locked (migration batch, item 6)
+// ---------------------------------------------------------------------------
+//
+// The circle's words are locked with a key every member holds, and removing
+// somebody starts a new key that everybody but them is given. What is written
+// afterwards still arrives on their device and cannot be opened there — which
+// is mathematics rather than their app behaving itself. See
+// docs/encryption.md.
+//
+// Two entries carry the keys themselves, and neither carries anything secret:
+// a public encryption key, and a key sealed so that only one person can open
+// it.
+
+/// A member's public encryption key.
+///
+/// Sharing a key with somebody needs *their* X25519 public key — the agent
+/// key everything else here uses cannot receive one. So each member's app
+/// makes an encryption key pair when it joins, keeps the secret half in the
+/// keystore, and publishes this half. Anybody may write their own, and
+/// writing another replaces it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct BoxKey {
+    pub key: X25519PubKey,
+}
+
+/// One of the circle's keys, sealed so that one member can open it.
+///
+/// Written by the holder, one per member per key. Nothing in it is readable
+/// by anybody else: it is the key itself, boxed to that member's [`BoxKey`].
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct EpochKey {
+    /// Which of the circle's keys this is. They start at 1 and go up by one
+    /// every time somebody is removed.
+    pub epoch: u32,
+    pub for_member: AgentPubKey,
+    pub sealed: XSalsa20Poly1305EncryptedData,
+}
+
+/// A sealed key is a key and a nonce, not a message.
+const MOST_BYTES_IN_A_SEALED_KEY: usize = 1_024;
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// When the holder can no longer look after the circle — dementia progresses,
+// a device is lost for good, she dies — the circle used to be stuck, read-only,
+// for ever. A successor is somebody she names in advance who may then move the
+// circle and become its new holder.
+//
+// The danger is somebody claiming she has gone when she has not. Ceri's
+// answers, 19 September 2026: anybody in the circle may be named; a waiting
+// period everybody can see, in which the holder can say "I'm still here"; the
+// holder can change or remove the successor at any time; and somebody who can
+// check in person — a checker she names, asked first, and anybody else if the
+// checker cannot.
+//
+// **Every device checks who may write each of these.** When they may be
+// written — the waiting period, when others may answer — is honoured by every
+// copy of Hearth rather than refused by the network, for the same reason as a
+// removal: "has she said she is still here yet?" is a question whose answer
+// arrives over time, and validation must reach one answer forever.
+
+/// Who the holder names to take over if she cannot, and who should check.
+///
+/// The newest one counts. Naming nobody (`successor: None`) removes the
+/// successor.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct Succession {
+    pub successor: Option<AgentPubKey>,
+    /// Somebody who lives near her, or can phone her. Asked first.
+    pub checker: Option<AgentPubKey>,
+}
+
+/// The successor says the holder can no longer look after the circle.
+///
+/// Names the `Succession` it relies on, so every device can check it was
+/// really the person named, by that holder — a fixed hash, answered the same
+/// way everywhere.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct SuccessionClaim {
+    pub naming: ActionHash,
+}
+
+/// The holder answers a claim: "I'm still here." Stops it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct StillHere {
+    pub claim: ActionHash,
+}
+
+/// Somebody has checked on the holder, in person or by phone.
+///
+/// Never the successor, and never the holder: the point is a second person.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct CheckedOn {
+    pub claim: ActionHash,
+    /// True: she can still look after the circle. False: she cannot.
+    pub holder_can_carry_on: bool,
+}
+
+/// What kind of media an item is.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKind {
+    Photo,
+    Sound,
+    Video,
+}
+
+/// A photo, a sound recording or a video, beside one section of the record
+/// (migration batch, item 7).
+///
+/// The About Me guidance asks for exactly this: "Ideally this information is
+/// also available in a multimedia format e.g. video, particularly when a
+/// person has difficulties expressing themselves." See docs/multimedia.md.
+///
+/// **Designed for all three at once**, although photos are built first,
+/// because every change to this file costs every circle a move.
+///
+/// The file itself is not in here. It is in one or more [`MediaPiece`]s,
+/// named by hash in order, because Holochain's limit is four megabytes an
+/// entry and two minutes of video is more than that. A hash names exactly one
+/// piece of content, so whoever reads the pieces back knows they are the ones
+/// the holder wrote.
+///
+/// Only the holder adds media, as only she writes the record. It is part of
+/// the person's account of themselves.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct MediaItem {
+    /// Which section it sits beside.
+    pub section: AboutMeField,
+    pub kind: MediaKind,
+    /// The standard's "MIME type": `image/jpeg`, `audio/webm`, `video/webm`...
+    pub mime_type: String,
+    /// The standard's "filename". What the file was called; shown, never
+    /// trusted.
+    pub file_name: String,
+    /// "What this says in words", suggested and never required: the text
+    /// alternative, written by somebody who knows what the clip says.
+    pub in_words: String,
+    /// How long a recording is, as the recording device said. 0 for a photo.
+    /// A claim — nothing here can play a file to check it — but a limit on
+    /// the claim still stops an honest app from going over.
+    pub seconds: u32,
+    /// The pieces, in order.
+    pub pieces: Vec<EntryHash>,
+    /// All the pieces together, in bytes.
+    pub size: u64,
+
+    /// The file name and "what this says in words", locked with the circle's
+    /// key. When this is here, both of those are empty.
+    ///
+    /// What stays in the open is what a player needs and what every device has
+    /// to check: which section, which kind, which file type, how long, how
+    /// many pieces and how big.
+    #[serde(default)]
+    pub locked: Option<Locked>,
+}
+
+/// The ceiling on a locked file name and text alternative together.
+const MOST_BYTES_IN_LOCKED_MEDIA_WORDS: usize = 8_000 * 4 + 1_024;
+
+/// One piece of a media file: at most three megabytes of it.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct MediaPiece {
+    #[serde(with = "serde_bytes")]
+    pub bytes: Vec<u8>,
+
+    /// The piece, locked with the circle's key.
+    ///
+    /// When this is here, `bytes` is empty. A photograph of somebody in their
+    /// own home is as personal as anything in the record, and is locked the
+    /// same way. Holochain's own notes say to lock large data in pieces, which
+    /// is what this already is.
+    #[serde(default)]
+    pub locked: Option<Locked>,
+}
+
+/// A piece is at most this, leaving room under Holochain's four megabytes.
+pub const MOST_BYTES_IN_A_PIECE: usize = 3_000_000;
+/// Ceri's two minutes, for sound and video.
+const MOST_SECONDS: u32 = 120;
+
+/// What each kind may be: which file types, and at most how big.
+///
+/// A photo is shrunk to about 1600 pixels before it is written, a few hundred
+/// kilobytes. Two minutes of speech is well under a megabyte. Two minutes of
+/// video at 480p, Ceri's choice, is roughly ten to twenty megabytes; thirty is
+/// the ceiling, in ten pieces.
+fn media_rules(kind: MediaKind) -> (&'static [&'static str], usize, u64) {
+    match kind {
+        MediaKind::Photo => (&["image/jpeg", "image/png", "image/webp"], 1, 3_000_000),
+        MediaKind::Sound => (
+            &["audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4"],
+            1,
+            3_000_000,
+        ),
+        MediaKind::Video => (&["video/webm", "video/mp4"], 10, 30_000_000),
+    }
+}
+
 /// Which part of the record a suggestion is about.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AboutMeField {
@@ -296,7 +678,19 @@ pub struct Suggestion {
     /// Optional: why they think so. "She talked about the allotment all
     /// summer." Often the more useful half.
     pub because: String,
+
+    /// The suggestion and the why, locked with the circle's key.
+    ///
+    /// When this is here, `text` and `because` are empty. Which section it is
+    /// about stays in the open: it is the name of a heading, it is what the
+    /// holder's screen sorts by, and hiding it would buy nothing.
+    #[serde(default)]
+    pub locked: Option<Locked>,
 }
+
+/// The ceiling on a locked suggestion: the suggestion and the why, each no
+/// bigger than a section of the record could be.
+const MOST_BYTES_IN_A_LOCKED_SUGGESTION: usize = 2 * 8_000 * 4 + 1_024;
 
 /// What the holder decided about a suggestion.
 ///
@@ -329,6 +723,16 @@ pub enum EntryTypes {
     Admission(Admission),
     Appointment(Appointment),
     Consent(Consent),
+    // The migration batch.
+    Departure(Departure),
+    MediaItem(MediaItem),
+    MediaPiece(MediaPiece),
+    Succession(Succession),
+    SuccessionClaim(SuccessionClaim),
+    StillHere(StillHere),
+    CheckedOn(CheckedOn),
+    BoxKey(BoxKey),
+    EpochKey(EpochKey),
 }
 
 #[hdk_link_types]
@@ -360,6 +764,20 @@ pub enum LinkTypes {
     /// Appointment -> the answer to it, so the holder finds out whether the
     /// person she asked is willing without having to go and ask them again.
     AppointmentToConsent,
+    /// Anchor -> Departure, so every app in the circle finds who has been
+    /// removed, and the person removed finds out too.
+    CircleToDeparture,
+    /// Anchor -> MediaItem, so every reader finds the photos, sound and video.
+    CircleToMedia,
+    /// Anchor -> Succession and SuccessionClaim, so everybody can see who is
+    /// named and whether anybody has started.
+    CircleToSuccession,
+    /// SuccessionClaim -> the answers to it: StillHere and CheckedOn.
+    ClaimToAnswer,
+    /// Anchor -> BoxKey, so the holder can seal the circle's key to somebody.
+    CircleToBoxKey,
+    /// Anchor -> EpochKey, so each member finds the keys sealed to them.
+    CircleToEpochKey,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -520,6 +938,32 @@ pub struct Invitation {
     /// than a lock, and what that does and does not buy.
     #[serde(default)]
     pub appointment: Option<ActionHash>,
+
+    /// Who the holder says this key belongs to — and now signed.
+    ///
+    /// The name used to travel beside the signature, so it could be changed
+    /// on the way without breaking anything: not a way in, because the
+    /// signature was over the key, but a way to mislead the second person, who
+    /// is asked "should Ronnie, her cousin, be let in?" and cannot answer that
+    /// about a key. Being talked into an admission is the whole of what the
+    /// second agreement guards against, and whoever does the talking is often
+    /// the one carrying the message.
+    ///
+    /// Both signatures are now over [`WhoIsLetIn`] — the key and this name
+    /// together — so changing either one breaks both.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// What both agreements on an invitation are signatures over.
+///
+/// A key identifies nobody, so agreeing to a key alone is agreeing to nothing
+/// anybody could judge. The name is the holder's claim, checked by nobody; what
+/// the signature adds is that it cannot be changed after she made it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct WhoIsLetIn {
+    pub invitee: AgentPubKey,
+    pub name: String,
 }
 
 /// How this circle decides who belongs.
@@ -647,9 +1091,18 @@ fn check_membrane_as_far_as(
         Err(_) => return invalid("Invitation is not in a form this circle understands"),
     };
 
+    if invitation.name.chars().count() > MOST_CHARACTERS_IN_A_NAME {
+        return invalid("The name on this invitation is far longer than a name");
+    }
+
     // Signed over the invitee's own key, so an invitation cannot be passed on
-    // to somebody else.
-    if !verify_signature(founder.clone(), invitation.signature, agent.clone())? {
+    // to somebody else — and over the name the holder gave them, so it cannot
+    // be changed on the way to the person who has to agree.
+    let who = WhoIsLetIn {
+        invitee: agent.clone(),
+        name: invitation.name.clone(),
+    };
+    if !verify_signature(founder.clone(), invitation.signature, who.clone())? {
         return invalid("Invitation was not issued by the person whose circle this is");
     }
 
@@ -707,7 +1160,7 @@ fn check_membrane_as_far_as(
              * person had apparently joined — and a door that opens and then
              * quietly stops working is worse than one that says no.
              */
-            if verify_signature(founder.clone(), seconded.clone(), agent.clone())? {
+            if verify_signature(founder.clone(), seconded.clone(), who.clone())? {
                 return invalid(
                     "The second agreement on this invitation is from the person \
                      whose circle it is. It has to be somebody else — that is the \
@@ -756,7 +1209,7 @@ fn check_membrane_as_far_as(
                  this invitation only has one of them",
             );
         };
-        if !verify_signature(appointment.agrees, seconded, agent.clone())? {
+        if !verify_signature(appointment.agrees, seconded, who)? {
             return invalid(
                 "The second agreement on this invitation is not from the person \
                  this circle asks to give it",
@@ -814,6 +1267,24 @@ fn as_action_hash(hash: &AnyLinkableHash) -> Option<ActionHash> {
     hash.clone().into_action_hash()
 }
 
+/// Whether a locked record left nothing of itself in the open.
+fn unlocked_part_is_empty(about_me: &AboutMe) -> bool {
+    [
+        &about_me.display_name,
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+        &about_me.supported_to_write_this_by,
+    ]
+    .iter()
+    .all(|s| s.is_empty())
+        && about_me.codes.is_empty()
+}
+
 fn validate_about_me(
     about_me: &AboutMe,
     author: &AgentPubKey,
@@ -824,8 +1295,58 @@ fn validate_about_me(
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may write their About Me");
     }
+
+    // A locked record is checked for what a device can check: who wrote it,
+    // that it is locked with a key that exists, that nothing was left in the
+    // open beside it, and that it is no bigger than the record could be.
+    // Everything about the words is the app's to check, because no device can
+    // read them — and must not try, since validation has to reach the same
+    // answer on every device forever, and "does this device hold key 3?" does
+    // not.
+    if let Some(locked) = &about_me.locked {
+        if !unlocked_part_is_empty(about_me) {
+            return invalid(
+                "A record is either locked or in the open, and this one is partly both",
+            );
+        }
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_LOCKED_RECORD,
+            "That is larger than the whole record could ever be",
+        );
+    }
+
     if about_me.display_name.trim().is_empty() {
         return invalid("About Me must have a display name");
+    }
+    if name_too_long(&about_me.display_name) || name_too_long(&about_me.supported_to_write_this_by)
+    {
+        return invalid("A name here can be up to 200 characters");
+    }
+    for section in [
+        &about_me.what_matters_to_me,
+        &about_me.people_who_matter,
+        &about_me.how_to_communicate_with_me,
+        &about_me.my_wellness,
+        &about_me.please_do_and_please_do_not,
+        &about_me.how_to_support_me,
+        &about_me.also_worth_knowing,
+    ] {
+        if too_long(section) {
+            return invalid("Each part of the record holds up to 500 words");
+        }
+    }
+    if about_me.codes.len() > MOST_CODES {
+        return invalid("A record can carry up to 50 coded values");
+    }
+    for coded in &about_me.codes {
+        if coded.code.trim().is_empty()
+            || name_too_long(&coded.system)
+            || name_too_long(&coded.code)
+            || name_too_long(&coded.display)
+        {
+            return invalid("A coded value needs a code, and each part of it is short");
+        }
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -958,9 +1479,7 @@ fn validate_create_link(
         // Only the holder puts somebody forward to agree, and only her own.
         LinkTypes::CircleToAppointment => {
             if !is_the_person(author)? {
-                return invalid(
-                    "Only the person whose circle this is may ask somebody to agree",
-                );
+                return invalid("Only the person whose circle this is may ask somebody to agree");
             }
             // Path anchor scaffolding. See the note under CircleToAboutMe.
             let Some(target) = as_action_hash(&action.target_address) else {
@@ -985,6 +1504,84 @@ fn validate_create_link(
             let target_action = must_get_action(target)?;
             if target_action.action().author() != author {
                 return invalid("You may only link your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Keys, filed by whoever wrote them: your own encryption key, and the
+        // holder's sealed copies of the circle's keys.
+        LinkTypes::CircleToBoxKey | LinkTypes::CircleToEpochKey => {
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file a key you wrote yourself");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // A naming or a claim, filed by whoever wrote it. The entry rules have
+        // already said who may write each; this ties the link to its author.
+        LinkTypes::CircleToSuccession => {
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file what you wrote yourself");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // An answer to a claim, filed by whoever gave it, on a real claim.
+        LinkTypes::ClaimToAnswer => {
+            let Some(base) = as_action_hash(&action.base_address) else {
+                return invalid("An answer must be filed on a claim");
+            };
+            if claim_and_naming(&base)?.is_none() {
+                return invalid("An answer must be filed on a claim");
+            }
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return invalid("An answer link must point at an action");
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only file your own answer");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the holder publishes media, and only her own.
+        LinkTypes::CircleToMedia => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may add media");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only publish your own media");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
+        // Only the holder records who has gone, and only her own decisions.
+        LinkTypes::CircleToDeparture => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is may remove somebody");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only record your own decision");
             }
             Ok(ValidateCallbackResult::Valid)
         }
@@ -1055,6 +1652,26 @@ fn validate_acknowledgement(
     if action.action().author() == author {
         return invalid("An agent cannot acknowledge their own About Me");
     }
+    match &ack.locked {
+        Some(locked) => {
+            if !ack.role.is_empty() {
+                return invalid("A role is either locked or in the open, not partly both");
+            }
+            // A role is 200 characters at most, and locking adds a little.
+            if let ValidateCallbackResult::Invalid(why) = locked_is_the_right_shape(
+                locked,
+                MOST_CHARACTERS_IN_A_NAME * 4 + 1_024,
+                "That is larger than a role could be",
+            )? {
+                return Ok(ValidateCallbackResult::Invalid(why));
+            }
+        }
+        None => {
+            if name_too_long(&ack.role) {
+                return invalid("What you say you are can be up to 200 characters");
+            }
+        }
+    }
 
     let entry_hash = action
         .action()
@@ -1097,11 +1714,61 @@ fn who_this_room_serves() -> ExternResult<Option<AgentPubKey>> {
 /// The check moved to the app, where it is a courtesy rather than a rule.
 /// Nothing was lost by that: an empty name was never dangerous, only
 /// useless, and the person it inconveniences is the one who wrote it.
-fn validate_knock(_knock: &Knock) -> ExternResult<ValidateCallbackResult> {
+fn validate_knock(knock: &Knock) -> ExternResult<ValidateCallbackResult> {
     if who_this_room_serves()?.is_none() {
         return invalid("Knocking only means something in a circle's waiting room");
     }
+    // Nobody can read a sealed knock but the holder, but everybody can see
+    // how big it is.
+    if knock.for_the_holder.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_KNOCK
+        || knock.for_me.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_KNOCK
+    {
+        return invalid("A knock is a name and a few words, and this is far more than that");
+    }
     Ok(ValidateCallbackResult::Valid)
+}
+
+/*
+ * One person, knocking again and again at one door.
+ *
+ * Counted from their own chain, up to the knock being checked: a fixed piece
+ * of history, so every device reaches the same count. Everything a person
+ * other than the holder writes in a waiting room is counted, because the only
+ * thing they can meaningfully write there is a knock — which keeps this from
+ * depending on how entry types are numbered.
+ *
+ * Ten is far more than anybody honestly needs. Somebody who knocked, was not
+ * answered, and knocked again a few times is fine; somebody who knocks a
+ * thousand times is not, and every one of those would sit on the holder's
+ * device.
+ */
+fn knocked_too_often(
+    action: &TypedAction<CreateData>,
+) -> ExternResult<Option<ValidateCallbackResult>> {
+    let author = action.author();
+    if who_this_room_serves()?.as_ref() == Some(author) {
+        return Ok(None);
+    }
+    let Some(before) = action.header.prev_action.clone() else {
+        return Ok(None);
+    };
+    let earlier = must_get_agent_activity(author.clone(), ChainFilter::new(before))?
+        .into_iter()
+        .filter(|a| {
+            matches!(
+                a.action.hashed.content.entry_type(),
+                Some(EntryType::App(_))
+            )
+        })
+        .count();
+    if earlier >= MOST_KNOCKS_BY_ONE_PERSON {
+        return Ok(Some(ValidateCallbackResult::Invalid(
+            "You have asked at this door many times already. The person who holds \
+             the circle will see the requests you have made."
+                .to_string(),
+        )));
+    }
+    Ok(None)
 }
 
 /// Only the holder of the circle answers knocks at its door.
@@ -1120,6 +1787,9 @@ fn validate_admission(
     };
     if &holder != author {
         return invalid("Only the person whose circle this is may answer a knock");
+    }
+    if admission.invitation.chars().count() > MOST_CHARACTERS_IN_AN_INVITATION {
+        return invalid("That is far longer than any invitation");
     }
 
     // It must answer a real knock, so an admission cannot be left floating and
@@ -1183,6 +1853,236 @@ fn validate_consent(
     Ok(ValidateCallbackResult::Valid)
 }
 
+/// A media item: the holder's, of a type its kind allows, and no bigger than
+/// its kind allows.
+///
+/// The pieces are not fetched here. Each piece is checked for size when it is
+/// written, and a piece is named by the hash of its content, so it cannot be
+/// swapped for another afterwards. Fetching thirty megabytes of video on every
+/// device that checks the item would cost everybody for no extra certainty.
+fn validate_media_item(
+    item: &MediaItem,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may add a photo, sound or video");
+    }
+    let (types, most_pieces, most_bytes) = media_rules(item.kind);
+    if !types.contains(&item.mime_type.as_str()) {
+        return invalid("That kind of file cannot be added here");
+    }
+    if item.pieces.is_empty() || item.pieces.len() > most_pieces {
+        return invalid("That file is in more pieces than its kind allows");
+    }
+    if item.size == 0 || item.size > most_bytes {
+        return invalid("That file is larger than its kind allows");
+    }
+    match item.kind {
+        MediaKind::Photo if item.seconds != 0 => {
+            return invalid("A photo has no length");
+        }
+        MediaKind::Sound | MediaKind::Video if item.seconds > MOST_SECONDS => {
+            return invalid("A recording can be up to two minutes long");
+        }
+        _ => {}
+    }
+    if let Some(locked) = &item.locked {
+        if !item.file_name.is_empty() || !item.in_words.is_empty() {
+            return invalid("A file's words are either locked or in the open, not partly both");
+        }
+        if name_too_long(&item.mime_type) {
+            return invalid("A file type can be up to 200 characters");
+        }
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_LOCKED_MEDIA_WORDS,
+            "That is larger than a file name and its words could be",
+        );
+    }
+    if name_too_long(&item.file_name) || name_too_long(&item.mime_type) {
+        return invalid("A file name can be up to 200 characters");
+    }
+    if too_long(&item.in_words) {
+        return invalid("What it says in words can be up to 500 words");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A piece of a media file: the holder's, and at most three megabytes.
+fn validate_media_piece(
+    piece: &MediaPiece,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may add a photo, sound or video");
+    }
+    if let Some(locked) = &piece.locked {
+        if !piece.bytes.is_empty() {
+            return invalid("A piece is either locked or in the open, not partly both");
+        }
+        // Room above the plain limit for what locking adds: proof the bytes
+        // were not tampered with.
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_PIECE + 1_024,
+            "A piece of a file is at most three megabytes",
+        );
+    }
+    if piece.bytes.is_empty() || piece.bytes.len() > MOST_BYTES_IN_A_PIECE {
+        return invalid("A piece of a file is at most three megabytes");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Anybody in a circle may publish their own encryption key, and only in a
+/// circle: a waiting room and the lobby hold nothing to lock.
+fn validate_box_key(_key: &BoxKey) -> ExternResult<ValidateCallbackResult> {
+    if the_holder()?.is_none() {
+        return invalid("There is nothing to lock outside a circle");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder hands out the circle's keys.
+fn validate_epoch_key(
+    key: &EpochKey,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is hands out its keys");
+    }
+    if key.epoch == 0 {
+        return invalid("The circle's keys start at one");
+    }
+    if key.sealed.as_encrypted_data_ref().len() > MOST_BYTES_IN_A_SEALED_KEY {
+        return invalid("That is far larger than a sealed key");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// The holder whose circle this is, if it is a circle.
+fn the_holder() -> ExternResult<Option<AgentPubKey>> {
+    Ok(match membrane()? {
+        Membrane::Founder(founder, _) => Some(founder),
+        _ => None,
+    })
+}
+
+/// Only the holder names a successor and a checker, and three people are
+/// three different people: her, the successor, and whoever checks on her.
+fn validate_succession(
+    succession: &Succession,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may name a successor");
+    }
+    if succession.successor.as_ref() == Some(author) {
+        return invalid("The person who holds a circle cannot be her own successor");
+    }
+    if succession.checker.as_ref() == Some(author) {
+        return invalid("The person who checks on the holder has to be somebody else");
+    }
+    if succession.checker.is_some() && succession.checker == succession.successor {
+        return invalid("The successor cannot be the one who checks: the point is a second person");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// A claim, and the naming it relies on — both checked to be what they say.
+fn claim_and_naming(claim: &ActionHash) -> ExternResult<Option<(Succession, AgentPubKey)>> {
+    let claim_action = must_get_action(claim.clone())?;
+    let Some(claim_entry_hash) = claim_action.action().entry_hash() else {
+        return Ok(None);
+    };
+    let Ok(claim) = SuccessionClaim::try_from(must_get_entry(claim_entry_hash.clone())?.content)
+    else {
+        return Ok(None);
+    };
+    let naming_action = must_get_action(claim.naming.clone())?;
+    let Some(naming_entry_hash) = naming_action.action().entry_hash() else {
+        return Ok(None);
+    };
+    let Ok(naming) = Succession::try_from(must_get_entry(naming_entry_hash.clone())?.content)
+    else {
+        return Ok(None);
+    };
+    Ok(Some((naming, claim_action.action().author().clone())))
+}
+
+/// Only the person the holder named may start taking over, and only under a
+/// naming she actually made.
+fn validate_succession_claim(
+    claim: &SuccessionClaim,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some(holder) = the_holder()? else {
+        return invalid("There is nobody to succeed outside a circle");
+    };
+    let naming_action = must_get_action(claim.naming.clone())?;
+    if naming_action.action().author() != &holder {
+        return invalid("A successor is named by the person whose circle this is");
+    }
+    let Some(entry_hash) = naming_action.action().entry_hash() else {
+        return invalid("A claim must rest on a naming");
+    };
+    let Ok(naming) = Succession::try_from(must_get_entry(entry_hash.clone())?.content) else {
+        return invalid("A claim must rest on a naming");
+    };
+    if naming.successor.as_ref() != Some(author) {
+        return invalid("Only the person named as successor may start taking over");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder says she is still here.
+fn validate_still_here(
+    still_here: &StillHere,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is can say she is still here");
+    }
+    if claim_and_naming(&still_here.claim)?.is_none() {
+        return invalid("\"Still here\" answers somebody starting to take over");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Somebody checked on her — never the successor, and never her.
+fn validate_checked_on(
+    checked: &CheckedOn,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    let Some((_, successor)) = claim_and_naming(&checked.claim)? else {
+        return invalid("A check answers somebody starting to take over");
+    };
+    if &successor == author {
+        return invalid("The person taking over cannot also be the one who checks");
+    }
+    if is_the_person(author)? {
+        return invalid("The holder answers with \"I'm still here\", not a check on herself");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the holder removes somebody, and never herself.
+///
+/// A holder removing herself would leave a circle nobody may write in, with
+/// no way back — that is what a successor is for, not this.
+fn validate_departure(
+    departure: &Departure,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is may remove somebody");
+    }
+    if &departure.who == author {
+        return invalid("The person who holds a circle cannot remove herself from it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
 /// Only the holder may appoint somebody, and never herself.
 fn validate_appointment(
     appointment: &Appointment,
@@ -1213,15 +2113,19 @@ fn validate_proposed_member(
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may propose somebody");
     }
+    if name_too_long(&proposed.name) {
+        return invalid("A name here can be up to 200 characters");
+    }
 
     if !verify_signature(
         author.clone(),
         proposed.signature.clone(),
-        proposed.invitee.clone(),
+        WhoIsLetIn {
+            invitee: proposed.invitee.clone(),
+            name: proposed.name.clone(),
+        },
     )? {
-        return invalid(
-            "A proposal must carry the holder's own agreement, over the key it names",
-        );
+        return invalid("A proposal must carry the holder's own agreement, over the key it names");
     }
 
     Ok(ValidateCallbackResult::Valid)
@@ -1239,9 +2143,7 @@ fn validate_endorsement(
     author: &AgentPubKey,
 ) -> ExternResult<ValidateCallbackResult> {
     if !is_appointed_by(author, &endorsement.appointment)? {
-        return invalid(
-            "Only the person this circle asks to agree may give the second agreement",
-        );
+        return invalid("Only the person this circle asks to agree may give the second agreement");
     }
 
     // It must be about a real proposal, so an endorsement cannot be attached
@@ -1255,11 +2157,14 @@ fn validate_endorsement(
         return invalid("An agreement must refer to a proposed member");
     };
 
-    // Over the same key the holder signed, and nothing else.
+    // Over the same key and name the holder signed, and nothing else.
     if !verify_signature(
         author.clone(),
         endorsement.signature.clone(),
-        proposed.invitee.clone(),
+        WhoIsLetIn {
+            invitee: proposed.invitee.clone(),
+            name: proposed.name.clone(),
+        },
     )? {
         return invalid("The second agreement must be over the key the proposal names");
     }
@@ -1273,14 +2178,30 @@ fn validate_member(member: &Member) -> ExternResult<ValidateCallbackResult> {
     if member.name.trim().is_empty() {
         return invalid("Tell the circle what you are called");
     }
+    if name_too_long(&member.name) || name_too_long(&member.relationship) {
+        return invalid("Your name and how you are connected can be up to 200 characters each");
+    }
     Ok(ValidateCallbackResult::Valid)
 }
 
 fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallbackResult> {
     // Deliberately no check on who the author is. Any member of the circle may
     // offer something; the holder decides what goes in.
+    if let Some(locked) = &suggestion.locked {
+        if !suggestion.text.is_empty() || !suggestion.because.is_empty() {
+            return invalid("A suggestion is either locked or in the open, not partly both");
+        }
+        return locked_is_the_right_shape(
+            locked,
+            MOST_BYTES_IN_A_LOCKED_SUGGESTION,
+            "That is larger than a suggestion and its reason could be",
+        );
+    }
     if suggestion.text.trim().is_empty() {
         return invalid("A suggestion needs something in it");
+    }
+    if too_long(&suggestion.text) || too_long(&suggestion.because) {
+        return invalid("A suggestion, and why, can be up to 500 words each");
     }
     Ok(ValidateCallbackResult::Valid)
 }
@@ -1309,6 +2230,120 @@ fn validate_outcome(
     Ok(ValidateCallbackResult::Valid)
 }
 
+// ---------------------------------------------------------------------------
+// How much anybody may write
+// ---------------------------------------------------------------------------
+//
+// Everything written in a circle is copied to every member's device, and
+// every change stores another whole copy. Holochain's own limit is four
+// megabytes an entry — roughly a thousand pages — so without these, one
+// confused or unkind member could fill other people's disks with a single
+// paste, or bury a door under knocks.
+//
+// The app already keeps to them. These make every device refuse a copy that
+// does not.
+
+/// Ceri's number for one section of the record, or one suggestion.
+const MOST_WORDS: usize = 500;
+/// A backstop for text with few spaces: five hundred words of ordinary prose
+/// is three or four thousand characters, so this never stops honest writing.
+const MOST_CHARACTERS: usize = 8_000;
+/// A name, a relationship, a role.
+const MOST_CHARACTERS_IN_A_NAME: usize = 200;
+/// A sealed knock is a name and a relationship, encrypted.
+const MOST_BYTES_IN_A_KNOCK: usize = 4_096;
+/// An invitation, as text.
+const MOST_CHARACTERS_IN_AN_INVITATION: usize = 4_096;
+/// Somebody asking to be let in, again and again, at one door.
+const MOST_KNOCKS_BY_ONE_PERSON: usize = 10;
+
+pub fn too_long(text: &str) -> bool {
+    text.split_whitespace().count() > MOST_WORDS || text.chars().count() > MOST_CHARACTERS
+}
+
+pub fn name_too_long(text: &str) -> bool {
+    text.chars().count() > MOST_CHARACTERS_IN_A_NAME
+}
+
+/// The rules for a new entry, wherever it arrives.
+fn validate_create(
+    app_entry: EntryTypes,
+    action: &TypedAction<CreateData>,
+) -> ExternResult<ValidateCallbackResult> {
+    let author = action.author();
+    if let EntryTypes::Knock(_) = &app_entry {
+        if let Some(refusal) = knocked_too_often(action)? {
+            return Ok(refusal);
+        }
+    }
+    match app_entry {
+        EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, author),
+        EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, author),
+        EntryTypes::Suggestion(s) => validate_suggestion(&s),
+        EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, author),
+        EntryTypes::Member(m) => validate_member(&m),
+        EntryTypes::ProposedMember(p) => validate_proposed_member(&p, author),
+        EntryTypes::Endorsement(e) => validate_endorsement(&e, author),
+        EntryTypes::Knock(k) => validate_knock(&k),
+        EntryTypes::Admission(a) => validate_admission(&a, author),
+        EntryTypes::Appointment(a) => validate_appointment(&a, author),
+        EntryTypes::Consent(c) => validate_consent(&c, author),
+        EntryTypes::Departure(d) => validate_departure(&d, author),
+        EntryTypes::MediaItem(m) => validate_media_item(&m, author),
+        EntryTypes::MediaPiece(p) => validate_media_piece(&p, author),
+        EntryTypes::Succession(s) => validate_succession(&s, author),
+        EntryTypes::SuccessionClaim(c) => validate_succession_claim(&c, author),
+        EntryTypes::StillHere(s) => validate_still_here(&s, author),
+        EntryTypes::CheckedOn(c) => validate_checked_on(&c, author),
+        EntryTypes::BoxKey(k) => validate_box_key(&k),
+        EntryTypes::EpochKey(k) => validate_epoch_key(&k, author),
+    }
+}
+
+/// Only the author of an entry may delete it. Without this, any member could
+/// erase the person's own record.
+fn validate_delete(action: &TypedAction<DeleteData>) -> ExternResult<ValidateCallbackResult> {
+    let deleted = must_get_action(action.deletes_address.clone())?;
+    if deleted.action().author() != action.author() {
+        return invalid("Only the author of a record may delete it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/// Only the agent who made a link may remove it.
+fn validate_delete_link(
+    original_author: &AgentPubKey,
+    action: &TypedAction<DeleteLinkData>,
+) -> ExternResult<ValidateCallbackResult> {
+    if original_author != action.author() {
+        return invalid("Only the agent who created a link may remove it");
+    }
+    Ok(ValidateCallbackResult::Valid)
+}
+
+/*
+ * One set of rules, applied wherever a write arrives.
+ *
+ * Holochain does not ask one machine whether a write is allowed. It hands
+ * the same write to three kinds of machine, each holding a different part of
+ * it: the one that files the whole record, the one that holds the entry, and
+ * the one that keeps the author's own list of what they have done. Each of
+ * them asks this function, separately.
+ *
+ * Until the migration batch, only some of those questions were answered. A
+ * new entry was checked where the entry is held, but not where the record is
+ * filed; and an *update* was checked as an update but not where its new
+ * content is stored, nor where the record is filed. Those fell through to a
+ * catch-all that said yes. No attack was found through it, but a forged
+ * update could have been refused in one place and held as good in another —
+ * and anything that reads a record by its hash reads it from the place that
+ * said yes. The same shape of gap, in link creation, was once found by review
+ * and not by tests.
+ *
+ * So every write now goes through the same rules wherever it lands, and the
+ * catch-all is gone: every kind of operation is named below, so a new kind
+ * in a future Holochain is a compile error here rather than a silent yes.
+ */
 #[hdk_extern]
 pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
     match op.flattened::<EntryTypes, LinkTypes>()? {
@@ -1318,115 +2353,168 @@ pub fn validate(op: Op) -> ExternResult<ValidateCallbackResult> {
             action,
         }) => check_membrane_as_far_as(action.author(), &membrane_proof, true),
 
-        FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => match app_entry {
-            EntryTypes::AboutMe(about_me) => validate_about_me(&about_me, action.author()),
-            EntryTypes::Acknowledgement(ack) => validate_acknowledgement(&ack, action.author()),
-            EntryTypes::Suggestion(s) => validate_suggestion(&s),
-            EntryTypes::SuggestionOutcome(o) => validate_outcome(&o, action.author()),
-            EntryTypes::Member(m) => validate_member(&m),
-            EntryTypes::ProposedMember(p) => validate_proposed_member(&p, action.author()),
-            EntryTypes::Endorsement(e) => validate_endorsement(&e, action.author()),
-            EntryTypes::Knock(k) => validate_knock(&k),
-            EntryTypes::Admission(a) => validate_admission(&a, action.author()),
-            EntryTypes::Appointment(a) => validate_appointment(&a, action.author()),
-            EntryTypes::Consent(c) => validate_consent(&c, action.author()),
-        },
-        FlatOp::Update(OpUpdate::Entry { app_entry, action }) => match app_entry {
-            EntryTypes::AboutMe(about_me) => {
-                // Only the original author may revise an About Me.
-                // Every peer holding this checks it independently, so there
-                // is no server to trust and nobody to ask for permission.
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only the original author may update an About Me");
-                }
-                validate_about_me(&about_me, action.author())
-            }
-            EntryTypes::Acknowledgement(_) => {
-                invalid("Acknowledgements cannot be updated; write a new one")
-            }
-            // A member may correct their own suggestion before it is decided.
-            EntryTypes::Suggestion(s) => {
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only the person who offered a suggestion may change it");
-                }
-                validate_suggestion(&s)
-            }
-            EntryTypes::SuggestionOutcome(_) => {
-                invalid("A decision cannot be edited; make a new one")
-            }
-            // You may correct how you describe yourself, and only your own.
-            EntryTypes::Member(m) => {
-                let original = must_get_action(action.original_action_address.clone())?;
-                if original.action().author() != action.author() {
-                    return invalid("Only you may change how you are described");
-                }
-                validate_member(&m)
-            }
-            /*
-             * Neither of these can be edited, and both refusals are the same
-             * refusal: an agreement is a thing that was given at a moment, and
-             * a record of it that can be rewritten afterwards is not evidence
-             * of anything.
-             *
-             * Changing your mind about who may join is possible and costs
-             * nothing — propose somebody else, or simply never agree. What is
-             * not possible is altering what was already agreed to.
-             */
-            EntryTypes::ProposedMember(_) => {
-                invalid("A proposal cannot be changed; make another one")
-            }
-            EntryTypes::Endorsement(_) => {
-                invalid("An agreement cannot be changed once it is given")
-            }
-            // You may knock again; you may not rewrite the knock somebody has
-            // already read and is deciding about.
-            EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
-            EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
-            // Appoint somebody else instead. Rewriting who was trusted, and
-            // when, would take away the only thing this safeguard now rests
-            // on, which is that everybody can see it.
-            EntryTypes::Appointment(_) => {
-                invalid("An appointment cannot be changed; appoint somebody else")
-            }
-            // Change your mind by answering again. What you said before stays
-            // said: the holder may have acted on it.
-            EntryTypes::Consent(_) => {
-                invalid("An answer cannot be changed; answer again")
-            }
-        },
+        // A new entry: the same rules where the record is filed and where the
+        // entry is held.
+        FlatOp::CreateRecord(OpRecord::CreateEntry { app_entry, action })
+        | FlatOp::CreateEntry(OpEntry::CreateEntry { app_entry, action }) => {
+            validate_create(app_entry, &action)
+        }
 
-        FlatOp::Link(OpLink::CreateLink {
+        // An update: the same rules as an update, wherever its new content
+        // lands.
+        FlatOp::CreateRecord(OpRecord::UpdateEntry { app_entry, action })
+        | FlatOp::CreateEntry(OpEntry::UpdateEntry { app_entry, action })
+        | FlatOp::Update(OpUpdate::Entry { app_entry, action }) => {
+            validate_update(app_entry, &action)
+        }
+
+        FlatOp::CreateRecord(OpRecord::DeleteEntry { action })
+        | FlatOp::Delete(OpDelete { action }) => validate_delete(&action),
+
+        FlatOp::CreateRecord(OpRecord::CreateLink { link_type, action })
+        | FlatOp::Link(OpLink::CreateLink {
             link_type, action, ..
         }) => validate_create_link(&link_type, &action),
 
-        // Only the agent who made a link may remove it.
         FlatOp::Link(OpLink::DeleteLink {
             original_action,
             action,
             ..
-        }) => {
-            if original_action.author() != action.author() {
-                return invalid("Only the agent who created a link may remove it");
-            }
-            Ok(ValidateCallbackResult::Valid)
+        }) => validate_delete_link(original_action.author(), &action),
+        FlatOp::CreateRecord(OpRecord::DeleteLink { action }) => {
+            let original = must_get_action(action.link_add_address.clone())?;
+            validate_delete_link(original.action().author(), &action)
         }
 
-        // Only the author of an entry may delete it. Without this, any member
-        // could erase the person's own record.
-        FlatOp::Delete(OpDelete { action }) => {
-            let deleted = must_get_action(action.deletes_address.clone())?;
-            if deleted.action().author() != action.author() {
-                return invalid("Only the author of a record may delete it");
-            }
-            Ok(ValidateCallbackResult::Valid)
+        // This app has no private entries, so anything claiming to be one is
+        // not something this app wrote.
+        FlatOp::CreateRecord(OpRecord::CreatePrivateEntry { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdatePrivateEntry { .. })
+        | FlatOp::Update(OpUpdate::PrivateEntry { .. })
+        | FlatOp::AgentActivity(OpActivity::CreatePrivateEntry { .. })
+        | FlatOp::AgentActivity(OpActivity::UpdatePrivateEntry { .. }) => {
+            invalid("This app has no private entries")
         }
 
-        // Everything left is Holochain's own bookkeeping (chain opens and
-        // closes, init markers, agent activity). Nothing app-specific rides on
-        // these, so there is nothing for this app to rule on.
-        _ => Ok(ValidateCallbackResult::Valid),
+        // A member's identity is the key they joined with. Replacing it inside
+        // a circle would let one person's history become somebody else's.
+        FlatOp::CreateRecord(OpRecord::UpdateAgent { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateAgent { .. })
+        | FlatOp::Update(OpUpdate::Agent { .. })
+        | FlatOp::AgentActivity(OpActivity::UpdateAgent { .. }) => {
+            invalid("A member's key cannot be replaced inside a circle")
+        }
+
+        // The author's own list of what they have done. It carries only the
+        // kind of each write, never its content, so the content rules are
+        // checked where the content is — above. What is left here is
+        // Holochain's own bookkeeping.
+        FlatOp::AgentActivity(_) => Ok(ValidateCallbackResult::Valid),
+
+        // Holochain's own bookkeeping: joining, opening and closing a chain,
+        // the capability grant that lets members send each other signals.
+        // Nothing app-specific rides on these.
+        FlatOp::CreateRecord(OpRecord::CreateAgent { .. })
+        | FlatOp::CreateRecord(OpRecord::CreateCapClaim { .. })
+        | FlatOp::CreateRecord(OpRecord::CreateCapGrant { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdateCapClaim { .. })
+        | FlatOp::CreateRecord(OpRecord::UpdateCapGrant { .. })
+        | FlatOp::CreateRecord(OpRecord::Dna { .. })
+        | FlatOp::CreateRecord(OpRecord::OpenChain { .. })
+        | FlatOp::CreateRecord(OpRecord::CloseChain { .. })
+        | FlatOp::CreateRecord(OpRecord::InitZomesComplete { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateAgent { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateCapGrant { .. })
+        | FlatOp::CreateEntry(OpEntry::CreateCapClaim { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateCapGrant { .. })
+        | FlatOp::CreateEntry(OpEntry::UpdateCapClaim { .. })
+        | FlatOp::Update(OpUpdate::CapClaim { .. })
+        | FlatOp::Update(OpUpdate::CapGrant { .. }) => Ok(ValidateCallbackResult::Valid),
+    }
+}
+
+/// The rules for changing an entry, wherever the change arrives.
+fn validate_update(
+    app_entry: EntryTypes,
+    action: &TypedAction<UpdateData>,
+) -> ExternResult<ValidateCallbackResult> {
+    match app_entry {
+        EntryTypes::AboutMe(about_me) => {
+            // Only the original author may revise an About Me.
+            // Every peer holding this checks it independently, so there
+            // is no server to trust and nobody to ask for permission.
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only the original author may update an About Me");
+            }
+            validate_about_me(&about_me, action.author())
+        }
+        EntryTypes::Acknowledgement(_) => {
+            invalid("Acknowledgements cannot be updated; write a new one")
+        }
+        // A member may correct their own suggestion before it is decided.
+        EntryTypes::Suggestion(s) => {
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only the person who offered a suggestion may change it");
+            }
+            validate_suggestion(&s)
+        }
+        EntryTypes::SuggestionOutcome(_) => invalid("A decision cannot be edited; make a new one"),
+        // You may correct how you describe yourself, and only your own.
+        EntryTypes::Member(m) => {
+            let original = must_get_action(action.original_action_address.clone())?;
+            if original.action().author() != action.author() {
+                return invalid("Only you may change how you are described");
+            }
+            validate_member(&m)
+        }
+        /*
+         * Neither of these can be edited, and both refusals are the same
+         * refusal: an agreement is a thing that was given at a moment, and
+         * a record of it that can be rewritten afterwards is not evidence
+         * of anything.
+         *
+         * Changing your mind about who may join is possible and costs
+         * nothing — propose somebody else, or simply never agree. What is
+         * not possible is altering what was already agreed to.
+         */
+        EntryTypes::ProposedMember(_) => invalid("A proposal cannot be changed; make another one"),
+        EntryTypes::Endorsement(_) => invalid("An agreement cannot be changed once it is given"),
+        // You may knock again; you may not rewrite the knock somebody has
+        // already read and is deciding about.
+        EntryTypes::Knock(_) => invalid("A knock cannot be changed; knock again"),
+        EntryTypes::Admission(_) => invalid("An answer cannot be changed"),
+        // Appoint somebody else instead. Rewriting who was trusted, and
+        // when, would take away the only thing this safeguard now rests
+        // on, which is that everybody can see it.
+        EntryTypes::Appointment(_) => {
+            invalid("An appointment cannot be changed; appoint somebody else")
+        }
+        // Change your mind by answering again. What you said before stays
+        // said: the holder may have acted on it.
+        EntryTypes::Consent(_) => invalid("An answer cannot be changed; answer again"),
+        // Let them back, or remove them again, by writing another. Who was
+        // removed, and when, stays where everybody can see it.
+        EntryTypes::Departure(_) => invalid("A removal cannot be changed; write another decision"),
+        // Replace a photo by removing it and adding another. A file that
+        // changes under the same name is how a reader ends up looking at
+        // something other than what they think they are.
+        EntryTypes::MediaItem(_) | EntryTypes::MediaPiece(_) => {
+            invalid("A photo, sound or video cannot be changed; remove it and add another")
+        }
+        // Every step of taking over is a thing said at a moment, and stays
+        // said. Name somebody else, answer again, or start again.
+        EntryTypes::Succession(_)
+        | EntryTypes::SuccessionClaim(_)
+        | EntryTypes::StillHere(_)
+        | EntryTypes::CheckedOn(_) => {
+            invalid("This cannot be changed once it is said; say it again")
+        }
+        // A key is a key. Publish another.
+        EntryTypes::BoxKey(_) | EntryTypes::EpochKey(_) => {
+            invalid("A key cannot be changed; publish another")
+        }
     }
 }
 

@@ -1,0 +1,49 @@
+--- /tmp/filesystem.ts.orig	2026-09-22 16:00:00.515090700 +0100
++++ src/main/filesystem.ts	2026-09-22 19:10:20.177400100 +0100
+@@ -9,6 +9,16 @@
+ 
+ export type Profile = string;
+ 
++/*
++ * HEARTH: where this app's data lives, for good.
++ *
++ * Named "0.2.x" because that is where every installation of Hearth 0.2.0 to
++ * 0.2.4 already put its conductor, its keystore and its circles. The name is
++ * now just a name: it will not change when the version does, and it must not.
++ * See the note in `connect` below.
++ */
++const HEARTH_DATA_DIRECTORY = '0.2.x';
++
+ export class KangarooFileSystem {
+   public readonly profileDataDir: string;
+   public readonly profileConfigDir: string;
+@@ -35,7 +45,28 @@
+ 
+   static connect(app: Electron.App, profile?: Profile, tempDir?: string) {
+     profile = profile ? profile : 'default';
+-    const versionString = breakingAppVersion();
++
++    /*
++     * HEARTH: the data directory is pinned, deliberately.
++     *
++     * Kangaroo names it after the app version - breakingAppVersion() gives
++     * "0.2.x" for any 0.2 release - so the first 0.3.0 release would start a
++     * fresh conductor, with a fresh keystore, a fresh agent key, and not one
++     * existing circle in sight. The old data stays on disk under "0.2.x" and
++     * nothing ever looks at it again.
++     *
++     * For an app whose data can be thrown away that is a sensible default. For
++     * somebody's care record it is silent data loss: no error, no warning, and
++     * the person has become a stranger to everybody who knew them.
++     *
++     * So it is fixed at the value every existing installation already uses, and
++     * it does not move again. Upgrading the rules is done by installing the new
++     * version alongside the old one in this same directory and carrying circles
++     * across - see docs/upgrades.md in the Hearth repository.
++     *
++     * Do not replace this with breakingAppVersion() again.
++     */
++    const versionString = HEARTH_DATA_DIRECTORY;
+ 
+     const defaultLogsPath = app.getPath('logs');
+     console.log('defaultLogsPath: ', defaultLogsPath);

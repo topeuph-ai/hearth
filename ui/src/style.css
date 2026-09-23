@@ -503,6 +503,76 @@ li {
   margin: 1.5rem 0;
 }
 
+/*
+ * Photos, sound and video beside a section: each in a box of its own, so its
+ * words are plainly its own and not the next one's.
+ */
+.media-here figure.media {
+  margin: 1.25rem 0 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--notice);
+}
+
+.media-here figure.media + figure.media {
+  margin-top: 1.5rem;
+}
+
+.media-here .media-length {
+  margin: 0.25rem 0 0;
+}
+
+.media-here figure.media img {
+  display: block;
+  max-width: 100%;
+  max-height: 22rem;
+  border-radius: 6px;
+}
+
+.media-here figcaption {
+  margin-top: 0.35rem;
+  font-size: 0.95rem;
+}
+
+#photo-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 18rem;
+  margin: 0.5rem 0 1rem;
+  border-radius: 6px;
+}
+
+#add-photo,
+#add-sound,
+#add-video {
+  max-width: 32rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+#add-photo::backdrop,
+#add-sound::backdrop,
+#add-video::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#add-photo textarea,
+#add-sound textarea,
+#add-video textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#sound-preview,
+.media-here audio {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0.5rem 0;
+}
+
 .address-code {
   display: block;
   margin-top: 1rem;
@@ -534,6 +604,59 @@ output {
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 0.95rem;
   word-break: break-all;
+}
+
+/*
+ * "made with an older version", beside a circle's name.
+ *
+ * Quiet on purpose. It is not a warning and nothing is wrong: the circle
+ * opens, reads and belongs to her exactly as it did. It is here so that
+ * finding out happens on the list rather than inside, when something the
+ * newer rules added turns out not to be there. See docs/upgrades.md.
+ */
+.older-rules {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.circle-link .older-rules {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/*
+ * The practice-copy banner, in the demo only.
+ *
+ * Deliberately not pretty and deliberately not dismissible. It is here because
+ * a demo window and an installed Hearth are the same interface, and side by
+ * side on one screen there was nothing to tell them apart — so an evening's
+ * work went into a circle nobody outside that machine could reach.
+ *
+ * In the normal flow of the page rather than fixed to the top, so it pushes
+ * everything down and cannot be scrolled out of sight or hidden under the
+ * announcer.
+ */
+#practice-copy {
+  /* Out to the edges, against the body's 1rem side padding, so it reads as a
+   * band across the window rather than as a message inside the page. */
+  margin: 0 -1rem;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  background: #8a2b06;
+  color: #ffffff; /* 6.4:1 on that ground */
+  border-bottom: 3px solid #4d1803;
+  font-size: 0.95rem;
+}
+
+/* The announcer is fixed to the top, so in the demo it would land on top of
+ * the banner. It sits below instead, by however tall the banner actually is —
+ * which is two lines on a narrow window and one on a wide one, so it is
+ * measured rather than assumed. Both are things somebody needs to read. */
+body:has(#practice-copy:not([hidden])) #announcer {
+  top: var(--practice-height, 2.6rem);
 }
 
 /*
@@ -759,8 +882,82 @@ legend {
   cursor: pointer;
 }
 
-.choice-row input[type="radio"] {
+.choice-row input[type="radio"],
+.choice-row input[type="checkbox"] {
   width: 1.4rem;
   height: 1.4rem;
   accent-color: var(--accent);
+}
+
+#video-live,
+#video-preview,
+.media-here video {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  max-height: 22rem;
+  margin: 0.5rem 0;
+  border-radius: 6px;
+  background: #000;
+}
+
+/*
+ * The one simplification the practice copy makes that is worth naming: it does
+ * not ask for a password, and a released Hearth does. Quiet, beside the banner
+ * rather than competing with it.
+ */
+#no-password-here {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  background: var(--notice);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Passes: the outer ring. The pass itself looks like the address, on purpose. */
+#passes fieldset {
+  margin: 1rem 0;
+}
+
+#pass-output {
+  display: block;
+  white-space: pre;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+}
+
+#pass-list li,
+#pass-reads li {
+  margin: 0.5rem 0;
+}
+
+#pass-list .run-out {
+  color: var(--muted);
+}
+
+#scan-pass-video {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  border-radius: 6px;
+}
+
+#pass-in {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+
+#pass-words-list dt {
+  font-weight: 600;
+  margin-top: 1.2rem;
+}
+
+#pass-words-list dd {
+  margin: 0.3rem 0 0;
+  white-space: pre-wrap;
 }

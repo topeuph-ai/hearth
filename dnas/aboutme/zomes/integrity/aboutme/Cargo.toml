@@ -13,3 +13,6 @@ hdi = { workspace = true }
 serde = { workspace = true }
 holochain_serialized_bytes = { workspace = true }
 holo_hash = { workspace = true }
+# Media is stored as raw bytes. Without this, serde writes a byte array as a
+# list of numbers, which costs about a third more on every member's disk.
+serde_bytes = "0.11"

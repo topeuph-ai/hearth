@@ -110,6 +110,9 @@ function invitationToToken(bundle) {
          * right for an invitation made before anybody was appointed.
          */
         appointment: appointment ? encodeHashToBase64(appointment) : null,
+        // Part of what both people signed. Dropped, the signatures no longer
+        // match and the door refuses the invitation.
+        name: bundle.invitation.name ?? "",
       },
     }),
   );
@@ -128,6 +131,7 @@ function tokenToInvitation(token) {
       // Tokens made before this was carried have no appointment at all, and
       // still read — as the holder's own invitation, which is what they were.
       appointment: appointment ? decodeHashFromBase64(appointment) : null,
+      name: parsed.invitation.name ?? "",
     },
   };
 }
@@ -142,8 +146,45 @@ let circles = []; // every circle this person is in
 let me = null; // our AgentPubKey
 let holder = null; // whose circle this is
 let record = null; // the current About Me record
+// Where this device stands on keys: { epoch, mine, waiting_for }. The circle's
+// newest key, the newest this device can use, and anybody whose encryption key
+// has not reached the holder yet.
+let keys = null;
 
 const $ = (id) => document.getElementById(id);
+
+/*
+ * Say so, when this is the practice copy.
+ *
+ * `import.meta.env.DEV` is true when the interface is served by the development
+ * server — which is what `npm run demo` does, and what an installed Hearth
+ * never does: it is built, and serves files from inside the app.
+ *
+ * This exists because the two are the same interface and cannot be told apart
+ * by looking. Three demo windows were once opened beside a real Hearth; a
+ * circle was made in one of them, and an invitation to it was sent to somebody
+ * in another town, who could never have reached it. The window said nothing,
+ * so now it does. The title changes too, for the taskbar.
+ */
+if (import.meta.env.DEV) {
+  const banner = $("practice-copy");
+  banner.hidden = false;
+  // And the one simplification worth naming: the demo does not ask for a
+  // password, and a released Hearth does. Decided 23 September 2026.
+  $("no-password-here").hidden = false;
+  document.title = "Practice copy — Hearth demo";
+
+  // The announcer is fixed to the top of the window and would land on the
+  // banner. Tell it how far down to start — measured, because the banner wraps
+  // to two lines on a narrow window.
+  const measure = () =>
+    document.documentElement.style.setProperty(
+      "--practice-height",
+      `${banner.offsetHeight}px`,
+    );
+  measure();
+  window.addEventListener("resize", measure);
+}
 
 /** Whether this is your circle. Compares text, never byte arrays. */
 const isHolder = () => Boolean(holder) && holder === asText(me);
@@ -208,6 +249,7 @@ function show(...ids) {
     // Asking to be let in is part of joining now, not a screen of its own:
     // one box takes the address, and what it produces is a place in the queue.
     "join",
+    "pass-reader",
     "circles",
     "circle",
     "problem",
@@ -223,6 +265,15 @@ function show(...ids) {
       stopScanning();
     } catch {
       // Nothing was scanning.
+    }
+  }
+  // Words read with a pass go when the screen does: nothing is kept.
+  if (!ids.includes("pass-reader")) {
+    try {
+      stopScanningPass();
+      aFreshPassReading();
+    } catch {
+      // Shown before the pass code further down has run.
     }
   }
 }
@@ -271,6 +322,38 @@ function entryOf(record) {
 }
 
 /**
+ * The words of the record, as this device can read them.
+ *
+ * The record is locked with the circle's key, so its entry holds sealed bytes
+ * and the words come back opened beside it. Nothing on this side holds a key
+ * or does any unlocking: the zome asks the keystore, and this asks the zome.
+ *
+ * Null where there is no record, and null where there is one this device
+ * cannot open — a device that has been removed, or one whose keys have not
+ * caught up. `current.locked_out` tells those two apart, and the screen says
+ * so rather than showing an empty record as though nothing were written.
+ *
+ * Falls back to the entry for a circle written before encryption, where the
+ * words really are in the open.
+ */
+function wordsOf(current) {
+  return current?.about_me ?? entryOf(current?.record);
+}
+
+/**
+ * What a suggestion says, as this device can read it.
+ *
+ * The same arrangement as the record: the suggestion and the why are locked
+ * with the circle's key and come back opened beside the entry. Which section
+ * it is about is in the open, so a suggestion this device cannot open is
+ * skipped rather than shown as a blank card — which is why this returns
+ * nothing at all when the words are missing.
+ */
+function suggestionWords(item) {
+  return item?.words ?? entryOf(item?.suggestion);
+}
+
+/**
  * Who wrote a record.
  *
  * Holochain 0.7 splits an action into a header and its per-variant data, and
@@ -280,8 +363,25 @@ function entryOf(record) {
  */
 const authorOf = (record) => record?.signed_action?.hashed?.content?.header?.author;
 
+/*
+ * Circles made under earlier rules, and the connection each one needs.
+ *
+ * When the rules a circle is built from change, the new version of the app is
+ * installed beside the old one rather than replacing it, so both are running
+ * in the same conductor against the same keystore — the same person, with two
+ * sets of rules. The circles somebody already has live in the older one.
+ *
+ * Keyed by the circle's own identity, so `call` below can send each question
+ * to the app that can answer it without anything else in here knowing that
+ * two apps exist. See docs/upgrades.md.
+ */
+const earlierClients = new Map();
+
 async function call(fnName, payload, cellId) {
-  return client.callZome({
+  const where = cellId ? earlierClients.get(asText(cellId[0])) : null;
+  const speaking = where?.client ?? client;
+
+  return speaking.callZome({
     ...(cellId ? { cell_id: cellId } : { role_name: ROLE }),
     zome_name: ZOME,
     fn_name: fnName,
@@ -374,7 +474,7 @@ let knownName = "";
  */
 function personName() {
   const fromRecord =
-    entryOf(record?.current?.record)?.display_name?.trim();
+    wordsOf(record?.current)?.display_name?.trim();
   return fromRecord || knownName.trim();
 }
 
@@ -625,6 +725,8 @@ function showCircleMode(mode = circleMode) {
   $("people").hidden = !somethingToShowPeople;
   $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
   $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
+  // A pass reads through the same door, so it is offered wherever that is.
+  $("passes").hidden = !somethingToShowPeople || !theDoorIsHere;
 
   /*
    * The way on from the record, for the holder who has just written it.
@@ -697,7 +799,7 @@ let beenThroughOnce = false;
 
 const hasBeenThroughOnce = (current) =>
   current?.record?.signed_action?.hashed?.content?.data?.type === "Update" ||
-  hasBeenWritten(entryOf(current?.record));
+  hasBeenWritten(wordsOf(current));
 
 /**
  * When a record was written, in the words a person would use.
@@ -769,11 +871,28 @@ $("suggest-another-section").addEventListener("click", () => {
 });
 
 function renderRecord(current) {
-  const entry = entryOf(current?.record);
+  const entry = wordsOf(current);
 
   // Her name is hers whether or not anything has been written yet, and every
   // question on this screen is phrased around it.
   if (entry?.display_name) nameHer(entry.display_name);
+
+  /*
+   * A record this device cannot open is not an empty record, and must never
+   * look like one. It means one of two things — this device has been removed
+   * from the circle, or its keys have not caught up yet — and either way the
+   * honest thing is to say so and show nothing.
+   */
+  // A circle from before the rules changed, and only the person who holds it
+  // can carry it across. Everybody else simply reads it as it is.
+  $("older-rules-circle").hidden = !(circle?.olderRules && isHolder());
+
+  $("locked-out").hidden = !current?.locked_out;
+  if (current?.locked_out) {
+    $("no-record").hidden = true;
+    $("record").hidden = true;
+    return;
+  }
 
   if (!hasBeenThroughOnce(current)) {
     $("no-record").hidden = false;
@@ -834,6 +953,12 @@ function renderRecord(current) {
     group.className = "record-field";
     group.append(dt, dd);
 
+    // Photos, sound and video beside this section, filled in by showMedia.
+    const media = document.createElement("div");
+    media.className = "media-here";
+    media.dataset.mediaFor = key;
+    group.append(media);
+
     /*
      * Longer than the box, and a way to see the rest.
      *
@@ -874,6 +999,27 @@ function renderRecord(current) {
       change.textContent = "Change this";
       change.addEventListener("click", () => changeOneSection(index));
       group.append(change);
+
+      const photo = document.createElement("button");
+      photo.type = "button";
+      photo.className = "linky change-one";
+      photo.textContent = "Add a photo";
+      photo.addEventListener("click", () => pickAPhoto(key));
+      group.append(photo);
+
+      const sound = document.createElement("button");
+      sound.type = "button";
+      sound.className = "linky change-one";
+      sound.textContent = "Add sound";
+      sound.addEventListener("click", () => pickASound(key));
+      group.append(sound);
+
+      const video = document.createElement("button");
+      video.type = "button";
+      video.className = "linky change-one";
+      video.textContent = "Add video";
+      video.addEventListener("click", () => pickAVideo(key));
+      group.append(video);
     } else {
       /*
        * And for everybody else, the same place to start from.
@@ -944,10 +1090,19 @@ function sayWhichAnswersRunLong() {
   });
 }
 
-function renderReaders(records, earlier = []) {
+/*
+ * Who has read the record.
+ *
+ * Each item is the acknowledgement itself and the role its author claimed,
+ * opened with the circle's key by the zome — the role is locked in the circle,
+ * so it cannot be read off the entry here.
+ */
+function renderReaders(allReads, earlier = []) {
   const section = $("readers");
   const list = $("readers-list");
   list.replaceChildren();
+  // Nothing written by somebody after they were removed. See writtenWhileGone.
+  const records = allReads.filter((item) => !writtenWhileGone(item.record));
 
   if (!records.length && !earlier.length) {
     section.hidden = true;
@@ -965,14 +1120,16 @@ function renderReaders(records, earlier = []) {
     list.append(li);
   }
 
-  for (const r of records) {
-    const entry = entryOf(r);
-    if (!entry) continue;
+  for (const item of records) {
     const li = document.createElement("li");
     // Never "Read by District Nurse" — that implies a credential nobody
     // checked. The claim and the claimant are shown as separate facts.
-    const who = describe(authorOf(r));
-    li.textContent = `${who} read this. Role claimed: ${entry.role}`;
+    const who = describe(authorOf(item.record));
+    // A role this device cannot open is said as that, not left blank: that
+    // somebody read the record is the evidence, and it is not in doubt.
+    li.textContent = item.locked_out
+      ? `${who} read this. What they said they were cannot be read on this device.`
+      : `${who} read this. Role claimed: ${item.role}`;
     list.append(li);
   }
 }
@@ -1032,9 +1189,44 @@ async function readTheCircle() {
   try {
     // Left the circle while a reading was queued. Nothing to draw.
     if (!circle) return;
+    await keepKeysUpToDate();
     await drawTheCircle();
   } finally {
     readingNow = null;
+  }
+}
+
+/**
+ * Keys, before anything is read or written.
+ *
+ * The record and everything else in the circle is locked, so a device with no
+ * key has nothing to show and nothing it can write. This publishes this
+ * device's encryption key, takes up whatever the holder has sealed to it, and —
+ * on the holder's own device — seals the circle's keys to everybody owed one.
+ * It writes nothing when nothing has changed, which is almost every time.
+ *
+ * Never allowed to stop the screen being drawn. A circle whose keys have not
+ * arrived yet still has people in it, a name at the top, and things to say
+ * about what cannot be opened — see the locked-out note.
+ */
+async function keepKeysUpToDate() {
+  try {
+    keys = await call("keep_keys_up_to_date", null, circle.cellId);
+
+    /*
+     * Deliberately not on the screen. From inside this device, "my key is
+     * older than the circle's" is the same fact whether somebody has just
+     * joined or has been removed, and the app must not guess which and
+     * reassure the wrong person. The locked-out note says both readings out
+     * loud instead. This is here for whoever is looking at a log.
+     */
+    if (keys && keys.mine < keys.epoch) {
+      console.info(
+        `This device can use key ${keys.mine} of ${keys.epoch} in this circle.`,
+      );
+    }
+  } catch (error) {
+    console.error("Could not bring this device's keys up to date.", error);
   }
 }
 
@@ -1053,6 +1245,10 @@ async function drawTheCircle() {
    * branch never ran, but there was nothing to render, so the reader saw an
    * empty box and a "Check again" button that never turned itself off.
    */
+  // Who has been removed, before anything is drawn — and if it is me, the
+  // circle comes off this device and there is nothing to draw.
+  if (await readDepartures()) return;
+
   const amHolder = isHolder();
   $("check-it-over").hidden = true;
 
@@ -1079,7 +1275,7 @@ async function drawTheCircle() {
       )
     : null;
 
-  const entry = entryOf(current?.record);
+  const entry = wordsOf(current);
   const haveIt = Boolean(entry);
 
   /*
@@ -1101,6 +1297,9 @@ async function drawTheCircle() {
 
   record = haveIt ? { original, current } : null;
   renderRecord(haveIt ? current : null);
+  // Not awaited: pictures arrive after the words, and the words should not
+  // wait for them.
+  showMedia().catch((error) => console.error("Could not show media.", error));
 
   $("no-record-empty").hidden = beenThroughOnce || !amHolder;
   $("no-record-waiting").hidden = beenThroughOnce || amHolder;
@@ -1154,6 +1353,7 @@ async function drawTheCircle() {
 
   await loadMembers();
   await loadSuggestions();
+  await readSuccession();
 }
 
 /*
@@ -1171,6 +1371,7 @@ async function drawTheCircle() {
  * unwritten. A modified app could show it. See docs/hard-questions.md.
  */
 function stillWorthShowing(item) {
+  if (writtenWhileGone(item.suggestion)) return false;
   if (isHolder()) return true;
   const outcome = entryOf(item.outcome);
   if (!outcome || outcome.accepted) return true;
@@ -1194,7 +1395,7 @@ async function loadSuggestions() {
 }
 
 function fillForm() {
-  const entry = entryOf(record?.current?.record);
+  const entry = wordsOf(record?.current);
   // In the order they appear on the form.
   $("what-matters").value = entry?.what_matters_to_me ?? "";
   $("people-who-matter").value = entry?.people_who_matter ?? "";
@@ -1537,6 +1738,9 @@ $("record-form").addEventListener("submit", async (event) => {
       how_to_support_me: $("how-to-support").value,
       also_worth_knowing: $("also-worth-knowing").value,
       supported_to_write_this_by: $("supported-by").value.trim(),
+      // Nothing on this form edits coded values, so whatever the record
+      // already carries is kept rather than quietly dropped on saving.
+      codes: wordsOf(record?.current)?.codes ?? [],
     };
 
     if (record) {
@@ -1769,6 +1973,10 @@ async function start() {
   const info = await client.appInfo();
   me = info.agent_pub_key;
 
+  // Circles made before the rules changed live in the older app beside this
+  // one. Reaching them is allowed to fail without stopping anything.
+  await connectToEarlierRules();
+
   await loadCircles();
 
   /*
@@ -1790,7 +1998,7 @@ async function start() {
   watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
-  client.on("signal", async (signal) => {
+  const whenSomebodyTellsUsSomething = async (signal) => {
     /*
      * A signal arrives as { type: "app", value: { cell_id, zome_name, payload } }.
      * Read from signal.payload it is undefined, so every handler below was
@@ -1826,6 +2034,17 @@ async function start() {
           : `${who} is asking to join.`,
       );
       if (circle) await loadCircle();
+      return;
+    }
+    // A pass was used at one of this device's doors. Only ever raised by this
+    // device itself — the zome drops one arriving from anywhere else.
+    if (payload?.kind === "PassUsed") {
+      rememberPassRead(asText(signal?.value?.cell_id?.[0]), payload);
+      announce(
+        `${payload.for_whom} read ${payload.sections.map(sectionName).join(", ")} ` +
+          `with a pass.`,
+      );
+      if (currentRoomCell) await loadPasses().catch(() => {});
       return;
     }
     if (payload?.kind === "Admitted") {
@@ -1929,7 +2148,25 @@ async function start() {
       );
       if (circle) await loadCircle();
     }
-  });
+  };
+
+  client.on("signal", whenSomebodyTellsUsSomething);
+
+  /*
+   * And the same ear on every earlier version of the rules still installed.
+   *
+   * Without this, the one signal that matters most across a version change
+   * would be missed: the holder telling everybody that the circle has moved.
+   * It is sent in the old circle, which belongs to the old app, so a member
+   * running the new app would never hear it and would sit in a circle nobody
+   * else was in any more.
+   */
+  const heard = new Set();
+  for (const { client: older } of earlierClients.values()) {
+    if (heard.has(older)) continue;
+    heard.add(older);
+    older.on("signal", whenSomebodyTellsUsSomething);
+  }
 }
 
 start().catch(problem);
@@ -2011,7 +2248,7 @@ function markSuggestionsOnTheRecord() {
 
   const byField = new Map();
   for (const item of suggestions) {
-    const entry = entryOf(item.suggestion);
+    const entry = suggestionWords(item);
     if (!entry) continue;
     const [key] = FIELD_LABELS[entry.field] ?? [];
     if (!key) continue;
@@ -2060,7 +2297,7 @@ function markSuggestionsOnTheRecord() {
 function suggestionCard(item) {
   const amHolder = isHolder();
 
-  const entry = entryOf(item.suggestion);
+  const entry = suggestionWords(item);
   if (!entry) return null;
 
   const author = authorOf(item.suggestion);
@@ -2179,7 +2416,7 @@ async function decide(item, entry, accepted) {
     }
 
     const [key] = FIELD_LABELS[entry.field] ?? [];
-    const current = entryOf(record.current.record);
+    const current = wordsOf(record.current);
     const existing = current[key]?.trim();
 
     await call(
@@ -2286,6 +2523,9 @@ function sayWhoIsNew() {
  * and telling them apart is the whole reason the answer is written down.
  */
 let whoAgrees = null;
+
+/** The holder has asked to choose somebody else, though someone agreed. */
+let choosingAnotherToAgree = false;
 
 async function readWhoAgrees() {
   whoAgrees = await call("who_agrees_here", null, circle.cellId);
@@ -2496,7 +2736,10 @@ function renderPeople() {
 
   // Only the holder appoints, and only where there is somebody to appoint.
   const amHolder = isHolder();
-  $("appoint-hint").hidden = !amHolder || members.size < 2;
+  // And the invitation to press a name goes quiet once somebody has agreed.
+  const somebodyAgreed =
+    Boolean(whoAgrees) && whoAgrees.willing !== false && !choosingAnotherToAgree;
+  $("appoint-hint").hidden = !amHolder || members.size < 2 || somebodyAgreed;
 
   for (const [key, entry] of members) {
     const li = document.createElement("li");
@@ -2524,16 +2767,51 @@ function renderPeople() {
     // Asking somebody else replaces whoever is asked now, so the person
     // already asked needs no button of their own — pressing another name is
     // the whole of changing your mind.
-    if (amHolder && key !== asText(me) && !theirs) {
+    /*
+     * Only while the role is open.
+     *
+     * "Ask Ronnie Smythe instead", beside every name, after Dave had already
+     * said yes, read as though the role were still up for grabs — and it
+     * offered a way to take it off somebody who had just agreed, one press
+     * away, on a page she visits for other reasons. Once somebody has agreed,
+     * the choice is behind one quiet link under their name, for the day it is
+     * really needed.
+     */
+    const roleIsOpen =
+      !whoAgrees || whoAgrees.willing === false || choosingAnotherToAgree;
+    if (amHolder && key !== asText(me) && !theirs && roleIsOpen) {
       li.append(askThem(key, who));
     }
 
-    // Removing somebody means moving everybody else. See moveTheCircle.
+    if (amHolder && theirs && whoAgrees.willing !== false && !choosingAnotherToAgree) {
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "linky";
+      change.textContent = "Ask somebody else instead";
+      change.addEventListener("click", () => {
+        choosingAnotherToAgree = true;
+        renderPeople();
+        announce("Choose who to ask instead, from the names below.");
+      });
+      actions.append(change);
+      li.append(actions);
+    }
+
+    // Removing somebody: the ordinary way, or by moving everybody else.
     if (amHolder && key !== asText(me)) {
       li.append(removeThem(key, who));
     }
 
     list.append(li);
+  }
+
+  // Only the holder sees who she has removed, and can let them back.
+  if (amHolder) {
+    for (const [key, entry] of removedMembers) {
+      list.append(someoneRemoved(key, entry));
+    }
   }
 }
 
@@ -2618,6 +2896,7 @@ function askThem(key, who) {
   button.addEventListener("click", () =>
     whileWorking(button, "Asking…", async () => {
       await call("appoint", key, circle.cellId);
+      choosingAnotherToAgree = false;
       announce(`${who} has been asked. Nobody new can join until they agree.`);
       await loadCircle();
     }).catch(problem),
@@ -2654,11 +2933,15 @@ async function loadMembers() {
     [],
   );
   members = new Map();
+  removedMembers = new Map();
   for (const r of records) {
     const entry = entryOf(r);
     if (!entry) continue;
     // Latest introduction wins; people correct how they describe themselves.
-    members.set(asText(authorOf(r)), entry);
+    const key = asText(authorOf(r));
+    // Somebody removed is not in the circle, whatever they wrote before.
+    if (gone.has(key)) removedMembers.set(key, entry);
+    else members.set(key, entry);
   }
 
   /*
@@ -2946,6 +3229,70 @@ async function circleAlreadyHere(bundle) {
   return null;
 }
 
+/*
+ * Connect to any earlier version of the rules still installed on this machine.
+ *
+ * The desktop app puts what it knows in `__HEARTH_EARLIER_APPS__`: one entry
+ * per older version that is actually installed, with a token for it. Empty on
+ * a first install, and empty in the browser demo, where there has never been
+ * an older version to keep.
+ *
+ * Failing to connect to an old app must never stop the new one starting. The
+ * circles in it are safe on disk either way, and saying so is better than a
+ * blank screen.
+ */
+async function connectToEarlierRules() {
+  const earlier = globalThis.__HEARTH_EARLIER_APPS__ ?? [];
+  const port = globalThis.__HC_LAUNCHER_ENV__?.APP_INTERFACE_PORT;
+  if (!earlier.length || !port) return;
+
+  for (const app of earlier) {
+    try {
+      const older = await AppWebsocket.connect({
+        url: new URL(`ws://127.0.0.1:${port}`),
+        token: Uint8Array.from(app.token),
+      });
+      const info = await older.appInfo();
+      for (const raw of info.cell_info[ROLE] ?? []) {
+        const cell = raw?.value ?? raw?.cloned ?? raw;
+        if (!cell?.cell_id) continue;
+        earlierClients.set(asText(cell.cell_id[0]), {
+          client: older,
+          installedAppId: app.installed_app_id,
+          info,
+        });
+      }
+    } catch (error) {
+      console.error(`Could not reach ${app.installed_app_id}.`, error);
+    }
+  }
+}
+
+/** The circles in every earlier version, marked as being on their way out. */
+function circlesUnderEarlierRules() {
+  const seen = new Set();
+  const out = [];
+
+  for (const { info } of earlierClients.values()) {
+    if (!info || seen.has(info)) continue;
+    seen.add(info);
+
+    for (const raw of info.cell_info[ROLE] ?? []) {
+      const cell = raw?.value ?? raw?.cloned ?? raw;
+      if (!cell?.clone_id) continue;
+      if (propertiesOf(cell)?.waiting_for) continue;
+      if (cell.enabled === false) continue;
+      out.push({
+        cellId: cell.cell_id,
+        name: cell.name ?? "A circle",
+        asksTwo: Boolean(propertiesOf(cell)?.requires_second_yes),
+        olderRules: true,
+      });
+    }
+  }
+  return out;
+}
+
 async function loadCircles() {
   const info = await client.appInfo();
   const cells = info.cell_info[ROLE] ?? [];
@@ -2977,6 +3324,20 @@ async function loadCircles() {
       asksTwo: Boolean(propertiesOf(c)?.requires_second_yes),
     }));
 
+  /*
+   * And the circles made before the rules changed, which live in the older
+   * app beside this one. They are still hers, still readable, and still
+   * waiting to be carried across — so they belong on the same list rather
+   * than somewhere she has to go looking.
+   */
+  circles = circles.concat(
+    circlesUnderEarlierRules().map((older) => ({
+      ...older,
+      name: labelFor(older.cellId, older.name),
+      madeWith: older.name,
+    })),
+  );
+
   if (circles.length === 0) {
     show("choose");
     return;
@@ -2998,6 +3359,20 @@ function renderCircles() {
     // Just their name. No counts, no badges, no "2 new". She is looking
     // somebody up, not clearing a queue.
     button.textContent = item.name;
+
+    /*
+     * The one exception, and it is not a badge about activity: a circle made
+     * before the rules changed. It still opens and still reads; what it
+     * cannot do is anything the newer rules added, and it will need carrying
+     * across. Saying so on the list is kinder than letting her find out
+     * inside. See docs/upgrades.md.
+     */
+    if (item.olderRules) {
+      const note = document.createElement("span");
+      note.className = "older-rules";
+      note.textContent = "made with an older version";
+      button.append(note);
+    }
     button.addEventListener("click", () => openCircle(item).catch(problem));
     li.append(button);
     list.append(li);
@@ -3005,7 +3380,9 @@ function renderCircles() {
 }
 
 async function openCircle(item) {
-  circle = { cellId: item.cellId };
+  // Whether this circle was made before the rules changed is carried with it:
+  // the screen offers to carry it across, and only the holder can.
+  circle = { cellId: item.cellId, olderRules: Boolean(item.olderRules) };
   circleAsksTwo = Boolean(item.asksTwo);
   // Coming back to a circle is not writing one.
   justWroteIt = false;
@@ -3057,11 +3434,20 @@ function forgetTheCircle() {
   // Who this circle asked, and who it asked to agree. Carried into the next
   // circle these would be somebody else's answers on somebody else's screen.
   whoAgrees = null;
+  choosingAnotherToAgree = false;
   seconderHere = null;
   theDoorIsHere = false;
   circleAsksTwo = false;
   chainHealth.clear();
   askingAboutChain.clear();
+  // Who was removed from this circle means nothing in the next one.
+  gone = new Map();
+  removedMembers = new Map();
+  // Nor do its pictures, or who might take it over.
+  forgetMedia();
+  succession = null;
+  $("taking-over-banner").hidden = true;
+  $("succession").hidden = true;
   knocking = [];
   lastWaitingCount = 0;
   stopChiming();
@@ -4059,6 +4445,399 @@ async function cellForRoom(room, name) {
 }
 
 // ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A pass is a Holochain capability grant made in the circle's door, for one
+// function that reads chosen sections. The reader enters the same door and
+// presents it; the holder's device answers. See docs/outer-ring.md.
+//
+// What travels is everything the reader's app needs to find that door and
+// knock on the right function: the holder's key, the door's seed, and the
+// secret. Written the same way as an address — short rows that check
+// themselves — so a typing mistake is pointed at rather than just refused.
+// It starts "PASS" rather than "HEARTH", so neither screen mistakes one for
+// the other.
+
+const PASS_VERSION = 1;
+const PASS_BYTES = 1 + 39 + 16 + 64;
+
+/** The three sections somebody meeting her for the first time needs most. */
+const PASS_SECTIONS_TICKED = [
+  "HowToCommunicateWithMe",
+  "PleaseDoAndPleaseDoNot",
+  "HowToSupportMe",
+];
+
+function passToText(room, secret) {
+  const key = decodeHashFromBase64(room.holder);
+  const packed = new Uint8Array(PASS_BYTES);
+  packed[0] = PASS_VERSION;
+  packed.set(key, 1);
+  packed.set(uuidToBytes(room.seed), 40);
+  packed.set(secret, 56);
+
+  const code = bytesToCode(packed);
+  const rows = [];
+  for (let i = 0; i < code.length; i += ADDRESS_ROW) {
+    const row = code.slice(i, i + ADDRESS_ROW);
+    rows.push(row + rowCheck(row, rows.length));
+  }
+  return ["PASS", ...rows.map((row) => row.match(/.{1,4}/g).join(" "))].join("\n");
+}
+
+const looksLikeAPass = (text) => /^\s*pass/i.test(text);
+
+function textToPass(text) {
+  if (!looksLikeAPass(text)) {
+    throw new Error(
+      "That does not look like a pass. A pass starts with the word PASS. " +
+        "If it starts with HEARTH, it is the address of a circle — use Join a circle instead.",
+    );
+  }
+  const code = text
+    .toUpperCase()
+    .replace(/^\s*PASS/, "")
+    .replace(/[\s-]/g, "")
+    .replace(/O/g, "0")
+    .replace(/[IL]/g, "1");
+
+  const dataLength = Math.ceil((PASS_BYTES * 8) / 5);
+  const rowCount = Math.ceil(dataLength / ADDRESS_ROW);
+  let data = "";
+  for (let r = 0; r < rowCount; r++) {
+    const start = r * (ADDRESS_ROW + 2);
+    const width = Math.min(ADDRESS_ROW, dataLength - r * ADDRESS_ROW);
+    const row = code.slice(start, start + width);
+    const check = code.slice(start + width, start + width + 2);
+    const unreadable = [...row + check].some((c) => !ADDRESS_ALPHABET.includes(c));
+    if (unreadable || row.length !== width || check !== rowCheck(row, r)) {
+      throw new Error(
+        `Row ${r + 1} of the pass has a mistake in it. Check that row letter by ` +
+          `letter — the rows before it are fine.`,
+      );
+    }
+    data += row;
+  }
+  if (code.length !== dataLength + rowCount * 2) {
+    throw new Error("The pass is the wrong length. Check the last row.");
+  }
+
+  const packed = codeToBytes(data, PASS_BYTES);
+  if (packed[0] !== PASS_VERSION) {
+    throw new Error("This pass was made by a newer Hearth. Update Hearth and try again.");
+  }
+  return {
+    holder: encodeHashToBase64(packed.slice(1, 40)),
+    seed: bytesToUuid(packed.slice(40, 56)),
+    secret: packed.slice(56),
+  };
+}
+
+/** When a pass should stop, in Holochain's microseconds, or null for never. */
+function passRunsOutAt(choice) {
+  if (choice === "stopped") return null;
+  const end = new Date();
+  if (choice === "today") {
+    end.setHours(23, 59, 59, 0);
+  } else {
+    end.setDate(end.getDate() + 7);
+  }
+  return end.getTime() * 1000;
+}
+
+const sectionName = (section) => FIELD_LABELS[section]?.[1] ?? section;
+
+const whenText = (micros) =>
+  new Date(micros / 1000).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/*
+ * When a pass was used, remembered on this device only.
+ *
+ * The holder's device is the only one that knows: the answer is sent from it,
+ * and nothing is written to the circle. Letting the whole circle see "Ward 7
+ * read this" would need a new kind of entry in the rules, which is a change to
+ * the frozen file and is written down in docs/outer-ring.md as the next step.
+ */
+const PASS_READS_KEY = "hearth:pass-reads";
+
+function passReads() {
+  try {
+    return JSON.parse(localStorage.getItem(PASS_READS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function rememberPassRead(door, payload) {
+  const reads = passReads();
+  reads.unshift({
+    door,
+    for_whom: payload.for_whom,
+    sections: payload.sections,
+    at: payload.at,
+  });
+  try {
+    localStorage.setItem(PASS_READS_KEY, JSON.stringify(reads.slice(0, 200)));
+  } catch {
+    // The read still happened; only the note of it is lost.
+  }
+}
+
+function buildPassSectionChoices() {
+  const box = $("pass-sections");
+  if (box.querySelector("input")) return;
+  for (const [section, [, label]] of Object.entries(FIELD_LABELS)) {
+    const row = document.createElement("label");
+    row.className = "choice-row";
+    const tick = document.createElement("input");
+    tick.type = "checkbox";
+    tick.value = section;
+    tick.checked = PASS_SECTIONS_TICKED.includes(section);
+    row.append(tick, ` ${label}`);
+    box.append(row);
+  }
+}
+
+async function loadPasses() {
+  buildPassSectionChoices();
+  const door = currentRoomCell;
+  if (!door) {
+    $("pass-list").replaceChildren();
+    return;
+  }
+
+  const passes = await orNothingYet(call("passes_here", null, door), []);
+  $("no-passes").hidden = passes.length > 0;
+  $("pass-list").replaceChildren(
+    ...passes.map((pass) => {
+      const item = document.createElement("li");
+      const what = pass.terms.sections.map(sectionName).join(", ");
+      const lasts = pass.terms.until
+        ? pass.run_out
+          ? `ran out ${whenText(pass.terms.until)}`
+          : `until ${whenText(pass.terms.until)}`
+        : "until you stop it";
+      const words = document.createElement("span");
+      words.textContent = `${pass.terms.for_whom} — ${what}, ${lasts}. `;
+      if (pass.run_out) item.classList.add("run-out");
+
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "secondary";
+      stop.textContent = pass.run_out ? "Take it off the list" : "Stop it";
+      stop.addEventListener("click", () =>
+        whileWorking(stop, "Stopping…", async () => {
+          await call("stop_a_pass", pass.grant, door);
+          announce(`The pass for ${pass.terms.for_whom} has stopped working.`);
+          await loadPasses();
+        }).catch(problem),
+      );
+      item.append(words, stop);
+      return item;
+    }),
+  );
+
+  const doorText = asText(door[0]);
+  const reads = passReads().filter((r) => r.door === doorText);
+  $("no-pass-reads").hidden = reads.length > 0;
+  $("pass-reads").replaceChildren(
+    ...reads.map((read) => {
+      const item = document.createElement("li");
+      item.textContent =
+        `${whenText(read.at)}: ${read.for_whom} read ` +
+        `${read.sections.map(sectionName).join(", ")}.`;
+      return item;
+    }),
+  );
+}
+
+$("pass-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const door = currentRoomCell;
+  const room = roomFor(circle?.cellId);
+  if (!door || !room) return;
+
+  const forWhom = $("pass-for").value.trim();
+  const sections = [...$("pass-sections").querySelectorAll("input:checked")].map(
+    (tick) => tick.value,
+  );
+  if (!sections.length) {
+    announce("Tick at least one part of the record for them to read.");
+    return;
+  }
+  const lasts = document.querySelector('input[name="pass-lasts"]:checked')?.value;
+
+  await whileWorking($("make-pass"), "Making the pass…", async () => {
+    const made = await call(
+      "make_a_pass",
+      {
+        circle: asText(circle.cellId[0]),
+        sections,
+        for_whom: forWhom,
+        until: passRunsOutAt(lasts),
+      },
+      door,
+    );
+    const text = passToText(room, made.secret);
+    $("pass-made-for").textContent = forWhom;
+    $("pass-output").textContent = text;
+    drawAddressCode($("pass-qr"), text);
+    $("pass-made").hidden = false;
+    $("pass-for").value = "";
+    announce(`Pass made for ${forWhom}.`);
+    await loadPasses();
+  }).catch(problem);
+});
+
+wireCopyButton("copy-pass", () => $("pass-output").textContent, "Pass copied");
+
+// The reader's side.
+
+let passInHand = null;
+
+async function readWithThePass() {
+  $("pass-trouble").hidden = true;
+  const pass = textToPass($("pass-in").value);
+  passInHand = pass;
+  const door = await cellForRoom(pass, "A pass");
+  const words = await call(
+    "ask_with_a_pass",
+    { holder: pass.holder, secret: pass.secret },
+    door,
+  );
+
+  $("pass-words-name").textContent = words.name
+    ? `About ${words.name}`
+    : "What they chose to show you";
+  $("pass-words-list").replaceChildren(
+    ...words.sections.flatMap(({ section, words: text }) => {
+      const title = document.createElement("dt");
+      title.textContent = sectionName(section);
+      const body = document.createElement("dd");
+      body.textContent = text.trim() || "Nothing written here yet.";
+      return [title, body];
+    }),
+  );
+  $("pass-reader-form").hidden = true;
+  $("pass-words").hidden = false;
+  $("pass-words-name").focus?.();
+}
+
+/*
+ * What went wrong, in the zome's own words. Those arrive wrapped in the
+ * runtime's: WasmError { ..., error: Guest("the words") }. Kept on screen
+ * rather than announced, because an announcement fades and this is the thing
+ * they need to act on.
+ */
+function passTrouble(error) {
+  console.error(error);
+  const said = String(error?.message ?? error);
+  const guest = said.match(/Guest\("(.*?)"\)/s);
+  $("pass-trouble").textContent = guest ? guest[1] : said;
+  $("pass-trouble").hidden = false;
+}
+
+function aFreshPassReading() {
+  $("pass-trouble").hidden = true;
+  passInHand = null;
+  $("pass-in").value = "";
+  $("pass-reader-form").hidden = false;
+  $("pass-words").hidden = true;
+  $("pass-words-list").replaceChildren();
+}
+
+$("choose-pass").addEventListener("click", () => {
+  aFreshPassReading();
+  show("pass-reader");
+  $("pass-in").focus();
+});
+
+$("pass-reader-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await whileWorking($("read-pass"), "Asking their device…", readWithThePass);
+  } catch (error) {
+    // A pass that has stopped, or a device that is off, is not a crash: say
+    // so on this screen, where they can try again.
+    passTrouble(error);
+  }
+});
+
+$("read-pass-again").addEventListener("click", async () => {
+  if (!passInHand) return;
+  try {
+    await whileWorking($("read-pass-again"), "Asking again…", readWithThePass);
+  } catch (error) {
+    passTrouble(error);
+  }
+});
+
+/*
+ * The camera, for a pass on somebody else's screen. The same rules as the
+ * address scanner: on only when asked, off the moment a pass is read.
+ */
+let scanningPass = null;
+
+function stopScanningPass() {
+  if (!scanningPass) return;
+  cancelAnimationFrame(scanningPass.frame);
+  for (const track of scanningPass.stream.getTracks()) track.stop();
+  scanningPass = null;
+  $("scan-pass-video").srcObject = null;
+  $("scan-pass-area").hidden = true;
+  $("scan-pass").textContent = "Scan a code with the camera";
+}
+
+$("scan-pass").addEventListener("click", async () => {
+  if (scanningPass) return stopScanningPass();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+  } catch (error) {
+    console.error(error);
+    announce("The camera could not be opened. Paste the letters of the pass instead.");
+    return;
+  }
+  const video = $("scan-pass-video");
+  video.srcObject = stream;
+  await video.play();
+  $("scan-pass-area").hidden = false;
+  $("scan-pass").textContent = "Stop the camera";
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  scanningPass = { stream, frame: 0 };
+  const look = () => {
+    if (!scanningPass) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const found = jsQR(image.data, image.width, image.height);
+      if (found?.data && looksLikeAPass(found.data)) {
+        stopScanningPass();
+        $("pass-in").value = found.data;
+        $("pass-reader-form").requestSubmit();
+        return;
+      }
+    }
+    scanningPass.frame = requestAnimationFrame(look);
+  };
+  scanningPass.frame = requestAnimationFrame(look);
+});
+
+// ---------------------------------------------------------------------------
 // The holder's side: who is at the door
 // ---------------------------------------------------------------------------
 
@@ -4111,8 +4890,9 @@ async function loadTheDoor() {
    * survives a reload instead of depending on a button pressed earlier.
    */
   currentRoomCell = roomCell;
+  loadPasses().catch((error) => console.error("Could not list the passes.", error));
 
-  knocking = await orNothingYet(call("get_knocks", null, roomCell), []);
+  knocking =await orNothingYet(call("get_knocks", null, roomCell), []);
 
   // Somebody who has already been answered is not still at the door.
   const waiting = knocking.filter((k) => !k.answered);
@@ -4431,6 +5211,14 @@ let currentRoomCell = null;
  * nobody to agree, the invitation is made and left at the door immediately.
  */
 async function letThemIn(item, roomCell) {
+  // Somebody removed before, let in again: record that they are back, or
+  // every copy of Hearth would go on hiding them — including their own, which
+  // would take the circle straight off their device again.
+  if (gone.has(item.who)) {
+    await call("decide_departure", { who: item.who, removed: false }, circle.cellId);
+    gone.delete(item.who);
+  }
+
   if (seconderHere) {
     // Drawn from a list that was read a moment ago, so check again here. A
     // second proposal for one person is a second agreement for somebody to
@@ -4748,18 +5536,18 @@ async function historyOf(cellId, names) {
       call("get_current_about_me", originals[0], cellId),
       null,
     );
-    if (hasBeenWritten(entryOf(current?.record))) {
+    if (hasBeenWritten(wordsOf(current))) {
       const acks = await orNothingYet(
         call("get_acknowledgements", current.record.signed_action.hashed.hash, cellId),
         [],
       );
-      for (const r of acks) {
-        const entry = entryOf(r);
-        if (!entry) continue;
+      for (const item of acks) {
         readers.push({
-          who: nameFrom(names, asText(authorOf(r))),
-          role: entry.role,
-          when: writtenAt(r),
+          who: nameFrom(names, asText(authorOf(item.record))),
+          // Kept as words, because this is written down before the circle moves
+          // and read back afterwards, when the old circle's keys are gone.
+          role: item.locked_out ? "not readable on this device" : item.role,
+          when: writtenAt(item.record),
         });
       }
     }
@@ -4768,7 +5556,7 @@ async function historyOf(cellId, names) {
   const suggestions = [];
   const unfinished = [];
   for (const item of await orNothingYet(call("get_suggestions", null, cellId), [])) {
-    const entry = entryOf(item.suggestion);
+    const entry = suggestionWords(item);
     if (!entry) continue;
     const author = asText(authorOf(item.suggestion));
     const outcome = entryOf(item.outcome);
@@ -4843,9 +5631,15 @@ function removeThem(key, who) {
     $("really-move-question").textContent = whose
       ? `Remove ${who} from ${whose}'s circle?`
       : `Remove ${who} from this circle?`;
-    $("really-move-whom").textContent = who;
+    for (const span of document.querySelectorAll(".really-move-whom")) {
+      span.textContent = who;
+    }
     $("really-move-seconder").hidden = whoAgrees?.agrees !== key;
     $("move-reason").value = "";
+    // The ordinary way, every time the box opens. Moving the circle is a
+    // choice somebody makes on purpose, never one left over from last time.
+    $("remove-ordinary").checked = true;
+    $("move-details").hidden = true;
     $("really-move").showModal();
     $("stay-together").focus();
   });
@@ -4859,12 +5653,39 @@ $("stay-together").addEventListener("click", () => {
   $("really-move").close();
 });
 
+for (const id of ["remove-ordinary", "remove-and-move"]) {
+  $(id).addEventListener("change", () => {
+    $("move-details").hidden = !$("remove-and-move").checked;
+  });
+}
+
 $("move-for-real").addEventListener("click", async () => {
   const leaving = removing;
   const reason = $("move-reason").value.trim();
+  const move = $("remove-and-move").checked;
   $("really-move").close();
   removing = null;
   if (!leaving) return;
+
+  // The ordinary way: a decision written in the circle, honoured by every
+  // copy of Hearth, including theirs.
+  if (!move) {
+    try {
+      await call(
+        "decide_departure",
+        { who: leaving.key, removed: true },
+        circle.cellId,
+      );
+      announce(
+        `${leaving.who} has been removed. The circle will come off their ` +
+          `device the next time their Hearth looks.`,
+      );
+      await loadCircle();
+    } catch (error) {
+      problem(error);
+    }
+    return;
+  }
 
   if (movingNow) {
     announce("A move is already under way. Wait for it to finish first.");
@@ -4894,9 +5715,64 @@ $("move-for-real").addEventListener("click", async () => {
  * afterwards would need that second agreement — and the people being carried
  * across were agreed to already, in the circle they are leaving.
  */
+/*
+ * Photographs, sound and video, into the circle the people are moving to.
+ *
+ * They have to be carried piece by piece and written again: a piece is named
+ * by a hash of its contents *within one circle's rules*, so the old names mean
+ * nothing in the new place. There is no reference to copy, only bytes.
+ *
+ * This is the slowest part of a move by a wide margin — a two-minute video is
+ * tens of megabytes through this function — and it is worth it, because media
+ * is here for the people who cannot read a screen, and losing it in a move
+ * would take their voice out of their own record.
+ *
+ * A file that will not come across does not stop the move. The words matter
+ * more, and the old circle still has the file until the holder switches it
+ * off.
+ */
+async function carryMediaAcross(from, to) {
+  const here = await orNothingYet(call("get_media", null, from), []);
+  if (!here.length) return;
+
+  announce(
+    here.length === 1
+      ? "Carrying one photo, sound or video across."
+      : `Carrying ${here.length} photos, sounds or videos across.`,
+  );
+
+  for (const item of here) {
+    try {
+      const pieces = [];
+      for (const hash of item.media.pieces ?? []) {
+        const bytes = await call("get_media_piece", hash, from);
+        pieces.push(await call("add_media_piece", bytes, to));
+      }
+      if (!pieces.length) continue;
+
+      await call(
+        "add_media",
+        {
+          section: item.media.section,
+          kind: item.media.kind,
+          mime_type: item.media.mime_type,
+          file_name: item.media.file_name ?? "",
+          in_words: item.media.in_words ?? "",
+          seconds: item.media.seconds ?? 0,
+          pieces,
+          size: item.media.size,
+        },
+        to,
+      );
+    } catch (error) {
+      console.error("One file could not be carried across.", error);
+    }
+  }
+}
+
 async function moveTheCircle(removedKey, removedName, reason) {
   const from = circle.cellId;
-  const entry = entryOf(record?.current?.record);
+  const entry = wordsOf(record?.current);
   if (!entry) {
     throw new Error(
       "The record has not arrived on this device yet, so there is nothing to " +
@@ -4949,6 +5825,7 @@ async function moveTheCircle(removedKey, removedName, reason) {
       how_to_support_me: entry.how_to_support_me ?? "",
       also_worth_knowing: entry.also_worth_knowing ?? "",
       supported_to_write_this_by: entry.supported_to_write_this_by ?? "",
+      codes: entry.codes ?? [],
     },
     to,
   );
@@ -4960,6 +5837,8 @@ async function moveTheCircle(removedKey, removedName, reason) {
       to,
     );
   }
+
+  await carryMediaAcross(from, to);
 
   const invitations = [];
   for (const [key, who] of everyone) {
@@ -5087,6 +5966,20 @@ async function followTheMove(fromCellId, payload) {
     const bundle = tokenToInvitation(payload.invitation);
     if (bundle.founder !== asText(payload.by)) return;
 
+    /*
+     * Moved by somebody other than the holder: only a successor whose taking
+     * over stands. The zome has checked who; this checks when — the waiting
+     * period, and the check on her — which each device answers for itself.
+     */
+    const oldHolder = asText(
+      await orNothingYet(call("who_holds_this", null, fromCellId), null),
+    );
+    if (oldHolder && oldHolder !== asText(payload.by)) {
+      const state = await orNothingYet(call("get_succession", null, fromCellId), null);
+      const takeover = state ? decideTakeover(state) : null;
+      if (!takeover?.ready || takeover.successor !== asText(payload.by)) return;
+    }
+
     const label = labelFor(fromCellId, bundle.about?.trim() || "Their circle");
 
     // Read before the old circle is switched off, which is the last chance.
@@ -5183,13 +6076,49 @@ function sayItMovedIfItDid() {
    * actually happened to the people in it.
    */
   const by = note.by?.trim() || "The person who holds this circle";
-  const removed = note.removed?.trim() || "somebody";
-  $("moved-note-text").textContent = `${by} has removed ${removed} from the circle.`;
+  const removed = note.removed?.trim();
+  /*
+   * Moved with nobody removed: a successor taking over, or the circle being
+   * carried to a newer version of Hearth. "Has moved this circle" is true of
+   * both, and the reason underneath says which — where "now holds this
+   * circle" was puzzling for somebody whose holder had not changed.
+   */
+  $("moved-note-text").textContent = removed
+    ? `${by} has removed ${removed} from the circle.`
+    : `${by} has moved this circle.`;
 
   const reason = note.reason?.trim();
   $("moved-note-reason").hidden = !reason;
   $("moved-note-reason").textContent = reason ? `The reason given: “${reason}”` : "";
 }
+
+/*
+ * Carry a circle made under older rules across to the new ones.
+ *
+ * It is the move that already exists, with nobody removed — the same act as a
+ * successor taking a circle over. What makes it a version change is only where
+ * the new circle is founded: `create_circle` is asked of the app this
+ * interface belongs to, which is the new one, while everything is read from
+ * the old.
+ */
+$("carry-across").addEventListener("click", async () => {
+  const button = $("carry-across");
+  button.disabled = true;
+  try {
+    announce("Carrying this circle across. Please leave Hearth open.");
+    await moveTheCircle(
+      null,
+      "",
+      "This circle has been carried across to a newer version of Hearth. " +
+        "Everything and everybody has come with it.",
+    );
+    announce("Carried across. Everybody is being moved over as their apps see it.");
+  } catch (error) {
+    problem(error);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $("moved-note-done").addEventListener("click", () => {
   if (circle) store(movedNoteKey(circle.cellId), null);
@@ -5373,3 +6302,1268 @@ $("suggest-form").addEventListener(
   },
   { capture: true },
 );
+
+// ---------------------------------------------------------------------------
+// Somebody removed: the ordinary way (migration batch, item 4)
+// ---------------------------------------------------------------------------
+//
+// The holder writes a decision into the circle. Every copy of Hearth honours
+// it: the person drops out of every list, what they write afterwards is not
+// shown, and their own copy takes the circle off their device. A modified app
+// can ignore all of that, which is what moving the circle is for.
+
+let gone = new Map(); // agent key text -> removed since, in microseconds
+let removedMembers = new Map(); // agent key text -> their last introduction
+
+/**
+ * Read who stands where, and act on it if it is me.
+ *
+ * Returns true when this device has just been removed and the circle has come
+ * off it — there is then nothing left to draw.
+ */
+async function readDepartures() {
+  if (!circle) return false;
+  const standings = await orNothingYet(
+    call("get_departures", null, circle.cellId),
+    null,
+  );
+  // Nobody answered: keep what was known rather than showing somebody removed
+  // as back in, even for twenty seconds.
+  if (!standings) return false;
+
+  gone = new Map(
+    standings.filter((s) => s.removed).map((s) => [s.who, Number(s.since)]),
+  );
+
+  if (gone.has(asText(me)) && !isHolder()) {
+    await takeItOffThisDevice();
+    return true;
+  }
+  return false;
+}
+
+/** Something somebody wrote after they were removed. */
+function writtenWhileGone(record) {
+  const since = gone.get(asText(authorOf(record)));
+  if (since === undefined) return false;
+  const at = Number(record?.signed_action?.hashed?.content?.header?.timestamp ?? 0);
+  return at >= since;
+}
+
+/*
+ * I have been removed. The circle comes off this device.
+ *
+ * Deleted, not only switched off: leaving keeps a circle in case somebody
+ * changes their mind, but this was somebody else's decision, and what is on
+ * this device goes with it. If they are ever let back in, they start fresh
+ * with the record as it is then.
+ *
+ * Said plainly, once. Nobody should find a circle simply gone with no word.
+ */
+async function takeItOffThisDevice() {
+  const cellId = circle.cellId;
+  const label = labelFor(cellId, $("circle-heading").textContent.trim() || "");
+
+  try {
+    await call("forget_circle", cellId[0]);
+  } catch (error) {
+    // Deleting failed: at least switch it off, so it is not on screen.
+    console.error("Could not delete the circle; switching it off.", error);
+    await call("leave_circle", cellId[0]).catch((e) => console.error(e));
+  }
+
+  forgetWhatThisDeviceKnew(cellId);
+  forgetRoom(cellId);
+  forgetTheCircle();
+  await loadCircles();
+
+  announce(
+    label
+      ? `You are no longer in ${label}'s circle. The person who holds it has ` +
+          `removed you, so it has been taken off this device.`
+      : `You are no longer in this circle. The person who holds it has ` +
+          `removed you, so it has been taken off this device.`,
+  );
+}
+
+/** A line for somebody removed, with a way to let them back. Holder only. */
+function someoneRemoved(key, entry) {
+  const li = document.createElement("li");
+  li.className = "removed";
+
+  const who = entry.name?.trim() || "Somebody";
+  const line = document.createElement("p");
+  line.textContent = `${who} — removed`;
+  li.append(line);
+
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent =
+    "The circle has been taken off their device. Letting them back means they " +
+    "can be let in at the door again, and start fresh.";
+  li.append(hint);
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "linky";
+  button.textContent = `Let ${who} back`;
+  button.addEventListener("click", () =>
+    whileWorking(button, "Letting them back…", async () => {
+      await call("decide_departure", { who: key, removed: false }, circle.cellId);
+      announce(
+        `${who} can be let in again. Send them the circle's address, and let ` +
+          `them in when they ask.`,
+      );
+      await loadCircle();
+    }).catch(problem),
+  );
+  actions.append(button);
+  li.append(actions);
+
+  return li;
+}
+
+// ---------------------------------------------------------------------------
+// Photos beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// Photos first, then sound, then video: the order Ceri chose, easiest first.
+// The rules underneath already allow all three. See docs/multimedia.md.
+
+/** The section key the record uses -> the name the zome uses. */
+const SECTION_FOR_KEY = Object.fromEntries(
+  Object.entries(FIELD_LABELS).map(([name, [key]]) => [key, name]),
+);
+
+/** Longest side of a photo, in pixels, after shrinking. */
+const PHOTO_LONGEST_SIDE = 1600;
+/** One piece, as the rules allow. */
+const MOST_BYTES_IN_A_PIECE = 3_000_000;
+
+let photoFor = null; // the section key a photo is being added to
+let photoBytes = null; // the shrunk photo, waiting for "Add the photo"
+let photoPreviewUrl = null;
+
+function pickAPhoto(key) {
+  photoFor = key;
+  $("photo-file").value = "";
+  $("photo-file").click();
+}
+
+/*
+ * Shrink the photo here, before anything is written.
+ *
+ * Every member's device holds a copy of every photo, so a twelve-megapixel
+ * phone picture written as it is would cost everybody several megabytes for a
+ * picture shown a few inches wide. About 1600 pixels on the longest side is
+ * sharp on any screen this will be read on, and a few hundred kilobytes.
+ */
+async function shrinkPhoto(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, PHOTO_LONGEST_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+
+  for (const quality of [0.85, 0.7, 0.55]) {
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (blob && blob.size <= MOST_BYTES_IN_A_PIECE) {
+      return new Uint8Array(await blob.arrayBuffer());
+    }
+  }
+  throw new Error("That photo is too large even after shrinking it.");
+}
+
+$("photo-file").addEventListener("change", async () => {
+  const file = $("photo-file").files?.[0];
+  if (!file || !photoFor) return;
+  try {
+    photoBytes = await shrinkPhoto(file);
+  } catch (error) {
+    console.error(error);
+    announce(
+      "That picture could not be opened. Photos saved as JPEG or PNG work " +
+        "best — some phones save a kind this cannot read.",
+    );
+    return;
+  }
+  if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+  photoPreviewUrl = URL.createObjectURL(new Blob([photoBytes], { type: "image/jpeg" }));
+  $("photo-preview").src = photoPreviewUrl;
+  $("photo-words").value = "";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[photoFor]] ?? [null, "this section"];
+  $("add-photo-question").textContent = `Add this photo to “${label}”?`;
+  $("add-photo").showModal();
+  $("photo-words").focus();
+});
+
+function putThePhotoDown() {
+  $("add-photo").close();
+  photoBytes = null;
+  photoFor = null;
+}
+
+$("cancel-photo").addEventListener("click", putThePhotoDown);
+
+$("save-photo").addEventListener("click", () =>
+  whileWorking($("save-photo"), "Adding…", async () => {
+    const bytes = photoBytes;
+    const section = SECTION_FOR_KEY[photoFor];
+    const inWords = $("photo-words").value.trim();
+    if (!bytes || !section) return;
+
+    const piece = await call("add_media_piece", bytes, circle.cellId);
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Photo",
+        mime_type: "image/jpeg",
+        file_name: $("photo-file").files?.[0]?.name ?? "",
+        in_words: inWords,
+        seconds: 0,
+        pieces: [piece],
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putThePhotoDown();
+    announce("Photo added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);
+
+/*
+ * Draw what is beside each section.
+ *
+ * Pieces are fetched once and kept for as long as the circle is open, as
+ * pictures in memory. The twenty-second re-read redraws only when the list
+ * has actually changed, so a photo does not flicker every time it looks.
+ */
+const pieceUrls = new Map(); // entry hash text -> object URL
+let shownMedia = ""; // what is drawn now, to skip redrawing the same thing
+
+async function urlForMedia(media) {
+  const key = media.pieces.map(asText).join(",");
+  if (pieceUrls.has(key)) return pieceUrls.get(key);
+  const parts = [];
+  for (const piece of media.pieces) {
+    parts.push(await call("get_media_piece", piece, circle.cellId));
+  }
+  const url = URL.createObjectURL(new Blob(parts, { type: media.mime_type }));
+  pieceUrls.set(key, url);
+  return url;
+}
+
+async function showMedia() {
+  if (!circle) return;
+  const inThisCircle = asText(circle.cellId[0]);
+  const all = await orNothingYet(call("get_media", null, circle.cellId), null);
+  if (!all || asText(circle?.cellId?.[0]) !== inThisCircle) return;
+
+  const fingerprint = all.map((m) => asText(m.item)).join(",");
+  const boxes = document.querySelectorAll(".media-here");
+  // Nothing new, and the boxes still hold what was drawn: leave them.
+  if (fingerprint === shownMedia && [...boxes].some((b) => b.childElementCount)) return;
+  shownMedia = fingerprint;
+
+  for (const box of boxes) box.replaceChildren();
+
+  for (const here of all) {
+    const [key] = FIELD_LABELS[here.media.section] ?? [];
+    const box = document.querySelector(`.media-here[data-media-for="${key}"]`);
+    if (!box) continue;
+    const kind = here.media.kind;
+    if (kind !== "Photo" && kind !== "Sound" && kind !== "Video") continue;
+
+    const figure = document.createElement("figure");
+    figure.className = "media";
+
+    let img = null;
+    let audio = null;
+    if (kind === "Photo") {
+      img = document.createElement("img");
+      // The words are the picture for anybody who cannot see it.
+      img.alt = here.media.in_words || "A photo, with no description given";
+      figure.append(img);
+    } else {
+      /*
+       * Sound, and it never plays by itself. Somebody opening a record on a
+       * busy ward has not chosen to have it heard by everybody near them.
+       */
+      // A video player for video, a sound player for sound. Both are held in
+      // `audio` below, because everything done to them is the same.
+      audio = document.createElement(kind === "Video" ? "video" : "audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      if (kind === "Video") audio.setAttribute("playsinline", "");
+      const noun = kind === "Video" ? "Video" : "Sound";
+      audio.setAttribute(
+        "aria-label",
+        here.media.in_words
+          ? `${noun}: ${here.media.in_words}`
+          : `${noun}, with no words given`,
+      );
+      figure.append(audio);
+    }
+
+    /*
+     * The words straight under the thing they describe, and the length after
+     * them. Each item is its own box, with space between boxes.
+     *
+     * The first version put the length line between the player and its words,
+     * and the words sat closer to the next player than to their own — so a
+     * sound's description read as if it belonged to the video below it. Found
+     * the first time sound and video were on one section together.
+     */
+    if (here.media.in_words) {
+      const caption = document.createElement("figcaption");
+      caption.textContent = here.media.in_words;
+      figure.append(caption);
+    }
+
+    if (kind !== "Photo" && here.media.seconds) {
+      const length = document.createElement("p");
+      length.className = "hint media-length";
+      const noun = kind === "Video" ? "video" : "sound";
+      length.textContent = `${lengthInWords(here.media.seconds)} of ${noun}.`;
+      figure.append(length);
+    }
+
+    const what = kind === "Photo" ? "photo" : kind === "Video" ? "video" : "sound";
+
+    if (isHolder()) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "linky";
+      remove.textContent = `Remove this ${what}`;
+      remove.addEventListener("click", () => {
+        if (!confirm(`Remove this ${what} from the record?`)) return;
+        whileWorking(remove, "Removing…", async () => {
+          await call("remove_media", here.item, circle.cellId);
+          announce(`${what[0].toUpperCase()}${what.slice(1)} removed.`);
+          shownMedia = "";
+          await showMedia();
+        }).catch(problem);
+      });
+      figure.append(remove);
+    }
+
+    box.append(figure);
+
+    // The file itself arrives after the frame; a piece not here yet is not
+    // an error, just not here yet.
+    urlForMedia(here.media)
+      .then((url) => {
+        if (img) img.src = url;
+        if (audio) audio.src = url;
+      })
+      .catch(() => {
+        const notYet = `This ${what} has not arrived on this device yet.`;
+        if (img) img.alt = notYet;
+        if (audio) audio.setAttribute("aria-label", notYet);
+      });
+  }
+}
+
+/** "1 minute 5 seconds", "40 seconds". */
+function lengthInWords(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const minutes = m ? `${m} minute${m === 1 ? "" : "s"}` : "";
+  const secs = s ? `${s} second${s === 1 ? "" : "s"}` : "";
+  return [minutes, secs].filter(Boolean).join(" ") || "Less than a second";
+}
+
+/** Put down the pictures of a circle that is no longer open. */
+function forgetMedia() {
+  for (const url of pieceUrls.values()) URL.revokeObjectURL(url);
+  pieceUrls.clear();
+  shownMedia = "";
+}
+
+// ---------------------------------------------------------------------------
+// Sound beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// Recorded here or chosen from a file, two minutes at most, heard back before
+// it is saved. Speech-quality recording keeps two minutes well under a
+// megabyte, so it fits in one piece on every member's device.
+
+const MOST_SECONDS_OF_MEDIA = 120;
+/** File types the rules accept for sound, and what some systems call them. */
+const SOUND_TYPES = {
+  "audio/webm": "audio/webm",
+  "audio/ogg": "audio/ogg",
+  "audio/mpeg": "audio/mpeg",
+  "audio/mp3": "audio/mpeg",
+  "audio/mp4": "audio/mp4",
+  "audio/x-m4a": "audio/mp4",
+  "audio/m4a": "audio/mp4",
+};
+
+let soundFor = null;
+let soundBytes = null;
+let soundType = null;
+let soundSeconds = 0;
+let soundName = "";
+let soundUrl = null;
+let recording = null; // { recorder, stream, started, timer }
+
+function showTheSound(bytes, type, seconds, name) {
+  soundBytes = bytes;
+  soundType = type;
+  soundSeconds = seconds;
+  soundName = name;
+  if (soundUrl) URL.revokeObjectURL(soundUrl);
+  soundUrl = URL.createObjectURL(new Blob([bytes], { type }));
+  $("sound-preview").src = soundUrl;
+  $("sound-preview").hidden = false;
+  $("save-sound").disabled = false;
+  $("sound-status").textContent =
+    `${lengthInWords(seconds)}. Play it back to check it before adding it.`;
+}
+
+function pickASound(key) {
+  soundFor = key;
+  soundBytes = null;
+  $("sound-preview").hidden = true;
+  $("sound-preview").removeAttribute("src");
+  $("save-sound").disabled = true;
+  $("sound-status").textContent = "";
+  $("sound-words").value = "";
+  $("record-sound").textContent = "Start recording";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[key]] ?? [null, "this section"];
+  $("add-sound-question").textContent = `Add sound to “${label}”?`;
+  $("add-sound").showModal();
+  $("record-sound").focus();
+}
+
+function stopRecording() {
+  if (!recording) return;
+  clearInterval(recording.timer);
+  if (recording.recorder.state !== "inactive") recording.recorder.stop();
+  for (const track of recording.stream.getTracks()) track.stop();
+}
+
+$("record-sound").addEventListener("click", async () => {
+  if (recording) {
+    stopRecording();
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    console.error(error);
+    $("sound-status").textContent =
+      "The microphone could not be opened. Check it is plugged in and that " +
+      "Hearth is allowed to use it, or choose a sound file instead.";
+    return;
+  }
+
+  const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  // Speech quality: clear for a voice, and small on every member's device.
+  const recorder = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: 32_000 });
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size) chunks.push(e.data);
+  });
+  recorder.addEventListener("stop", async () => {
+    const seconds = Math.max(1, Math.round((Date.now() - recording.started) / 1000));
+    recording = null;
+    $("record-sound").textContent = "Record again";
+    const bytes = new Uint8Array(await new Blob(chunks, { type: "audio/webm" }).arrayBuffer());
+    if (!bytes.length) {
+      $("sound-status").textContent = "Nothing was recorded. Try again.";
+      return;
+    }
+    showTheSound(bytes, "audio/webm", Math.min(seconds, MOST_SECONDS_OF_MEDIA), "recording.webm");
+  });
+
+  recording = { recorder, stream, started: Date.now(), timer: 0 };
+  recorder.start();
+  $("save-sound").disabled = true;
+  $("sound-preview").hidden = true;
+
+  // Says how long, and stops itself at two minutes rather than failing after.
+  const tick = () => {
+    const seconds = Math.round((Date.now() - recording.started) / 1000);
+    $("record-sound").textContent = `Stop recording (${lengthInWords(seconds)})`;
+    if (seconds >= MOST_SECONDS_OF_MEDIA) {
+      stopRecording();
+      $("sound-status").textContent = "Two minutes is the most. It has stopped itself.";
+    }
+  };
+  tick();
+  recording.timer = setInterval(tick, 1000);
+});
+
+$("choose-sound").addEventListener("click", () => {
+  stopRecording();
+  $("sound-file").value = "";
+  $("sound-file").click();
+});
+
+/** How long a sound file is, read from the file itself. */
+function durationOf(url) {
+  return new Promise((resolve, reject) => {
+    const probe = new Audio();
+    probe.preload = "metadata";
+    probe.addEventListener("loadedmetadata", () => resolve(probe.duration));
+    probe.addEventListener("error", () => reject(new Error("unreadable")));
+    probe.src = url;
+  });
+}
+
+$("sound-file").addEventListener("change", async () => {
+  const file = $("sound-file").files?.[0];
+  if (!file) return;
+
+  const type = SOUND_TYPES[file.type];
+  if (!type) {
+    $("sound-status").textContent =
+      "That kind of file cannot be added. MP3, M4A, OGG and WebM sound files work.";
+    return;
+  }
+  if (file.size > MOST_BYTES_IN_A_PIECE) {
+    $("sound-status").textContent =
+      "That file is more than three megabytes. Recording it here instead " +
+      "keeps it small enough.";
+    return;
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  let seconds;
+  try {
+    seconds = await durationOf(url);
+  } catch {
+    URL.revokeObjectURL(url);
+    $("sound-status").textContent = "That file could not be played. Try another.";
+    return;
+  }
+  URL.revokeObjectURL(url);
+  if (!Number.isFinite(seconds) || seconds > MOST_SECONDS_OF_MEDIA) {
+    $("sound-status").textContent =
+      "That is longer than two minutes. Two minutes is the most, so the " +
+      "people reading this will listen to all of it.";
+    return;
+  }
+  showTheSound(bytes, type, Math.max(1, Math.round(seconds)), file.name);
+});
+
+function putTheSoundDown() {
+  stopRecording();
+  if ($("add-sound").open) $("add-sound").close();
+  soundBytes = null;
+  soundFor = null;
+}
+
+$("cancel-sound").addEventListener("click", putTheSoundDown);
+// Closed with Escape: the microphone goes off too.
+$("add-sound").addEventListener("close", stopRecording);
+
+$("save-sound").addEventListener("click", () =>
+  whileWorking($("save-sound"), "Adding…", async () => {
+    const bytes = soundBytes;
+    const section = SECTION_FOR_KEY[soundFor];
+    if (!bytes || !section) return;
+
+    const piece = await call("add_media_piece", bytes, circle.cellId);
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Sound",
+        mime_type: soundType,
+        file_name: soundName,
+        in_words: $("sound-words").value.trim(),
+        seconds: soundSeconds,
+        pieces: [piece],
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putTheSoundDown();
+    announce("Sound added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);
+
+// ---------------------------------------------------------------------------
+// Video beside the record (migration batch, item 7)
+// ---------------------------------------------------------------------------
+//
+// 480p and two minutes, Ceri's numbers. At about 900 kilobits a second that
+// is roughly thirteen megabytes for two minutes: five pieces of three, well
+// inside the rules' ten pieces and thirty megabytes.
+
+const VIDEO_HEIGHT = 480;
+const VIDEO_BITS_PER_SECOND = 900_000;
+const MOST_BYTES_IN_A_VIDEO = 30_000_000;
+const VIDEO_TYPES_KEPT_AS_THEY_ARE = ["video/webm", "video/mp4"];
+
+let videoFor = null;
+let videoBytes = null;
+let videoType = null;
+let videoSeconds = 0;
+let videoName = "";
+let videoUrl = null;
+let filming = null; // { recorder, stream, started, timer, kind }
+
+function showTheVideo(bytes, type, seconds, name) {
+  if (bytes.length > MOST_BYTES_IN_A_VIDEO) {
+    $("video-status").textContent =
+      "That video is still too large. Try a shorter one, or record it here.";
+    return;
+  }
+  videoBytes = bytes;
+  videoType = type;
+  videoSeconds = seconds;
+  videoName = name;
+  if (videoUrl) URL.revokeObjectURL(videoUrl);
+  videoUrl = URL.createObjectURL(new Blob([bytes], { type }));
+  $("video-live").hidden = true;
+  $("video-preview").src = videoUrl;
+  $("video-preview").hidden = false;
+  $("save-video").disabled = false;
+  const mb = (bytes.length / 1_000_000).toFixed(1);
+  $("video-status").textContent =
+    `${lengthInWords(seconds)}, ${mb} megabytes. Play it back to check it before adding it.`;
+}
+
+function pickAVideo(key) {
+  videoFor = key;
+  videoBytes = null;
+  $("video-preview").hidden = true;
+  $("video-preview").removeAttribute("src");
+  $("video-live").hidden = true;
+  $("save-video").disabled = true;
+  $("video-status").textContent = "";
+  $("video-words").value = "";
+  $("record-video").textContent = "Start recording";
+  const [, label] = FIELD_LABELS[SECTION_FOR_KEY[key]] ?? [null, "this section"];
+  $("add-video-question").textContent = `Add video to “${label}”?`;
+  $("add-video").showModal();
+  $("record-video").focus();
+}
+
+function stopFilming() {
+  if (!filming) return;
+  clearInterval(filming.timer);
+  if (filming.recorder.state !== "inactive") filming.recorder.stop();
+  for (const track of filming.stream.getTracks()) track.stop();
+  if (filming.source) filming.source.pause();
+}
+
+/** The best WebM this device can record. */
+function aVideoRecordingType() {
+  for (const type of ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"]) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
+}
+
+/*
+ * Record a stream at 480p and hand back the bytes. Used both for the camera
+ * and for shrinking a chosen file, which is the same job: something plays,
+ * and this writes it down smaller.
+ */
+function recordStream(stream, { onTick, onDone, kind, source }) {
+  const type = aVideoRecordingType();
+  const recorder = new MediaRecorder(stream, {
+    mimeType: type || undefined,
+    videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+    audioBitsPerSecond: 48_000,
+  });
+  const chunks = [];
+  recorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size) chunks.push(e.data);
+  });
+  recorder.addEventListener("stop", async () => {
+    const seconds = Math.max(1, Math.round((Date.now() - filming.started) / 1000));
+    filming = null;
+    const bytes = new Uint8Array(await new Blob(chunks, { type: "video/webm" }).arrayBuffer());
+    onDone(bytes, Math.min(seconds, MOST_SECONDS_OF_MEDIA));
+  });
+  filming = { recorder, stream, started: Date.now(), timer: 0, kind, source };
+  recorder.start(1000);
+  const tick = () => {
+    const seconds = Math.round((Date.now() - filming.started) / 1000);
+    onTick(seconds);
+    if (seconds >= MOST_SECONDS_OF_MEDIA) stopFilming();
+  };
+  tick();
+  filming.timer = setInterval(tick, 1000);
+}
+
+$("record-video").addEventListener("click", async () => {
+  if (filming) {
+    stopFilming();
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { height: { ideal: VIDEO_HEIGHT }, width: { ideal: 854 }, facingMode: "user" },
+      audio: true,
+    });
+  } catch (error) {
+    console.error(error);
+    $("video-status").textContent =
+      "The camera could not be opened. Check it is connected and that Hearth " +
+      "is allowed to use it, or choose a video file instead.";
+    return;
+  }
+
+  // What the camera sees while recording, silent so it does not echo.
+  $("video-preview").hidden = true;
+  $("video-live").srcObject = stream;
+  $("video-live").hidden = false;
+  await $("video-live").play().catch(() => {});
+  $("save-video").disabled = true;
+
+  recordStream(stream, {
+    kind: "camera",
+    onTick: (seconds) => {
+      $("record-video").textContent = `Stop recording (${lengthInWords(seconds)})`;
+      if (seconds >= MOST_SECONDS_OF_MEDIA) {
+        $("video-status").textContent = "Two minutes is the most. It has stopped itself.";
+      }
+    },
+    onDone: (bytes, seconds) => {
+      $("video-live").srcObject = null;
+      $("record-video").textContent = "Record again";
+      if (!bytes.length) {
+        $("video-status").textContent = "Nothing was recorded. Try again.";
+        return;
+      }
+      showTheVideo(bytes, "video/webm", seconds, "recording.webm");
+    },
+  });
+});
+
+$("choose-video").addEventListener("click", () => {
+  stopFilming();
+  $("video-file").value = "";
+  $("video-file").click();
+});
+
+/** A video element playing a file, ready to be read. */
+function videoFrom(url) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.playsInline = true;
+    video.addEventListener("loadedmetadata", () => resolve(video), { once: true });
+    video.addEventListener("error", () => reject(new Error("unreadable")), { once: true });
+    video.src = url;
+  });
+}
+
+/*
+ * Make a chosen video smaller, by playing it into a 480p canvas and recording
+ * that. It takes as long as the video lasts, and says so. The sound comes from
+ * the video itself; the player is kept silent so it is not heard while it
+ * works.
+ */
+function shrinkVideo(video, name) {
+  const scale = Math.min(1, VIDEO_HEIGHT / video.videoHeight);
+  const canvas = document.createElement("canvas");
+  // Even numbers: some encoders refuse odd sizes.
+  canvas.width = Math.round((video.videoWidth * scale) / 2) * 2;
+  canvas.height = Math.round((video.videoHeight * scale) / 2) * 2;
+  const draw = canvas.getContext("2d");
+
+  const tracks = [...canvas.captureStream(25).getVideoTracks()];
+  try {
+    tracks.push(...video.captureStream().getAudioTracks());
+  } catch {
+    // No sound track to take; the video is kept without sound.
+  }
+  const stream = new MediaStream(tracks);
+
+  video.volume = 0;
+  const paint = () => {
+    if (!filming || video.paused || video.ended) return;
+    draw.drawImage(video, 0, 0, canvas.width, canvas.height);
+    requestAnimationFrame(paint);
+  };
+
+  $("save-video").disabled = true;
+  $("record-video").disabled = true;
+  recordStream(stream, {
+    kind: "shrinking",
+    source: video,
+    onTick: (seconds) => {
+      const total = Math.round(video.duration);
+      $("video-status").textContent =
+        `Making it smaller: ${lengthInWords(Math.min(seconds, total))} of ` +
+        `${lengthInWords(total)}. It takes as long as the video lasts.`;
+    },
+    onDone: (bytes) => {
+      $("record-video").disabled = false;
+      URL.revokeObjectURL(video.src);
+      showTheVideo(bytes, "video/webm", Math.max(1, Math.round(video.duration)), name);
+    },
+  });
+  video.addEventListener("ended", stopFilming, { once: true });
+  video.play().then(paint).catch((error) => {
+    console.error(error);
+    stopFilming();
+    $("video-status").textContent = "That video could not be played. Try another.";
+  });
+}
+
+$("video-file").addEventListener("change", async () => {
+  const file = $("video-file").files?.[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  let video;
+  try {
+    video = await videoFrom(url);
+  } catch {
+    URL.revokeObjectURL(url);
+    $("video-status").textContent =
+      "That video could not be opened. MP4 and WebM videos work best.";
+    return;
+  }
+
+  if (!Number.isFinite(video.duration) || video.duration > MOST_SECONDS_OF_MEDIA + 0.5) {
+    URL.revokeObjectURL(url);
+    $("video-status").textContent =
+      "That is longer than two minutes. Two minutes is the most, so the " +
+      "people reading this will watch all of it.";
+    return;
+  }
+
+  // Small enough and 480p or less already: kept exactly as it is.
+  if (
+    VIDEO_TYPES_KEPT_AS_THEY_ARE.includes(file.type) &&
+    file.size <= MOST_BYTES_IN_A_VIDEO &&
+    video.videoHeight <= VIDEO_HEIGHT
+  ) {
+    URL.revokeObjectURL(url);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    showTheVideo(bytes, file.type, Math.max(1, Math.round(video.duration)), file.name);
+    return;
+  }
+
+  shrinkVideo(video, file.name);
+});
+
+function putTheVideoDown() {
+  stopFilming();
+  if ($("add-video").open) $("add-video").close();
+  $("video-live").srcObject = null;
+  $("record-video").disabled = false;
+  videoBytes = null;
+  videoFor = null;
+}
+
+$("cancel-video").addEventListener("click", putTheVideoDown);
+// Closed with Escape: the camera goes off too.
+$("add-video").addEventListener("close", () => {
+  stopFilming();
+  $("video-live").srcObject = null;
+});
+
+$("save-video").addEventListener("click", () =>
+  whileWorking($("save-video"), "Adding…", async () => {
+    const bytes = videoBytes;
+    const section = SECTION_FOR_KEY[videoFor];
+    if (!bytes || !section) return;
+
+    // In pieces, one at a time, saying how far it has got.
+    const count = Math.ceil(bytes.length / MOST_BYTES_IN_A_PIECE);
+    const pieces = [];
+    for (let i = 0; i < count; i++) {
+      $("video-status").textContent = `Saving part ${i + 1} of ${count}…`;
+      const part = bytes.slice(i * MOST_BYTES_IN_A_PIECE, (i + 1) * MOST_BYTES_IN_A_PIECE);
+      pieces.push(await call("add_media_piece", part, circle.cellId));
+    }
+
+    await call(
+      "add_media",
+      {
+        section,
+        kind: "Video",
+        mime_type: videoType,
+        file_name: videoName,
+        in_words: $("video-words").value.trim(),
+        seconds: videoSeconds,
+        pieces,
+        size: bytes.length,
+      },
+      circle.cellId,
+    );
+    putTheVideoDown();
+    announce("Video added.");
+    shownMedia = "";
+    await showMedia();
+  }).catch(problem),
+);
+
+// ---------------------------------------------------------------------------
+// A successor (migration batch, item 9)
+// ---------------------------------------------------------------------------
+//
+// Ceri's rules, 19 September 2026: anybody in the circle may be named; a
+// waiting period everybody can see, in which the holder can say "I'm still
+// here"; the holder can change or remove the successor at any time; and a
+// checker she names, asked first, with anybody else able to answer if the
+// checker cannot.
+//
+// Who may write each step is checked by every device. When — the waiting
+// period, and when others may answer — is decided here, by every copy of
+// Hearth. In the demo the waits are minutes, so it can be walked in one
+// sitting; in the released app they are fourteen days and seven.
+
+const DAY = 24 * 60 * 60 * 1000;
+const WAIT_BEFORE_TAKING_OVER = import.meta.env.DEV ? 2 * 60 * 1000 : 14 * DAY;
+const OTHERS_MAY_ANSWER_AFTER = import.meta.env.DEV ? 60 * 1000 : 7 * DAY;
+
+let succession = null; // what get_succession said, for the circle on screen
+
+/** Microseconds from the zome to milliseconds for the clock. */
+const msOf = (timestamp) => Number(timestamp) / 1000;
+
+function whenInWords(ms) {
+  const when = new Date(ms);
+  return import.meta.env.DEV
+    ? when.toLocaleTimeString("en-GB")
+    : when.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+}
+
+/**
+ * Where a taking-over stands, from what the circle says and the clock.
+ *
+ * The checker's word decides if they have given it. If they have not, the
+ * first answer from anybody else — given once others may answer — decides.
+ * A "she can carry on" stops it; a "she cannot" lets it go ahead once the
+ * waiting period is over.
+ */
+function decideTakeover(state, now = Date.now()) {
+  const claim = state?.claim;
+  if (!claim) return null;
+  const started = msOf(claim.at);
+  const othersFrom = started + OTHERS_MAY_ANSWER_AFTER;
+  const readyFrom = started + WAIT_BEFORE_TAKING_OVER;
+
+  const byChecker = claim.checks.filter((c) => c.by === state.checker).pop() ?? null;
+  const byOthers = claim.checks.find(
+    (c) => c.by !== state.checker && msOf(c.at) >= othersFrom,
+  );
+  const decisive = byChecker ?? byOthers ?? null;
+
+  const out = {
+    successor: claim.by,
+    claim: claim.claim,
+    started,
+    othersFrom,
+    readyFrom,
+    stopped: claim.still_here,
+    checkedFine: Boolean(decisive?.holder_can_carry_on),
+    checkedCannot: Boolean(decisive && !decisive.holder_can_carry_on),
+    checkerAnswered: Boolean(byChecker),
+    othersMayAnswer: !byChecker && now >= othersFrom,
+    ready: false,
+  };
+  out.ready = !out.stopped && out.checkedCannot && now >= readyFrom;
+  return out;
+}
+
+async function readSuccession() {
+  if (!circle) return;
+  const state = await orNothingYet(call("get_succession", null, circle.cellId), null);
+  if (!state) return;
+  succession = state;
+  renderSuccession();
+}
+
+const nameOf = (key) => members.get(key)?.name?.trim() || "Somebody";
+
+function aButton(text, secondary, onPress) {
+  const b = document.createElement("button");
+  b.type = "button";
+  if (secondary) b.className = "secondary";
+  b.textContent = text;
+  b.addEventListener("click", () => onPress(b));
+  return b;
+}
+
+function aLine(text, className) {
+  const p = document.createElement("p");
+  if (className) p.className = className;
+  p.textContent = text;
+  return p;
+}
+
+function renderSuccession() {
+  const body = $("succession-body");
+  const banner = $("taking-over-banner");
+  /*
+   * Held still while somebody is using it. The circle is read again every
+   * twenty seconds, and redrawing the lists would put back the old choice
+   * underneath somebody half-way through making a new one.
+   */
+  if (body.contains(document.activeElement) || banner.contains(document.activeElement)) {
+    return;
+  }
+  body.replaceChildren();
+  banner.replaceChildren();
+  if (!succession) {
+    $("succession").hidden = true;
+    banner.hidden = true;
+    return;
+  }
+
+  const mine = asText(me);
+  const amHolder = isHolder();
+  const holderName = nameOf(holder);
+  const takeover = decideTakeover(succession);
+  const active = takeover && !takeover.stopped && !takeover.checkedFine;
+
+  // ---- Somebody is taking over: everybody sees it, at the top of the record.
+  if (active) {
+    const who = nameOf(takeover.successor);
+    banner.append(
+      aLine(
+        amHolder
+          ? `${who} has said you can no longer look after this circle, and has started to take it over.`
+          : `${who} has said ${holderName} can no longer look after this circle, and has started to take it over.`,
+      ),
+    );
+    if (amHolder) {
+      banner.append(
+        aLine("If you can still look after it, press this. It stops it at once."),
+      );
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("I'm still here", false, (b) =>
+          whileWorking(b, "Saying so…", async () => {
+            await call("still_here", takeover.claim, circle.cellId);
+            announce("Done. Nobody can take this circle over from you.");
+            await readSuccession();
+          }).catch(problem),
+        ),
+      );
+      banner.append(row);
+    } else {
+      banner.append(
+        aLine(
+          takeover.checkedCannot
+            ? `Somebody has checked, and says ${holderName} cannot carry on. ${who} can take over from ${whenInWords(takeover.readyFrom)}.`
+            : `Nothing changes until somebody has checked on ${holderName}, and not before ${whenInWords(takeover.readyFrom)}.`,
+          "hint",
+        ),
+      );
+    }
+  }
+  banner.hidden = !active;
+
+  // ---- The section on the People page.
+  const show = [];
+
+  // The holder names who takes over, and who checks.
+  if (amHolder) {
+    show.push(
+      aLine(
+        "Somebody to take over if you ever cannot look after this circle, and " +
+          "somebody who lives near you or can phone you, to check first. " +
+          "Nothing happens unless the person you name starts it, everybody in " +
+          "the circle sees if they do, and you can stop it by saying you are " +
+          "still here.",
+        "hint",
+      ),
+    );
+    const others = [...members.keys()].filter((k) => k !== mine);
+    if (others.length === 0) {
+      show.push(aLine("There is nobody else in the circle to name yet.", "hint"));
+    } else {
+      const choose = (id, label, current) => {
+        const field = document.createElement("div");
+        field.className = "field";
+        const l = document.createElement("label");
+        l.htmlFor = id;
+        l.textContent = label;
+        const select = document.createElement("select");
+        select.id = id;
+        select.append(new Option("Nobody", ""));
+        for (const k of others) select.append(new Option(nameOf(k), k, false, k === current));
+        field.append(l, select);
+        return field;
+      };
+      show.push(choose("successor-choice", "Who takes over", succession.successor));
+      show.push(choose("checker-choice", "Who checks on you first", succession.checker));
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("Save", false, (b) =>
+          whileWorking(b, "Saving…", async () => {
+            const successor = $("successor-choice").value || null;
+            const checker = $("checker-choice").value || null;
+            if (successor && successor === checker) {
+              announce("The person who checks has to be somebody other than the one who takes over.");
+              return;
+            }
+            await call("name_successor", { successor, checker }, circle.cellId);
+            announce(successor ? "Saved." : "Nobody is named to take over now.");
+            await readSuccession();
+          }).catch(problem),
+        ),
+      );
+      show.push(row);
+    }
+  }
+
+  // The successor, named and not yet started.
+  if (!amHolder && succession.successor === mine && !active) {
+    show.push(
+      aLine(
+        `${holderName} has named you to take over this circle if they can no ` +
+          `longer look after it.`,
+      ),
+    );
+    show.push(
+      aLine(
+        `Only start if that has happened. Everybody in the circle will see it, ` +
+          `${holderName} can stop it by saying they are still here, and ` +
+          `somebody has to check on them before you can take over.`,
+        "hint",
+      ),
+    );
+    const row = document.createElement("div");
+    row.className = "actions";
+    row.append(
+      aButton("Start taking over", true, (b) => {
+        if (!confirm(`Tell everybody that ${holderName} can no longer look after this circle?`)) return;
+        whileWorking(b, "Starting…", async () => {
+          await call("start_taking_over", null, circle.cellId);
+          announce("Started. Everybody in the circle can see it.");
+          await readSuccession();
+        }).catch(problem);
+      }),
+    );
+    show.push(row);
+  }
+
+  // The successor, started: where it stands, and the last step when it is time.
+  if (active && takeover.successor === mine) {
+    if (takeover.ready) {
+      show.push(
+        aLine(
+          `Somebody has checked, ${holderName} has not said they are still ` +
+            `here, and the waiting is over. You can take over now: Hearth will ` +
+            `make a new circle with you holding it, and move everybody across.`,
+        ),
+      );
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton("Take over the circle", false, (b) => {
+          if (!confirm("Make a new circle that you hold, and move everybody into it?")) return;
+          whileWorking(b, "Taking over…", () => takeOver(holderName)).catch(problem);
+        }),
+      );
+      show.push(row);
+    } else {
+      show.push(
+        aLine(
+          takeover.checkedCannot
+            ? `Somebody has checked. You can take over from ${whenInWords(takeover.readyFrom)}.`
+            : `Waiting for somebody to check on ${holderName}. You can take over ` +
+                `no sooner than ${whenInWords(takeover.readyFrom)}.`,
+          "hint",
+        ),
+      );
+    }
+  }
+
+  // The checker, and — if the checker has not answered — everybody else.
+  const amChecker = succession.checker === mine;
+
+  // Chosen to check, and nothing has happened: said, so it is not a surprise
+  // on the day.
+  if (!amHolder && amChecker && !active) {
+    show.push(
+      aLine(
+        `${holderName} has chosen you to check on them, in person or by phone, ` +
+          `if anybody ever says they can no longer look after this circle. ` +
+          `There is nothing to do unless that happens.`,
+      ),
+    );
+  }
+  if (active && !amHolder && takeover.successor !== mine && !takeover.checkerAnswered) {
+    if (amChecker || takeover.othersMayAnswer) {
+      show.push(
+        aLine(
+          amChecker
+            ? `You are the person asked to check on ${holderName}. Please see ` +
+                `them, or phone them, and then say:`
+            : `The person asked to check has not answered. If you can see or ` +
+                `phone ${holderName}, please do, and then say:`,
+        ),
+      );
+      const answer = (canCarryOn) => (b) =>
+        whileWorking(b, "Saying so…", async () => {
+          await call(
+            "check_on_holder",
+            { claim: takeover.claim, holder_can_carry_on: canCarryOn },
+            circle.cellId,
+          );
+          announce("Thank you. Everybody in the circle can see your answer.");
+          await readSuccession();
+        }).catch(problem);
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(
+        aButton(`${holderName} can carry on`, false, answer(true)),
+        aButton(`${holderName} cannot carry on`, true, answer(false)),
+      );
+      show.push(row);
+    } else {
+      show.push(
+        aLine(
+          `The person ${holderName} chose to check on them is asked first. If ` +
+            `they have not answered by ${whenInWords(takeover.othersFrom)}, you ` +
+            `can.`,
+          "hint",
+        ),
+      );
+    }
+  }
+
+  if (takeover?.stopped) {
+    show.push(aLine(`${holderName} has said they are still here, so nobody is taking over.`, "hint"));
+  } else if (takeover?.checkedFine) {
+    show.push(aLine(`Somebody has checked, and ${holderName} can carry on, so nobody is taking over.`, "hint"));
+  }
+
+  body.append(...show);
+  $("succession").hidden = show.length === 0;
+}
+
+/** The last step: a new circle the successor holds, and everybody moved. */
+async function takeOver(holderName) {
+  const mineName = members.get(asText(me))?.name?.trim() || "The person named";
+  await moveTheCircle(
+    null,
+    "",
+    `${holderName} can no longer look after this circle, so ${mineName} has taken it over.`,
+  );
+  announce("You hold this circle now. Everybody is being moved across.");
+}

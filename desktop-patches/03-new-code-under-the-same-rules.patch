@@ -1,0 +1,81 @@
+--- src/main/holochainManager.ts	2026-09-23 10:49:05.301827500 +0100
++++ src/main/holochainManager.ts	2026-09-23 10:49:05.336636500 +0100
+@@ -15,6 +15,8 @@
+   KANGAROO_CONFIG,
+ } from './const';
+ import { app } from 'electron';
++import zlib from 'zlib';
++import { decode } from '@msgpack/msgpack';
+ 
+ export type AdminPort = number;
+ export type AppPort = number;
+@@ -179,9 +181,68 @@
+     });
+   }
+ 
++  /*
++   * HEARTH: new code under the same rules.
++   *
++   * The app id changes only when the rules (the integrity zome) change, and
++   * Kangaroo installs an id once and never again. So a release that changes
++   * only the code around the rules - the coordinator zome - would be ignored
++   * on every machine that already has this version of the rules: the screens
++   * would be new and the functions behind them would not exist.
++   *
++   * Holochain can swap a cell's coordinator in place, keeping its data, and
++   * that is done here on every launch, for every circle and door. The swap is
++   * per cell, because every circle is a clone with a DNA of its own. Doing it
++   * each launch rather than once is deliberate: it is cheap, and it means
++   * there is no record of "which code is installed" to get out of step.
++   *
++   * The rules themselves cannot be swapped this way and must not be: that is
++   * a new app id and a circle carried across. See docs/upgrades.md in the
++   * Hearth repository.
++   */
++  private async bringTheCodeUpToDate(appInfo: AppInfo) {
++    let bundle;
++    try {
++      const unpack = (bytes: Uint8Array) => decode(zlib.gunzipSync(bytes)) as any;
++      const happ = unpack(fs.readFileSync(HAPP_PATH));
++      const dnaBytes = Object.values(happ.resources)[0] as Uint8Array;
++      const dna = unpack(dnaBytes);
++      const zomes = dna.manifest.coordinator.zomes;
++      const resources: Record<string, Uint8Array> = {};
++      for (const zome of zomes) resources[zome.path] = dna.resources[zome.path];
++      bundle = { manifest: { zomes }, resources };
++    } catch (e) {
++      console.error('Could not read the new code out of the bundled hApp.', e);
++      return;
++    }
++
++    let updated = 0;
++    for (const cells of Object.values(appInfo.cell_info)) {
++      for (const cell of cells as any[]) {
++        const cellId = cell?.value?.cell_id;
++        if (!cellId || cell.type === 'stem') continue;
++        try {
++          await this.adminWebsocket.updateCoordinators({
++            cell_id: cellId,
++            source: { type: 'bundle', value: bundle },
++          });
++          updated += 1;
++        } catch (e) {
++          // A disabled circle, say. The others still get the new code.
++          console.warn('Could not bring one cell up to date.', e);
++        }
++      }
++    }
++    console.log(`Brought the code up to date in ${updated} cell(s) of ${HAPP_APP_ID}.`);
++  }
++
+   async installHappIfNecessary(networkSeed: string) {
+     const installedApps = await this.adminWebsocket.listApps({});
+-    if (installedApps.map((appInfo) => appInfo.installed_app_id).includes(HAPP_APP_ID)) return;
++    const alreadyHere = installedApps.find((appInfo) => appInfo.installed_app_id === HAPP_APP_ID);
++    if (alreadyHere) {
++      await this.bringTheCodeUpToDate(alreadyHere);
++      return;
++    }
+     console.log(`Installing happ...`);
+ 
+     /*

@@ -17,6 +17,19 @@ holochain_serialized_bytes = "=0.0.57"
 # "encoding" gives AgentPubKey <-> base64 string, so DNA properties can hold a
 # founder key as YAML-safe text rather than raw bytes.
 holo_hash = { version = "0.7.0", features = ["encoding"] }
+# The cipher the circle's own content is locked with.
+#
+# Not a preference — a necessity. Holochain's keystore locks data for you, but
+# every request to it goes through a channel with an 8 KiB limit on one message
+# (lair_keystore_api 0.7.1, sodium_secretstream.rs: `const MAX_FRAME`), and a
+# full-length record is far bigger than that, let alone a photograph. So the
+# keystore locks a short key and this locks the content with it — the ordinary
+# way large data is encrypted, and what Holochain's own notes point at when they
+# say to encrypt large data in chunks.
+#
+# Default features off: they pull in a random number generator, and the random
+# bytes here come from Holochain's own host function instead.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 
 [profile.release]
 opt-level = "z"
