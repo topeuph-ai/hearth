@@ -339,8 +339,9 @@ rest. Each was checked against the code.
   her.
 - **A removed member can still publish an encryption key.** True and harmless:
   the holder's device skips removed members when handing out keys, so a new
-  one gets them nothing. That, and "a removed member cannot write with an old
-  key", are both tested.
+  one gets them nothing. "A removed member is given no new key" is tested;
+  "even after publishing a fresh encryption key" is not separately, since it
+  is the same skip in the same code.
 - **Carrying a circle across, or a successor moving it, must not bring a
   removed person back.** Checked in the code: the list of who to invite leaves
   out everybody removed, and the moved circle starts with a key of its own that
