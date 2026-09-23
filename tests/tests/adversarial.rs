@@ -4516,3 +4516,32 @@ async fn nothing_is_locked_with_a_key_older_than_the_newest() {
         "nothing may be locked with key 1 once the circle has key 2"
     );
 }
+
+/// Found in audit, 23 September 2026: the rules accept a claim resting on any
+/// naming the holder ever made of that person, so an old claim — its checks
+/// given, its waiting period long over — counted again the moment she named
+/// the same person afresh. Now a new naming starts succession over.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_naming_leaves_an_old_claim_behind() {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let bob = bob_cell.agent_pubkey().clone();
+
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+    let _: Record = conductor
+        .call(&zome(&bob_cell), "start_taking_over", ())
+        .await;
+
+    // She acts again: names the same person, afresh.
+    let _: Record = conductor
+        .call(&zome(&alice_cell), "name_successor", naming(Some(&bob)))
+        .await;
+
+    let state: aboutme::SuccessionState =
+        conductor.call(&zome(&alice_cell), "get_succession", ()).await;
+    assert!(
+        state.claim.is_none(),
+        "a claim made under an earlier naming does not carry over"
+    );
+}

@@ -27,12 +27,39 @@ a security specialist yet — that is the first thing this page asks for.
 | **A lost, stolen or seized device** | The keystore | **The biggest practical risk.** The released app does not yet ask for a password, so holding the device is holding the keys. Decided; not built — it needs a careful test so existing installs are not locked out | Known gap |
 | **Somebody reads the content as it passes through the network** | Content is locked to the circle's keys before it leaves the device | Who wrote something, and when, can be seen by peers — not what it says | Built; not independently reviewed |
 | **A professional given a pass reads more than they should** | The holder's device reads the pass's terms from what it wrote itself, never from the reader; Holochain refuses a stopped pass before our code runs | A pass works for whoever holds it, like a key | Tested |
-| **Somebody claims the holder has gone, to take over** | A successor must be named in advance; a waiting period the whole circle sees; the holder can say "I am still here"; a named checker confirms | Coercion of the checker or the successor | Rule; not yet tried on machines |
-| **A door flooded with knocks** | Ten knocks per key, checked by every device; a button to give the door a new address (0.3.4) | Keys cost nothing, so a determined flood can use many; the answer is to leave the door | Rule and app |
+| **Somebody claims the holder has gone, to take over** | A successor must be named in advance; a waiting period the whole circle sees; the holder can say "I am still here"; a named checker confirms | Coercion of the checker or the successor | Rule; not yet tried on machines. An old claim that could come back to life was found in our own audit and fixed (0.3.4) |
+| **A door flooded with knocks** | Ten knocks per key, checked by every device; a button to give the door a new address (0.3.4) | Keys cost nothing, so a determined flood can use many; the answer is to leave the door. A stranger can also send "somebody is asking to join" without knocking — held to a trickle on screen since 0.3.4 | Rule and app |
 | **Unreadable entries clogging a circle** | Each entry is opened on its own; one that cannot be opened is skipped (fixed 0.3.4) | A member can write things nobody can read; they gain nothing by it | App |
 | **The holder is coerced, or somebody lies about who they are** | Hearth controls access, not identity: "district nurse" is shown as a claim, never as verified | Not a software problem; stated, not solved | By design |
 | **A flaw in something Hearth is built on** | Versions pinned; dependencies checked against the public advisory database on every push (0.3.4) | The check reports; a person has to act | CI |
 | **An update strands or leaks a circle** | The rules are frozen and checked by hash in CI; new rules install beside old ones, and circles are carried across | Carrying an encrypted circle with media across is not yet tried on machines | Partly proven |
+
+## Our own audit, 23 September 2026
+
+After three outside reviews, a pass of our own over the parts they had not
+looked at closely. Sound: a member cannot fake a move (the zome refuses it
+before any screen sees it); the successor rules are every device's, not just
+the app's; a pass reads its terms only from what the holder wrote; nothing
+anybody types is ever put on screen as HTML. Found and fixed, all in 0.3.4:
+
+- **A successor's old claim could count again** if the holder named the same
+  person afresh — ready at once, its checks and waiting period long past. A new
+  naming now starts succession over. Tested.
+- **The zome and the app weighed checks differently.** The zome let any
+  member's "she cannot carry on" count; the app, rightly, let the named
+  checker's answer come first. Now both do. The app was the gate, so this was
+  never open, but two layers that disagree are one change away from a hole.
+- **"Somebody is asking to join" could be sent without knocking**, as often as
+  anybody liked, each one reloading the holder's circle. Now at most one
+  announcement per person a minute, and one reload every fifteen seconds.
+- **A pass read in a loop** could push the real record of who read what off
+  the end of the holder's list. Repeat reads within a minute now count as one.
+
+One thing to test rather than fix: every write now reads the circle's keys and
+removals from the network first. Offline, those reads should fall back to what
+the device already has — worth confirming on the two-machine test with the
+internet unplugged, since the offline edit proven on 14 September came before
+encryption.
 
 ## Deliberately out of scope
 

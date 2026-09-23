@@ -2004,6 +2004,11 @@ async function start() {
   watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
+  // When each knocker was last announced, and when the circle last reloaded
+  // for a knock. See the Knocked branch below.
+  const knockSaid = new Map();
+  let knockReloaded = 0;
+
   const whenSomebodyTellsUsSomething = async (signal) => {
     /*
      * A signal arrives as { type: "app", value: { cell_id, zome_name, payload } }.
@@ -2031,21 +2036,39 @@ async function start() {
      * the circle it serves, so its signals never come from the cell on screen.
      * Somebody knocking has no circle open at all.
      */
+    /*
+     * Held to a trickle, whatever arrives.
+     *
+     * Anybody with the door's address can send this without knocking at all:
+     * a signal is not an entry, so the ten-knock limit every device enforces
+     * does not touch it. Found in audit, 23 September 2026: a stranger could
+     * make the holder's screen announce and reload the whole circle as fast as
+     * they could send. The real knock is an entry, arrives by itself, and is
+     * listed whatever happens here; this only decides how often to say so.
+     */
     if (payload?.kind === "Knocked") {
-      const who = payload.name?.trim() || "Somebody";
-      const said = payload.relationship?.trim();
-      announce(
-        said
-          ? `${who} is asking to join. They say they are ${said}.`
-          : `${who} is asking to join.`,
-      );
-      if (circle) await loadCircle();
+      const now = Date.now();
+      const from = asText(payload.by);
+      if (now - (knockSaid.get(from) ?? 0) > 60_000) {
+        knockSaid.set(from, now);
+        const who = payload.name?.trim() || "Somebody";
+        const said = payload.relationship?.trim();
+        announce(
+          said
+            ? `${who} is asking to join. They say they are ${said}.`
+            : `${who} is asking to join.`,
+        );
+      }
+      if (circle && now - knockReloaded > 15_000) {
+        knockReloaded = now;
+        await loadCircle();
+      }
       return;
     }
     // A pass was used at one of this device's doors. Only ever raised by this
     // device itself — the zome drops one arriving from anywhere else.
     if (payload?.kind === "PassUsed") {
-      rememberPassRead(asText(signal?.value?.cell_id?.[0]), payload);
+      if (!rememberPassRead(asText(signal?.value?.cell_id?.[0]), payload)) return;
       announce(
         `${payload.for_whom} read ${payload.sections.map(sectionName).join(", ")} ` +
           `with a pass.`,
@@ -4629,6 +4652,18 @@ function passReads() {
 
 function rememberPassRead(door, payload) {
   const reads = passReads();
+  // Reading again within a minute is one reading, not another line: somebody
+  // holding a pass could otherwise read in a loop and push the real history
+  // off the end of this list. Found in audit, 23 September 2026.
+  const last = reads[0];
+  if (
+    last &&
+    last.door === door &&
+    last.for_whom === payload.for_whom &&
+    Math.abs(payload.at - last.at) < 60_000_000
+  ) {
+    return false;
+  }
   reads.unshift({
     door,
     for_whom: payload.for_whom,
@@ -4640,6 +4675,7 @@ function rememberPassRead(door, payload) {
   } catch {
     // The read still happened; only the note of it is lost.
   }
+  return true;
 }
 
 function buildPassSectionChoices() {

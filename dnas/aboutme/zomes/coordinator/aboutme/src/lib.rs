@@ -1296,9 +1296,22 @@ fn may_move_this_circle(agent: &AgentPubKey) -> ExternResult<bool> {
     let Some(claim) = state.claim else {
         return Ok(false);
     };
-    Ok(claim.by == agent.to_string()
-        && !claim.still_here
-        && claim.checks.iter().any(|c| !c.holder_can_carry_on))
+    // Whose answer counts: the named checker's, newest, if they have given
+    // one; otherwise anybody else's. The same order the app uses to decide
+    // (`decideTakeover`). This used to accept any "she cannot carry on" at
+    // all, so a checker saying she was fine could be outvoted here by one
+    // other member — the app still refused, but the two layers should agree.
+    let checker = state.checker.clone();
+    let by_checker = claim
+        .checks
+        .iter()
+        .rev()
+        .find(|c| Some(&c.by) == checker.as_ref());
+    let cannot = match by_checker {
+        Some(c) => !c.holder_can_carry_on,
+        None => claim.checks.iter().any(|c| !c.holder_can_carry_on),
+    };
+    Ok(claim.by == agent.to_string() && !claim.still_here && cannot)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -3710,7 +3723,7 @@ pub fn get_succession(_: ()) -> ExternResult<SuccessionState> {
     };
 
     let mut state = SuccessionState {
-        naming: Some(naming_hash),
+        naming: Some(naming_hash.clone()),
         successor: naming.successor.as_ref().map(|k| k.to_string()),
         checker: naming.checker.as_ref().map(|k| k.to_string()),
         claim: None,
@@ -3719,17 +3732,27 @@ pub fn get_succession(_: ()) -> ExternResult<SuccessionState> {
         return Ok(state);
     };
 
-    // The newest claim by the person named now.
+    // The newest claim by the person named now, *under the naming that stands*.
+    //
+    // It used to be any claim of theirs. The rules accept a claim resting on
+    // any naming the holder ever made of them, so if she named Bob, Bob
+    // claimed, and she later changed the arrangement and named him again, his
+    // old claim — its checks given, its waiting period long over — counted as
+    // ready the moment the new naming arrived. Found in audit, 23 September
+    // 2026. Now any new naming by the holder starts succession afresh, which
+    // is also the right reading of her acting at all: she is still here.
     let Some((claim_hash, at)) = found
         .iter()
         .rev()
         .filter(|r| r.action().author() == &successor)
         .find_map(|r| {
-            r.entry()
+            let claim = r
+                .entry()
                 .to_app_option::<SuccessionClaim>()
                 .ok()
                 .flatten()?;
-            Some((r.action_address().clone(), r.action().timestamp()))
+            (claim.naming == naming_hash)
+                .then(|| (r.action_address().clone(), r.action().timestamp()))
         })
     else {
         return Ok(state);
