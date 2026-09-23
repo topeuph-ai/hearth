@@ -4707,11 +4707,35 @@ async function readWithThePass() {
   const pass = textToPass($("pass-in").value);
   passInHand = pass;
   const door = await cellForRoom(pass, "A pass");
-  const words = await call(
-    "ask_with_a_pass",
-    { holder: pass.holder, secret: pass.secret },
-    door,
-  );
+
+  /*
+   * Asked again for a couple of minutes if their device cannot be found yet.
+   *
+   * Entering the door is instant; finding who else is in it is not. A device
+   * that has just arrived usually takes a minute or two to find anybody (see
+   * docs/latency.md), so the first ask nearly always failed and said the other
+   * device might be switched off — while it sat on the same desk. Found on two
+   * machines, 23 September 2026. Any other answer, such as a pass that has
+   * been stopped, is final and shown at once.
+   */
+  const button = $("read-pass");
+  let words;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      words = await call(
+        "ask_with_a_pass",
+        { holder: pass.holder, secret: pass.secret },
+        door,
+      );
+      break;
+    } catch (error) {
+      const notFoundYet = /could not be reached yet/.test(String(error?.message ?? error));
+      if (!notFoundYet || attempt >= 8) throw error;
+      button.textContent = "Finding their device… this can take a minute or two";
+      announce("Finding their device. The first time can take a minute or two.");
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+    }
+  }
 
   $("pass-words-name").textContent = words.name
     ? `About ${words.name}`

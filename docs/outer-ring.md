@@ -209,7 +209,16 @@ way round the pass.
 - **A pass is shown once.** If it is lost, stop it and make another.
 - **Discovery is still the hard part.** A nurse who has Hearth and is handed a
   pass can read. Getting Hearth onto a ward's machine is not solved by this.
-- **Not yet tried on two machines.** The tests run in one conductor.
+- **Tried on two machines, 23 September 2026 (0.3.1): it works.** A pass made
+  on the PC was read on the laptop, on the same home network, with the PC's
+  Hearth already upgraded from 0.2.7 — so the new code did reach an existing
+  circle (desktop patch 03). The first try said the PC could not be reached;
+  the second worked. The laptop had just entered the door and had not yet
+  found the PC, which on released Holochain takes a minute or two (see
+  [`latency.md`](latency.md)). The reader's app now keeps asking for about two
+  minutes, saying it is finding their device, and a refusal from the holder
+  (a stopped or run-out pass) is shown as itself rather than as "could not be
+  reached", which Holochain had been making it look like.
 
 ### A note on the funding answers
 

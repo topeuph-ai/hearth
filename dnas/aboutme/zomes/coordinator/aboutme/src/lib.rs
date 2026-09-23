@@ -2878,10 +2878,21 @@ pub fn ask_with_a_pass(input: AskWithPassInput) -> ExternResult<PassedWords> {
         ZomeCallResponse::Unauthorized(..) => Err(wasm_error!(
             "This pass does not work any more. It may have been stopped, or it may have run out."
         )),
-        ZomeCallResponse::NetworkError(_) => Err(wasm_error!(
-            "The device that holds this record could not be reached. It may be switched off. \
-             Try again in a little while."
-        )),
+        // Holochain returns the holder's own refusal ("this pass has run out")
+        // as a network error too, wrapped in the runtime's words. That answer
+        // is worth passing on as itself; only a real failure to reach the
+        // device should be called one. Found on two machines, 23 September.
+        ZomeCallResponse::NetworkError(said) => match said.split("Guest(\"").nth(1) {
+            Some(rest) => Err(wasm_error!(rest
+                .split("\")")
+                .next()
+                .unwrap_or(rest)
+                .to_string())),
+            None => Err(wasm_error!(
+                "The device that holds this record could not be reached yet. It may be \
+                 switched off, or this device may still be finding it."
+            )),
+        },
         _ => Err(wasm_error!("The record could not be read just now")),
     }
 }

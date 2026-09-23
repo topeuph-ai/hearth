@@ -370,7 +370,7 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | Letting somebody back in | ✅ | **to test with the keys** |
 | Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | to test |
 | Carrying a circle across, with media, while encrypted | — | **not yet tried** |
-| A pass, read from another machine | — | to test |
+| A pass, read from another machine | — | ✅ 0.3.1, same home network; first try too early |
 
 The last rows matter most. "Local discovery" above means the Lightningrod Labs
 build of Holochain (`holochain-0.7.0-mdns.2`), not released Holochain: it is a
