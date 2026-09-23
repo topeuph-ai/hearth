@@ -368,7 +368,7 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | A video, same room | quick with the LAN build | to test |
 | Removing somebody | ✅ | **to test with encryption** |
 | Letting somebody back in | ✅ | **to test with the keys** |
-| Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | to test |
+| Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | ✅ 0.3.1 over earlier versions: circles made on older versions still there (23 Sep) |
 | Carrying a circle across, with media, while encrypted | — | **not yet tried** |
 | A pass, read from another machine | — | ✅ 0.3.1, same home network; first try too early |
 
