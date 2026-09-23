@@ -371,7 +371,7 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | A video, same room | quick with the LAN build | to test |
 | Removing somebody | ✅ | **to test with encryption** |
 | Letting somebody back in | ✅ | **to test with the keys** |
-| Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | ✅ 0.3.1 over earlier versions: circles made on older versions still there (23 Sep) |
+| Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | ✅ 0.3.1 over earlier versions: circles made on older versions still there, photos and videos included (23 Sep) |
 | Carrying a circle across, with media, while encrypted | — | **not yet tried** |
 | Carrying across a circle somebody was removed from: they are not invited, and cannot read the new one | — | **not yet tried** (the app leaves them out; untested on machines) |
 | A successor taking over an encrypted circle: they can read it, move it, and the removed stay out | — | **not yet tried** |
