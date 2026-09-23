@@ -899,3 +899,18 @@ legend {
   border-radius: 6px;
   background: #000;
 }
+
+/*
+ * The one simplification the practice copy makes that is worth naming: it does
+ * not ask for a password, and a released Hearth does. Quiet, beside the banner
+ * rather than competing with it.
+ */
+#no-password-here {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  background: var(--notice);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}

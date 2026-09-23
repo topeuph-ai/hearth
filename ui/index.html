@@ -746,6 +746,41 @@
             circle</span> will decide whether to add it.
           </p>
         <!--
+          A circle made before the rules changed, seen by the person who holds
+          it. Nothing is wrong with it and nothing is lost by leaving it as it
+          is; what it cannot do is anything the newer rules added, which for
+          this version means the record is not locked.
+
+          Carrying it across founds a new circle under the new rules and moves
+          everybody, using the same machinery as moving a circle away from
+          somebody. See docs/upgrades.md.
+        -->
+        <div id="older-rules-circle" hidden>
+          <h3>This circle was made with an older version</h3>
+          <p>
+            It still works, and everything in it is safe. But it was made
+            before this version of Hearth, so the newer protections do not
+            apply to it — in this version, that means what is written here is
+            not locked.
+          </p>
+          <p>
+            Carrying it across makes a new circle under the new rules, moves
+            the record, the photos and everybody in it, and tells the others so
+            their apps follow. It may take a few minutes if there is video.
+          </p>
+          <p class="hint">
+            What cannot come across: each entry was signed by whoever wrote it,
+            and nobody can sign for somebody else. So what arrives is a record
+            of what was said, written by you, rather than the signed original.
+          </p>
+          <div class="actions">
+            <button type="button" id="carry-across">
+              Carry this circle to the new version
+            </button>
+          </div>
+        </div>
+
+        <!--
           A record that is here but cannot be opened on this device. Not an
           empty record and not an error: the words are locked with a key this
           device has not got. Either it has been removed from the circle, or it
@@ -767,6 +802,21 @@
             any other. Nothing has gone wrong.
           </p>
         </div>
+
+        <!--
+          Shown in the practice copy only, beside the banner that says so.
+
+          A demonstration that asks for a password three times before anything
+          happens demonstrates nothing, so the demo does not ask. Saying that
+          out loud is the difference between a simplification and a misleading
+          impression of what the released app does.
+        -->
+        <p id="no-password-here" hidden>
+          <strong>No password is asked for here.</strong> A released Hearth asks
+          for one when it starts, so that somebody holding the device does not
+          also hold the keys. The practice copy skips it to keep the
+          demonstration short.
+        </p>
         <div id="no-record" hidden>
           <!-- The holder's own circle, genuinely empty until they write. -->
           <p id="no-record-empty" hidden>

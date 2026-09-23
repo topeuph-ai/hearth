@@ -258,6 +258,20 @@ date, is exactly what a removed member should stop receiving. Which version was
 read, and by whom, stays in the open: that is the evidence the acknowledgement
 exists to be, and it is what every device checks.
 
+### Decided 23 September 2026
+
+**A password, and locked self-descriptions — both yes.**
+
+- **The released app asks for a password when it starts**, so the keys are not
+  simply as safe as the device. Today the desktop app runs with
+  `passwordMode: 'password-optional'` and a random password kept beside the
+  keystore, which protects nobody who is holding the machine.
+- **In the demo the password is bypassed**, because a demonstration that asks
+  for a password three times before anything happens demonstrates nothing. The
+  demo says so on screen instead, so nobody watching believes the released app
+  would behave that way.
+- **How members describe themselves is locked**, like the rest.
+
 ### Still in the open, and next
 
 - **How members describe themselves**, which Ceri decided should be locked.

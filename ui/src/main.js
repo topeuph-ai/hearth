@@ -169,6 +169,9 @@ const $ = (id) => document.getElementById(id);
 if (import.meta.env.DEV) {
   const banner = $("practice-copy");
   banner.hidden = false;
+  // And the one simplification worth naming: the demo does not ask for a
+  // password, and a released Hearth does. Decided 23 September 2026.
+  $("no-password-here").hidden = false;
   document.title = "Practice copy — Hearth demo";
 
   // The announcer is fixed to the top of the window and would land on the
@@ -868,6 +871,10 @@ function renderRecord(current) {
    * from the circle, or its keys have not caught up yet — and either way the
    * honest thing is to say so and show nothing.
    */
+  // A circle from before the rules changed, and only the person who holds it
+  // can carry it across. Everybody else simply reads it as it is.
+  $("older-rules-circle").hidden = !(circle?.olderRules && isHolder());
+
   $("locked-out").hidden = !current?.locked_out;
   if (current?.locked_out) {
     $("no-record").hidden = true;
@@ -1979,7 +1986,7 @@ async function start() {
   watchForArrivals();
 
   // Someone read the record. Told to us by their device, not by a server.
-  client.on("signal", async (signal) => {
+  const whenSomebodyTellsUsSomething = async (signal) => {
     /*
      * A signal arrives as { type: "app", value: { cell_id, zome_name, payload } }.
      * Read from signal.payload it is undefined, so every handler below was
@@ -2118,7 +2125,25 @@ async function start() {
       );
       if (circle) await loadCircle();
     }
-  });
+  };
+
+  client.on("signal", whenSomebodyTellsUsSomething);
+
+  /*
+   * And the same ear on every earlier version of the rules still installed.
+   *
+   * Without this, the one signal that matters most across a version change
+   * would be missed: the holder telling everybody that the circle has moved.
+   * It is sent in the old circle, which belongs to the old app, so a member
+   * running the new app would never hear it and would sit in a circle nobody
+   * else was in any more.
+   */
+  const heard = new Set();
+  for (const { client: older } of earlierClients.values()) {
+    if (heard.has(older)) continue;
+    heard.add(older);
+    older.on("signal", whenSomebodyTellsUsSomething);
+  }
 }
 
 start().catch(problem);
@@ -3332,7 +3357,9 @@ function renderCircles() {
 }
 
 async function openCircle(item) {
-  circle = { cellId: item.cellId };
+  // Whether this circle was made before the rules changed is carried with it:
+  // the screen offers to carry it across, and only the holder can.
+  circle = { cellId: item.cellId, olderRules: Boolean(item.olderRules) };
   circleAsksTwo = Boolean(item.asksTwo);
   // Coming back to a circle is not writing one.
   justWroteIt = false;
@@ -5271,6 +5298,61 @@ $("move-for-real").addEventListener("click", async () => {
  * afterwards would need that second agreement — and the people being carried
  * across were agreed to already, in the circle they are leaving.
  */
+/*
+ * Photographs, sound and video, into the circle the people are moving to.
+ *
+ * They have to be carried piece by piece and written again: a piece is named
+ * by a hash of its contents *within one circle's rules*, so the old names mean
+ * nothing in the new place. There is no reference to copy, only bytes.
+ *
+ * This is the slowest part of a move by a wide margin — a two-minute video is
+ * tens of megabytes through this function — and it is worth it, because media
+ * is here for the people who cannot read a screen, and losing it in a move
+ * would take their voice out of their own record.
+ *
+ * A file that will not come across does not stop the move. The words matter
+ * more, and the old circle still has the file until the holder switches it
+ * off.
+ */
+async function carryMediaAcross(from, to) {
+  const here = await orNothingYet(call("get_media", null, from), []);
+  if (!here.length) return;
+
+  announce(
+    here.length === 1
+      ? "Carrying one photo, sound or video across."
+      : `Carrying ${here.length} photos, sounds or videos across.`,
+  );
+
+  for (const item of here) {
+    try {
+      const pieces = [];
+      for (const hash of item.media.pieces ?? []) {
+        const bytes = await call("get_media_piece", hash, from);
+        pieces.push(await call("add_media_piece", bytes, to));
+      }
+      if (!pieces.length) continue;
+
+      await call(
+        "add_media",
+        {
+          section: item.media.section,
+          kind: item.media.kind,
+          mime_type: item.media.mime_type,
+          file_name: item.media.file_name ?? "",
+          in_words: item.media.in_words ?? "",
+          seconds: item.media.seconds ?? 0,
+          pieces,
+          size: item.media.size,
+        },
+        to,
+      );
+    } catch (error) {
+      console.error("One file could not be carried across.", error);
+    }
+  }
+}
+
 async function moveTheCircle(removedKey, removedName, reason) {
   const from = circle.cellId;
   const entry = wordsOf(record?.current);
@@ -5338,6 +5420,8 @@ async function moveTheCircle(removedKey, removedName, reason) {
       to,
     );
   }
+
+  await carryMediaAcross(from, to);
 
   const invitations = [];
   for (const [key, who] of everyone) {
@@ -5576,15 +5660,48 @@ function sayItMovedIfItDid() {
    */
   const by = note.by?.trim() || "The person who holds this circle";
   const removed = note.removed?.trim();
-  // Moved with nobody removed: a successor taking over.
+  /*
+   * Moved with nobody removed: a successor taking over, or the circle being
+   * carried to a newer version of Hearth. "Has moved this circle" is true of
+   * both, and the reason underneath says which — where "now holds this
+   * circle" was puzzling for somebody whose holder had not changed.
+   */
   $("moved-note-text").textContent = removed
     ? `${by} has removed ${removed} from the circle.`
-    : `${by} now holds this circle.`;
+    : `${by} has moved this circle.`;
 
   const reason = note.reason?.trim();
   $("moved-note-reason").hidden = !reason;
   $("moved-note-reason").textContent = reason ? `The reason given: “${reason}”` : "";
 }
+
+/*
+ * Carry a circle made under older rules across to the new ones.
+ *
+ * It is the move that already exists, with nobody removed — the same act as a
+ * successor taking a circle over. What makes it a version change is only where
+ * the new circle is founded: `create_circle` is asked of the app this
+ * interface belongs to, which is the new one, while everything is read from
+ * the old.
+ */
+$("carry-across").addEventListener("click", async () => {
+  const button = $("carry-across");
+  button.disabled = true;
+  try {
+    announce("Carrying this circle across. Please leave Hearth open.");
+    await moveTheCircle(
+      null,
+      "",
+      "This circle has been carried across to a newer version of Hearth. " +
+        "Everything and everybody has come with it.",
+    );
+    announce("Carried across. Everybody is being moved over as their apps see it.");
+  } catch (error) {
+    problem(error);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $("moved-note-done").addEventListener("click", () => {
   if (circle) store(movedNoteKey(circle.cellId), null);

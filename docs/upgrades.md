@@ -83,7 +83,33 @@ both, and marks the old ones as belonging to a version that is going away.
 
 ### 3. Carry a circle across, using the mechanism that already exists
 
-This part is built and tested: **moving a circle**. The holder founds a new
+**Built 23 September 2026, not yet tested.** The holder of a circle made under
+older rules sees an offer to carry it across; it founds a new circle under the
+new rules, carries the record and the media, invites everybody, and tells them
+so their apps follow.
+
+Almost none of it is new code. It is the same move a successor makes when
+taking a circle over — `moveTheCircle` with nobody removed. What makes it a
+version change is only *where the new circle is founded*: `create_circle` is
+asked of the app this interface belongs to, which is the new one, while
+everything is read from the old circle through the old app. The call that
+routes each question to the app that can answer it does the rest.
+
+Two things were missing and are now built:
+
+- **Media was never carried by a move at all** — a moved circle lost its
+  photographs, sound and video. Pieces are named by a hash of their contents
+  within one circle's rules, so there is no reference to copy: the bytes have
+  to be fetched and written again. Slow for a video, and worth it, since media
+  is there for the people who cannot read a screen.
+- **Signals from the older app were not being heard.** The interface listened
+  only to the new one, so the single most important message — the holder
+  saying the circle has moved — would have gone to nobody.
+
+**Still to test:** a circle made on 0.2.4, carried across on 0.2.5, with a
+photograph and a video in it, on two machines.
+
+The underlying mechanism was already built and tested: **moving a circle**. The holder founds a new
 circle, the history is carried as history, the members' own apps follow the move
 when they see it, and the app takes the old circle off the device when it is
 done.
