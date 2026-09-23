@@ -2988,6 +2988,37 @@ fn box_keys() -> ExternResult<std::collections::BTreeMap<AgentPubKey, X25519PubK
 
 /// Every sealed key in the circle, written by the holder.
 fn epoch_keys() -> ExternResult<Vec<EpochKey>> {
+    Ok(epoch_key_records()?
+        .into_iter()
+        .filter_map(|r| r.entry().to_app_option::<EpochKey>().ok().flatten())
+        .collect())
+}
+
+/// Whether somebody has been removed since the circle's newest key was made.
+///
+/// A removal and its new key are written together by the holder's device, so
+/// this is normally false. It is true in two cases, and both matter: the new
+/// key failed to be made at the moment of removal, or this device has heard
+/// about the removal and not yet about the key. Either way, anything locked
+/// now would be locked with a key the removed person still has.
+///
+/// Compared by time on the holder's own chain, which Holochain keeps in order:
+/// a removal and a key are both hers, so "after" cannot be got wrong.
+fn a_removal_since_the_newest_key() -> ExternResult<bool> {
+    let newest_key_made = epoch_key_records()?
+        .iter()
+        .map(|r| r.action().timestamp())
+        .max();
+    let Some(newest_key_made) = newest_key_made else {
+        // No key yet at all: the first one is made by the first write.
+        return Ok(false);
+    };
+    Ok(get_departures(())?
+        .iter()
+        .any(|s| s.removed && s.since > newest_key_made))
+}
+
+fn epoch_key_records() -> ExternResult<Vec<Record>> {
     let Membrane::Founder(holder, _) = membrane()? else {
         return Ok(Vec::new());
     };
@@ -3010,7 +3041,6 @@ fn epoch_keys() -> ExternResult<Vec<EpochKey>> {
     Ok(found
         .into_iter()
         .filter(|r| r.action().author() == &holder)
-        .filter_map(|r| r.entry().to_app_option::<EpochKey>().ok().flatten())
         .collect())
 }
 
@@ -3207,7 +3237,10 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
     let me = agent_info()?.agent_initial_pubkey;
     if let Membrane::Founder(holder, _) = membrane()? {
         if holder == me {
-            if newest_epoch()? == 0 {
+            // The first key, or the key a removal should have made and did
+            // not. `decide_departure` says the next open tries again; this is
+            // where it does.
+            if newest_epoch()? == 0 || a_removal_since_the_newest_key()? {
                 new_key(())?;
             }
             hand_out_keys(())?;
@@ -3234,24 +3267,48 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
 
 /// Lock something with the newest key this device can use.
 ///
-/// The newest key it *can use*, not the newest the circle has: a member whose
-/// key has not arrived yet would otherwise be unable to write anything at all,
-/// and everybody who can read the circle holds every key, so an older one
-/// leaves nobody out. The holder always has the newest, being the one who
-/// made it.
+/// Always the circle's newest key. It used to be the newest this device could
+/// use, falling back to an older one while a new key was on its way, so that a
+/// member was never stopped from writing. That was wrong: the older keys are
+/// exactly the ones a removed person still holds, so for as long as the new key
+/// took to arrive, what a member wrote could be opened on the removed person's
+/// device. Found in review, 23 September 2026. Waiting a moment is the price,
+/// and it is the right way round.
 fn lock(data: Vec<u8>) -> ExternResult<Locked> {
-    let mut epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
+    let holder = i_am_the_holder()?;
 
-    // The holder writing the first thing in a circle makes its first key. It
-    // used to be the record that did this, which was true of every circle made
-    // in the app and would have been false the day anything else came first.
-    if epoch == 0 && i_am_the_holder()? && newest_epoch()? == 0 {
-        epoch = new_key(())?;
+    // The holder writing the first thing in a circle makes its first key — and
+    // if somebody has been removed since the newest key, the key that removal
+    // should have made. It used to be the record that made the first key, which
+    // was true of every circle made in the app and would have been false the
+    // day anything else came first.
+    if holder && (newest_epoch()? == 0 || a_removal_since_the_newest_key()?) {
+        new_key(())?;
+    }
+    if !holder && a_removal_since_the_newest_key()? {
+        return Err(wasm_error!(
+            "Somebody has been removed from this circle, and the new key that goes \
+             with it has not reached this device yet. Nothing has been written. \
+             Try again in a moment"
+        ));
+    }
+
+    let newest = newest_epoch()?;
+    let mut epoch = keys_i_can_use(())?.into_iter().max().unwrap_or(0);
+    if epoch < newest {
+        // Sealed to this device and not taken up yet, perhaps. One try.
+        epoch = take_up_keys(())?;
     }
 
     if epoch == 0 {
         return Err(wasm_error!(
             "This device has no key for this circle yet. Wait a moment and try again"
+        ));
+    }
+    if epoch < newest {
+        return Err(wasm_error!(
+            "This circle has a new key that has not reached this device yet. \
+             Nothing has been written. Try again in a moment"
         ));
     }
     // A key of its own for this one entry, kept nowhere. The keystore locks it

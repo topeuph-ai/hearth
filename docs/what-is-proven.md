@@ -44,7 +44,8 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**67 tests, run in CI on every push**, in
+**94 tests at the last full run (21 September 2026), and seven added since**,
+run in CI, in
 [`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
 on the ordering rule. They are written as attacks rather than as feature checks.
 Among them:
@@ -126,9 +127,11 @@ unplugged, leaving both machines on the local network and neither able to reach
 anything beyond it. "What matters most to me" was changed on the holder's PC,
 and the change appeared on Dave's laptop.
 
-That is the thing a hosted service cannot do. Its devices only know how to
-talk to its server; with the internet gone, the people in the room stop
-sharing. Here they did not.
+A conventional hosted service does not do this: its devices talk to its
+server, and with the internet gone the people in the room stop sharing. Here
+they did not. (A hosted system *could* be built to sync locally as well — the
+claim is not that nothing else can, but that here it is the ordinary shape of
+the thing rather than an extra built around a central server.)
 
 **⚠️ But only while it was already running.** The same afternoon, both apps
 were restarted with the broadband still unplugged. Both opened, and they never
@@ -345,6 +348,34 @@ needs is in the build, and that is the next thing worth watching happen.
 Releases are published and downloadable. Nobody but the author is known to
 have installed one.
 
+### The test releases, 0.2.7 and 0.3.0, have not been tried together
+
+Added 23 September 2026, after an outside review suggested it. These two
+versions carry encryption, media, the upgrade, carrying a circle across, and
+passes. Each part has tests of its own; **nobody has yet run them together on
+real machines**, and that is where a design like this holds or falls apart.
+The matrix to work through, with released Holochain unless it says otherwise:
+
+| Test | Earlier (0.2.4 to 0.2.6) | 0.2.7 / 0.3.0 |
+| --- | --- | --- |
+| Two machines online | ✅ | to test |
+| Internet cut while running | ✅ | to test |
+| Fresh restart, no internet, same network | ✅ with the LAN build only | to test (LAN build) |
+| Two machines that have never met, no internet | not tried | to test (LAN build) |
+| Two machines on different networks | not tried | to test |
+| Two people editing while apart | not tried | to test |
+| A video, over the relay | slow (ten minutes) | to test |
+| A video, same room | quick with the LAN build | to test |
+| Removing somebody | ✅ | **to test with encryption** |
+| Letting somebody back in | ✅ | **to test with the keys** |
+| Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | to test |
+| Carrying a circle across, with media, while encrypted | — | **not yet tried** |
+| A pass, read from another machine | — | to test |
+
+The last rows matter most. "Local discovery" above means the Lightningrod Labs
+build of Holochain (`holochain-0.7.0-mdns.2`), not released Holochain: it is a
+Holochain feature Hearth makes use of, not a Hearth feature.
+
 ### Joining a circle can take about ninety seconds
 
 Measured here, understood, and written up in [`latency.md`](latency.md). Not
@@ -403,6 +434,8 @@ a wish.
 
 ### Two of the six checks Holochain offers are not switched on
 
+**Closed in the migration batch (Hearth 0.2.5 onwards, test release 0.2.7).** Every kind of write now goes through the same rules wherever it lands, and the catch-all is gone — see item 1 in [migration-batch.md](migration-batch.md). What follows is kept as it was written, because it is the record of why. It still describes 0.2.4 and earlier, which is the recommended release until the batch has been tested.
+
 Found in an audit on 2026-09-09, and stated here rather than left to be
 discovered, because it is the sort of thing a reviewer finds in ten minutes.
 
@@ -458,5 +491,10 @@ expect it to have.
   load-bearing, not a limitation to be grown out of.
 - **Not production software.** Not deployed anywhere. Nobody's real record is in
   it.
+- **Not a claim that the encryption is secure.** It is an encryption design and
+  implementation, tested by this project and not yet reviewed by anybody else.
+  One real gap was found by an outside reader and fixed on 23 September 2026 (a
+  device could fall back to a key the removed person still held). There may be
+  others; that is what a review is for.
 - **Not a finished answer** to decentralised health data. It is one narrow,
   honest slice, built far enough to be argued with.

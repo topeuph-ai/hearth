@@ -287,6 +287,40 @@ exists to be, and it is what every device checks.
 
 Everything in this list is a decision, not a gap in the build.
 
+### From an outside review, 23 September 2026
+
+An outside reader listed the ways designs like this usually fail: nonce reuse,
+key substitution, stale keys after a removal, downgrade to plaintext, and the
+rest. Each was checked against the code.
+
+- **Stale keys after a removal — a real gap, fixed.** A device without the
+  newest key used to lock with the newest one it had, so that a member was
+  never stopped from writing. After a removal, that older key is the one the
+  removed person still holds. Now nothing is locked with anything but the
+  newest key: a member waits a moment instead. And a removal whose new key
+  failed to be made is now retried the next time the holder opens the circle —
+  the code said it was, and it was not. Coordinator only; the rules did not
+  change. Test: `nothing_is_locked_with_a_key_older_than_the_newest`.
+- **Nonce reuse — no.** Every entry has its own random one-use key *and* its
+  own random 24-byte nonce, so a repeat would need two independent random
+  collisions.
+- **Key substitution — no.** Only the holder may hand out keys (every device
+  checks), and a device opens a key only if it was sealed by the holder.
+- **Plaintext — accepted by the rules, and should not be.** Every entry that
+  can be locked may also be written in the open, because the rules allow
+  either. The app always locks, and only the author can write in the open —
+  nobody can downgrade somebody else. But the rules are meant to be the
+  backstop that does not trust the app, and here they trust it. **For the next
+  version of the rules:** a circle made under these rules refuses anything in
+  the open.
+- **Nothing ties a locked body to where it sits.** The lock does not use the
+  author, the entry type or the epoch as associated data, so a member could
+  copy another member's locked suggestion into one of their own. It gains
+  them nothing they could not do by retyping it, since they can read it
+  anyway. **For the next version of the rules**, cheaply: bind the author and
+  the kind of entry.
+- **Introductions are still in the open** — the item above, already known.
+
 ### One thing the design note got wrong
 
 It said a new key on every **succession**. There is nothing to build: a

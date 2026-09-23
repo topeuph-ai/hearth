@@ -120,8 +120,9 @@ Three scenarios that could be *demonstrated*, not claimed:
    Nothing a circle needs is held by the project.
 2. **The internet goes, and the people in the room keep sharing.** Two devices
    on the same local network pass a change between them with the broadband
-   unplugged. A hosted service cannot: every change goes up to its server and
-   back down. **✅ Shown 14 September 2026**, on two Windows machines on one
+   unplugged. A conventional hosted service does not: every change goes up to
+   its server and back down. (One could be built to sync locally too; here it
+   is the ordinary shape of the thing, not an extra.) **✅ Shown 14 September 2026**, on two Windows machines on one
    home wifi with the broadband unplugged: a change on one arrived on the
    other. The two had met online first, and **after both were restarted with
    the internet still gone they never found each other** — until 19 September,
