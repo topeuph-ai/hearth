@@ -21,10 +21,10 @@ removed them on purpose, and has to find social ones instead.
 | 2 | Who has legitimate authority to act for the person? | Not a software question; stated, not solved |
 | 3 | What does "held by the person" actually mean? | Needs saying precisely |
 | 4 | What can Hearth do that RIX cannot? | **One of three partly shown** |
-| 5 | What happens when the holder disappears? | Half-built |
+| 5 | What happens when the holder disappears? | **Built, not yet tried on machines** |
 | 6 | What does an acknowledgement prove? | Answered below |
 | 7 | Should set-aside suggestions live forever? | **Decided and built** |
-| 8 | What does the waiting room expose, and can it be flooded? | New; partly planned |
+| 8 | What does the waiting room expose, and can it be flooded? | **Limit per key built; many keys still open** |
 | 9 | What happens if somebody lies? | Answered: access, not identity |
 | 10 | What does "no operator" really mean? | Overclaimed; corrected |
 | 11 | Who authorises the next version of a circle? | Answered by circle-moving |
@@ -158,6 +158,14 @@ allowed to, and deciding who is the same problem as question 2. Options, none
 chosen: a successor the holder names in advance; the second person; agreement
 of several members. All of them trade safety against getting stuck.
 
+**Since built (migration batch, test releases 0.2.7 onwards):** the holder
+names a successor in advance, and a checker who is never the successor. A
+claim that she has gone starts a waiting period the whole circle can see, in
+which she can say "I am still here" and stop it; the checker, or failing them
+anybody else in the circle, confirms. Then the successor moves the circle, and
+the moved circle starts with keys of its own, so nobody removed comes back.
+Not yet tried on two machines. See [migration-batch.md](migration-batch.md).
+
 ## 6. What does an acknowledgement prove?
 
 | It proves | It does not prove |
@@ -206,6 +214,13 @@ on the holder's device.
   part of a move. And the holder's screen showing repeated knocks from one key
   as one.
 - **In the migration batch:** a limit on knocks per key, checked by every peer.
+
+**Since built:** ten knocks per key, checked by every device. An outside review
+(23 September 2026) rightly points out that keys cost nothing to make, so
+somebody determined can knock from many. The answer on the list above still
+stands and is still to build: a button to give the door a new address, so a
+flooded door is simply left behind. Today that happens only as part of moving
+the whole circle.
 
 ## 9. What happens if somebody lies?
 

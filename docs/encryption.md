@@ -1,7 +1,10 @@
 # Encrypting the record: design note
 
-**Migration batch, item 6. Drafted 19 September 2026. The keys are built (20
-September); nothing is locked with them yet — see [what is built so far](#what-is-built-so-far).**
+**Migration batch, item 6. Drafted 19 September 2026.** *Updated 23 September:
+everything the design locks is now locked — the record, suggestions, media and
+acknowledgement roles — in test releases 0.2.7 onwards; introductions are the
+one thing still in the open. See [what is built so far](#what-is-built-so-far).*
+
 Written before any code because it touches every kind of entry, and a mistake
 in it is either a record nobody can read or a record that was never as private
 as it said.
