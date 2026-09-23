@@ -350,7 +350,13 @@ function wordsOf(current) {
  * nothing at all when the words are missing.
  */
 function suggestionWords(item) {
-  return item?.words ?? entryOf(item?.suggestion);
+  if (item?.words) return item.words;
+  // Falling back to the entry is right only for one written before
+  // suggestions were locked. A locked one this device could not open used to
+  // come back as its empty shell — a blank card, and an empty suggestion
+  // carried into a moved circle. Found in review, 23 September 2026.
+  const entry = entryOf(item?.suggestion);
+  return entry && !entry.locked ? entry : null;
 }
 
 /**

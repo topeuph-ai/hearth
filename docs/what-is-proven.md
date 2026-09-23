@@ -44,8 +44,7 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**94 tests at the last full run (21 September 2026), and seven added since**,
-run in CI, in
+**101 tests, all passing on 23 September 2026**, run in CI on every push, in
 [`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
 on the ordering rule. They are written as attacks rather than as feature checks.
 Among them:
@@ -319,11 +318,15 @@ local network, the same data moves at wifi speed.
 same media, timed. Worth doing before the claim is repeated anywhere that
 matters.
 
-**What it means for the project.** Local discovery is not only the thing that
-makes Hearth work with no internet — it is what makes photographs, sound and
-video usable at all when everybody is in the same building, which is the
-ordinary case for a person and the people looking after them. Released
-Holochain 0.7.0 has no local discovery, so this remains a field-test build.
+**What it means for the project.** Hearth already kept working through an
+internet outage without local discovery, as long as the devices were running.
+Local discovery extends that: devices that have restarted with no internet can
+find each other on the same network, and large files can move directly rather
+than through a relay somewhere else — which, from one untimed test, looks like
+the difference between photographs, sound and video being practical or not
+when everybody is in the same building, the ordinary case for a person and the
+people looking after them. Released Holochain 0.7.0 has no local discovery, so
+this remains a field-test build.
 See [`latency.md`](latency.md).
 
 ### It conforms to the standard it claims
@@ -370,6 +373,8 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | Letting somebody back in | ✅ | **to test with the keys** |
 | Upgrading over the previous version | ✅ 0.2.5 over 0.2.4 | ✅ 0.3.1 over earlier versions: circles made on older versions still there (23 Sep) |
 | Carrying a circle across, with media, while encrypted | — | **not yet tried** |
+| Carrying across a circle somebody was removed from: they are not invited, and cannot read the new one | — | **not yet tried** (the app leaves them out; untested on machines) |
+| A successor taking over an encrypted circle: they can read it, move it, and the removed stay out | — | **not yet tried** |
 | A pass, read from another machine | — | ✅ 0.3.1, same home network; first try too early |
 
 The last rows matter most. "Local discovery" above means the Lightningrod Labs

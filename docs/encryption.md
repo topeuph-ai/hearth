@@ -321,6 +321,32 @@ rest. Each was checked against the code.
   the kind of entry.
 - **Introductions are still in the open** — the item above, already known.
 
+### From a second outside review, 23 September 2026 (of 0.3.3)
+
+- **Locked entries are not checked against a real key.** True: a member could
+  write something that claims key 999,999, and every device would accept it and
+  none could open it. But checking the key number would not stop the harm it
+  points at — a member can just as easily write scrambled bytes under a real
+  key, and nobody could open those either. What matters is that one unreadable
+  entry spoils nothing else. Checked: every list opens each entry on its own
+  and carries on past one it cannot open. **One real bug found on the way:** a
+  suggestion this device could not open was shown as a blank card, and would
+  have been carried into a moved circle as an empty suggestion. Fixed in the
+  interface.
+- **A handed-out key is not checked to be for a current member.** True, and
+  not worth a rule: only the holder writes those, and the holder can already
+  give the key to anybody she chooses. Nothing a rule could check would stop
+  her.
+- **A removed member can still publish an encryption key.** True and harmless:
+  the holder's device skips removed members when handing out keys, so a new
+  one gets them nothing. That, and "a removed member cannot write with an old
+  key", are both tested.
+- **Carrying a circle across, or a successor moving it, must not bring a
+  removed person back.** Checked in the code: the list of who to invite leaves
+  out everybody removed, and the moved circle starts with a key of its own that
+  nobody from the old one holds. Not yet tried on two machines; it is in the
+  test matrix in [what-is-proven.md](what-is-proven.md).
+
 ### One thing the design note got wrong
 
 It said a new key on every **succession**. There is nothing to build: a
