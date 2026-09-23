@@ -7,25 +7,43 @@
  * Targeting WCAG 2.2 AA.
  */
 
+/*
+ * Warm, and softer than black on white. Chosen 23 September 2026 from what the
+ * research actually supports, which is less than colour psychology claims:
+ *
+ * - Warm backgrounds read faster than cool ones, for people with and without
+ *   dyslexia (Rello and Bigham, ASSETS 2017: peach, orange and yellow beat
+ *   blue, blue-grey and green). White was not tested, so "cream beats white"
+ *   rests on the British Dyslexia Association's advice, not on that study.
+ * - The BDA asks for dark, not black, text on a light, not white, background;
+ *   WCAG asks for strong contrast. The two pull apart. Text here is 13.7:1 -
+ *   softer than the 17:1 it was, and still well past AAA's 7:1.
+ * - Older eyes lose blues and greens first. The buttons stay deep blue because
+ *   they are told apart by lightness, not hue; "where you are" is terracotta,
+ *   a warm colour those eyes keep.
+ * - Nothing here claims a colour makes anybody calm. Calm is less on screen.
+ */
 :root {
-  --ink: #1a1a1a;
-  --paper: #fdfdfb;
-  --muted: #444;
-  --line: #c9c6bf;
-  --accent: #1f4e79; /* 8.6:1 on paper */
+  --ink: #2b2520; /* 13.7:1 on paper */
+  --paper: #faf3e6;
+  --muted: #5a4e44; /* 7.3:1 on paper */
+  --line: #d9ccb6;
+  --accent: #1f4e79; /* 7.8:1 on paper, 8.7:1 under white */
   --accent-ink: #ffffff;
-  --notice: #f4efe4;
+  --notice: #f2e0c4; /* ink on it: 11.7:1 */
+  --here: #8a3f22; /* 6.8:1 on paper; a mark, never text on its own */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #f2f0eb;
-    --paper: #17181a;
-    --muted: #c3c0b9;
-    --line: #4a4c50;
-    --accent: #9dc4e8; /* 8.4:1 on this ground */
+    --ink: #efe7da; /* 14.0:1 */
+    --paper: #1d1b18;
+    --muted: #c9bdad; /* 9.3:1 */
+    --line: #4a433b;
+    --accent: #9dc4e8; /* 9.4:1 on this ground */
     --accent-ink: #10243a;
-    --notice: #24262a;
+    --notice: #2c2721;
+    --here: #e3a17f; /* 7.9:1 */
   }
 }
 
@@ -304,7 +322,7 @@ button.secondary {
 .circle-tab.here {
   color: var(--ink);
   font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--here);
 }
 
 /*
