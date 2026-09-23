@@ -24,7 +24,7 @@ removed them on purpose, and has to find social ones instead.
 | 5 | What happens when the holder disappears? | **Built, not yet tried on machines** |
 | 6 | What does an acknowledgement prove? | Answered below |
 | 7 | Should set-aside suggestions live forever? | **Decided and built** |
-| 8 | What does the waiting room expose, and can it be flooded? | **Limit per key built; many keys still open** |
+| 8 | What does the waiting room expose, and can it be flooded? | **Limit per key, and a new address, built** |
 | 9 | What happens if somebody lies? | Answered: access, not identity |
 | 10 | What does "no operator" really mean? | Overclaimed; corrected |
 | 11 | Who authorises the next version of a circle? | Answered by circle-moving |
@@ -217,10 +217,11 @@ on the holder's device.
 
 **Since built:** ten knocks per key, checked by every device. An outside review
 (23 September 2026) rightly points out that keys cost nothing to make, so
-somebody determined can knock from many. The answer on the list above still
-stands and is still to build: a button to give the door a new address, so a
-flooded door is simply left behind. Today that happens only as part of moving
-the whole circle.
+somebody determined can knock from many. The answer on the list above is
+built in 0.3.4: **Give the door a new address**, under the address on the
+invite page. The flooded door is simply left behind. It costs the holder
+something, and says so before she presses it: the old address stops working,
+and so does every pass she has given, since passes are read through the door.
 
 ## 9. What happens if somebody lies?
 

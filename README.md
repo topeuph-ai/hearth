@@ -266,6 +266,7 @@ Read the first one before the others.
 | | |
 |---|---|
 | [what-is-proven.md](docs/what-is-proven.md) | **Start here.** What is tested, what is built but unwatched, what is not built. If anything else disagrees with it, this page is right |
+| [threat-model.md](docs/threat-model.md) | One page: what is at risk, what stands in the way, what is left, and how sure each answer is |
 | [encryption.md](docs/encryption.md) | Design note: locking the record with a key that changes when somebody is removed |
 | [migration-batch.md](docs/migration-batch.md) | Every change waiting for the frozen rules, in one list to decide item by item |
 | [multimedia.md](docs/multimedia.md) | Photos, sound and video in the record: what the standards ask, what was decided, and how it would be built |

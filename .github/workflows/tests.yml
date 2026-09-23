@@ -32,6 +32,25 @@ jobs:
   #
   # Separate, and first, means a compile error comes back in minutes and never
   # hides behind something else.
+  # Everything Hearth is built on, checked against the public list of known
+  # security problems in Rust packages (RustSec). Asked for by an outside
+  # review, 23 September 2026. It reports and does not block: most of what it
+  # finds will be deep in Holochain, where the fix is Holochain's to make, and
+  # a check that stops every release for somebody else's problem gets switched
+  # off. Read its output; do not ignore a red one.
+  dependencies:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: The zomes — what ships in every circle
+        run: cargo audit --file Cargo.lock
+      - name: The test harness
+        if: always()
+        run: cargo audit --file tests/Cargo.lock
+
   it-compiles:
     runs-on: ubuntu-latest
     steps:

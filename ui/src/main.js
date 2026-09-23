@@ -3631,6 +3631,52 @@ $("add-circle").addEventListener("click", () => {
   show("choose");
 });
 
+/*
+ * A new door, for a flooded or leaked one.
+ *
+ * The limit on knocks is per key, and keys cost nothing to make, so somebody
+ * determined can knock from many (docs/hard-questions.md, question 8). The
+ * answer is not a cleverer limit but a door that can be left behind: a new
+ * seed is a new room, and nobody who had the old address can find it. The
+ * same thing a move does to a door, without moving the circle.
+ */
+$("new-door-address").addEventListener("click", () =>
+  whileWorking($("new-door-address"), "Opening a new door…", async () => {
+    const oldRoom = roomFor(circle?.cellId);
+    const room = {
+      holder: asText(me),
+      seed: crypto.randomUUID(),
+      about: oldRoom?.about ?? "",
+    };
+    const label = labelFor(circle.cellId, "Circle");
+    await call("enter_waiting_room", {
+      holder: room.holder,
+      network_seed: room.seed,
+      name: `${label} — door`,
+    });
+    rememberRoom(circle.cellId, room);
+
+    // The old one, closed on this device. Nobody is there to answer it now.
+    if (oldRoom) {
+      const oldCell = (await waitingRoomCells()).find(
+        (r) => r.holder === oldRoom.holder && r.seed === oldRoom.seed,
+      );
+      if (oldCell) {
+        await call("leave_circle", oldCell.cellId[0]).catch((error) =>
+          console.error("Could not close the old door.", error),
+        );
+      }
+    }
+
+    $("new-door").open = false;
+    await loadTheDoor();
+    announce(
+      "The door has a new address. Send it to anybody you still want to ask to " +
+        "join, and make new passes for anybody who needs one.",
+    );
+  }).catch(problem),
+);
+
 wireCopyButton(
   "copy-door-address",
   () => $("door-address-output").textContent,
