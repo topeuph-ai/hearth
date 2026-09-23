@@ -154,6 +154,58 @@
               join, and they will let you in.
             </span>
           </button>
+          <button type="button" id="choose-pass">
+            <span class="choice-title">Read with a pass</span>
+            <span class="choice-detail">
+              Somebody has given you a pass to read part of their record —
+              on a ward, say, or for one visit.
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!--
+        The other side of a pass. Nothing is joined and nothing is kept: the
+        words are asked for, shown, and gone when this screen is left.
+      -->
+      <section id="pass-reader" hidden>
+        <div class="actions">
+          <button type="button" class="secondary back-to-choose">Back</button>
+        </div>
+        <h2>Read with a pass</h2>
+        <form id="pass-reader-form">
+          <label for="pass-in">The pass</label>
+          <p class="hint">
+            Scan the code on their screen, or paste the letters you were sent.
+            Capitals and spaces do not matter.
+          </p>
+          <div class="actions">
+            <button type="button" id="scan-pass" class="secondary">
+              Scan a code with the camera
+            </button>
+          </div>
+          <div id="scan-pass-area" hidden>
+            <video id="scan-pass-video" muted playsinline
+              aria-label="What the camera can see"></video>
+          </div>
+          <textarea id="pass-in" rows="6" spellcheck="false"
+            autocomplete="off"></textarea>
+          <p id="pass-trouble" class="notice" role="alert" hidden></p>
+          <button type="submit" id="read-pass">Read it</button>
+        </form>
+
+        <div id="pass-words" hidden>
+          <h3 id="pass-words-name"></h3>
+          <p class="notice">
+            Read just now from their own device. Nothing has been kept on this
+            one, and what you can read is only what they chose to show.
+          </p>
+          <dl id="pass-words-list"></dl>
+          <div class="actions">
+            <button type="button" id="read-pass-again" class="secondary">
+              Read it again
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1779,6 +1831,96 @@
           its own once you have been let in.
           </li>
           </ol>
+          </section>
+
+          <!--
+            The outer ring. See docs/outer-ring.md.
+
+            A nurse on a ward at two in the morning is not family and should
+            not have to join anything. A pass lets her read the parts chosen
+            here, and nothing else, for as long as chosen here.
+          -->
+          <section id="passes" hidden>
+          <h3>A pass, for somebody passing through</h3>
+          <p>
+          A nurse on a ward, a paramedic, a carer covering one shift. They do
+          not need to join. A pass lets them read the parts of the record you
+          choose, for as long as you choose, and then it stops.
+          </p>
+          <p class="notice">
+          <strong>It only works while this computer is on and Hearth is
+          open.</strong> Nothing is copied to their device — they read it from
+          here, each time. Anybody who must be able to read it when this
+          computer is off belongs in the circle.
+          </p>
+
+          <form id="pass-form">
+          <label for="pass-for">Who is it for?</label>
+          <p class="hint">
+          For you, so you know which pass is which. For example: Ward 7, or
+          the out-of-hours doctor.
+          </p>
+          <input id="pass-for" type="text" maxlength="80" required
+            autocomplete="off" />
+
+          <fieldset id="pass-sections">
+          <legend>What can they read?</legend>
+          <p class="hint">
+          The three already ticked are the ones most often needed by
+          somebody meeting <span class="about-whom">them</span> for the first
+          time.
+          </p>
+          </fieldset>
+
+          <fieldset>
+          <legend>For how long?</legend>
+          <label class="choice-row">
+          <input type="radio" name="pass-lasts" value="today" />
+          Just today
+          </label>
+          <label class="choice-row">
+          <input type="radio" name="pass-lasts" value="week" checked />
+          A week
+          </label>
+          <label class="choice-row">
+          <input type="radio" name="pass-lasts" value="stopped" />
+          Until I stop it
+          </label>
+          </fieldset>
+
+          <button type="submit" id="make-pass">Make a pass</button>
+          </form>
+
+          <div id="pass-made" hidden>
+          <h4>The pass for <span id="pass-made-for"></span></h4>
+          <p class="notice">
+          <strong>Anybody holding this can read what you chose until it
+          stops.</strong> Give it only to the person it is for. It is shown
+          once: if it is lost, stop it and make another.
+          </p>
+          <p class="hint">
+          They can scan the code with their own Hearth, or you can send them
+          the letters.
+          </p>
+          <canvas id="pass-qr" class="address-code" role="img"
+            aria-label="The pass, as a code to scan"></canvas>
+          <output id="pass-output"></output>
+          <div class="actions">
+          <button type="button" id="copy-pass" class="secondary">
+          Copy the pass
+          </button>
+          </div>
+          </div>
+
+          <h4>Passes you have given</h4>
+          <p id="no-passes" class="hint">None yet.</p>
+          <ul id="pass-list"></ul>
+
+          <h4>When they were used</h4>
+          <p id="no-pass-reads" class="hint">
+          Nobody has read anything with a pass on this computer yet.
+          </p>
+          <ul id="pass-reads"></ul>
           </section>
         </div>
 

@@ -249,6 +249,7 @@ function show(...ids) {
     // Asking to be let in is part of joining now, not a screen of its own:
     // one box takes the address, and what it produces is a place in the queue.
     "join",
+    "pass-reader",
     "circles",
     "circle",
     "problem",
@@ -264,6 +265,15 @@ function show(...ids) {
       stopScanning();
     } catch {
       // Nothing was scanning.
+    }
+  }
+  // Words read with a pass go when the screen does: nothing is kept.
+  if (!ids.includes("pass-reader")) {
+    try {
+      stopScanningPass();
+      aFreshPassReading();
+    } catch {
+      // Shown before the pass code further down has run.
     }
   }
 }
@@ -715,6 +725,8 @@ function showCircleMode(mode = circleMode) {
   $("people").hidden = !somethingToShowPeople;
   $("at-the-door").hidden = !somethingToShowPeople || !theDoorIsHere;
   $("door-address").hidden = !somethingToShowPeople || !theDoorIsHere;
+  // A pass reads through the same door, so it is offered wherever that is.
+  $("passes").hidden = !somethingToShowPeople || !theDoorIsHere;
 
   /*
    * The way on from the record, for the holder who has just written it.
@@ -2022,6 +2034,17 @@ async function start() {
           : `${who} is asking to join.`,
       );
       if (circle) await loadCircle();
+      return;
+    }
+    // A pass was used at one of this device's doors. Only ever raised by this
+    // device itself — the zome drops one arriving from anywhere else.
+    if (payload?.kind === "PassUsed") {
+      rememberPassRead(asText(signal?.value?.cell_id?.[0]), payload);
+      announce(
+        `${payload.for_whom} read ${payload.sections.map(sectionName).join(", ")} ` +
+          `with a pass.`,
+      );
+      if (currentRoomCell) await loadPasses().catch(() => {});
       return;
     }
     if (payload?.kind === "Admitted") {
@@ -4422,6 +4445,399 @@ async function cellForRoom(room, name) {
 }
 
 // ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A pass is a Holochain capability grant made in the circle's door, for one
+// function that reads chosen sections. The reader enters the same door and
+// presents it; the holder's device answers. See docs/outer-ring.md.
+//
+// What travels is everything the reader's app needs to find that door and
+// knock on the right function: the holder's key, the door's seed, and the
+// secret. Written the same way as an address — short rows that check
+// themselves — so a typing mistake is pointed at rather than just refused.
+// It starts "PASS" rather than "HEARTH", so neither screen mistakes one for
+// the other.
+
+const PASS_VERSION = 1;
+const PASS_BYTES = 1 + 39 + 16 + 64;
+
+/** The three sections somebody meeting her for the first time needs most. */
+const PASS_SECTIONS_TICKED = [
+  "HowToCommunicateWithMe",
+  "PleaseDoAndPleaseDoNot",
+  "HowToSupportMe",
+];
+
+function passToText(room, secret) {
+  const key = decodeHashFromBase64(room.holder);
+  const packed = new Uint8Array(PASS_BYTES);
+  packed[0] = PASS_VERSION;
+  packed.set(key, 1);
+  packed.set(uuidToBytes(room.seed), 40);
+  packed.set(secret, 56);
+
+  const code = bytesToCode(packed);
+  const rows = [];
+  for (let i = 0; i < code.length; i += ADDRESS_ROW) {
+    const row = code.slice(i, i + ADDRESS_ROW);
+    rows.push(row + rowCheck(row, rows.length));
+  }
+  return ["PASS", ...rows.map((row) => row.match(/.{1,4}/g).join(" "))].join("\n");
+}
+
+const looksLikeAPass = (text) => /^\s*pass/i.test(text);
+
+function textToPass(text) {
+  if (!looksLikeAPass(text)) {
+    throw new Error(
+      "That does not look like a pass. A pass starts with the word PASS. " +
+        "If it starts with HEARTH, it is the address of a circle — use Join a circle instead.",
+    );
+  }
+  const code = text
+    .toUpperCase()
+    .replace(/^\s*PASS/, "")
+    .replace(/[\s-]/g, "")
+    .replace(/O/g, "0")
+    .replace(/[IL]/g, "1");
+
+  const dataLength = Math.ceil((PASS_BYTES * 8) / 5);
+  const rowCount = Math.ceil(dataLength / ADDRESS_ROW);
+  let data = "";
+  for (let r = 0; r < rowCount; r++) {
+    const start = r * (ADDRESS_ROW + 2);
+    const width = Math.min(ADDRESS_ROW, dataLength - r * ADDRESS_ROW);
+    const row = code.slice(start, start + width);
+    const check = code.slice(start + width, start + width + 2);
+    const unreadable = [...row + check].some((c) => !ADDRESS_ALPHABET.includes(c));
+    if (unreadable || row.length !== width || check !== rowCheck(row, r)) {
+      throw new Error(
+        `Row ${r + 1} of the pass has a mistake in it. Check that row letter by ` +
+          `letter — the rows before it are fine.`,
+      );
+    }
+    data += row;
+  }
+  if (code.length !== dataLength + rowCount * 2) {
+    throw new Error("The pass is the wrong length. Check the last row.");
+  }
+
+  const packed = codeToBytes(data, PASS_BYTES);
+  if (packed[0] !== PASS_VERSION) {
+    throw new Error("This pass was made by a newer Hearth. Update Hearth and try again.");
+  }
+  return {
+    holder: encodeHashToBase64(packed.slice(1, 40)),
+    seed: bytesToUuid(packed.slice(40, 56)),
+    secret: packed.slice(56),
+  };
+}
+
+/** When a pass should stop, in Holochain's microseconds, or null for never. */
+function passRunsOutAt(choice) {
+  if (choice === "stopped") return null;
+  const end = new Date();
+  if (choice === "today") {
+    end.setHours(23, 59, 59, 0);
+  } else {
+    end.setDate(end.getDate() + 7);
+  }
+  return end.getTime() * 1000;
+}
+
+const sectionName = (section) => FIELD_LABELS[section]?.[1] ?? section;
+
+const whenText = (micros) =>
+  new Date(micros / 1000).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/*
+ * When a pass was used, remembered on this device only.
+ *
+ * The holder's device is the only one that knows: the answer is sent from it,
+ * and nothing is written to the circle. Letting the whole circle see "Ward 7
+ * read this" would need a new kind of entry in the rules, which is a change to
+ * the frozen file and is written down in docs/outer-ring.md as the next step.
+ */
+const PASS_READS_KEY = "hearth:pass-reads";
+
+function passReads() {
+  try {
+    return JSON.parse(localStorage.getItem(PASS_READS_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function rememberPassRead(door, payload) {
+  const reads = passReads();
+  reads.unshift({
+    door,
+    for_whom: payload.for_whom,
+    sections: payload.sections,
+    at: payload.at,
+  });
+  try {
+    localStorage.setItem(PASS_READS_KEY, JSON.stringify(reads.slice(0, 200)));
+  } catch {
+    // The read still happened; only the note of it is lost.
+  }
+}
+
+function buildPassSectionChoices() {
+  const box = $("pass-sections");
+  if (box.querySelector("input")) return;
+  for (const [section, [, label]] of Object.entries(FIELD_LABELS)) {
+    const row = document.createElement("label");
+    row.className = "choice-row";
+    const tick = document.createElement("input");
+    tick.type = "checkbox";
+    tick.value = section;
+    tick.checked = PASS_SECTIONS_TICKED.includes(section);
+    row.append(tick, ` ${label}`);
+    box.append(row);
+  }
+}
+
+async function loadPasses() {
+  buildPassSectionChoices();
+  const door = currentRoomCell;
+  if (!door) {
+    $("pass-list").replaceChildren();
+    return;
+  }
+
+  const passes = await orNothingYet(call("passes_here", null, door), []);
+  $("no-passes").hidden = passes.length > 0;
+  $("pass-list").replaceChildren(
+    ...passes.map((pass) => {
+      const item = document.createElement("li");
+      const what = pass.terms.sections.map(sectionName).join(", ");
+      const lasts = pass.terms.until
+        ? pass.run_out
+          ? `ran out ${whenText(pass.terms.until)}`
+          : `until ${whenText(pass.terms.until)}`
+        : "until you stop it";
+      const words = document.createElement("span");
+      words.textContent = `${pass.terms.for_whom} — ${what}, ${lasts}. `;
+      if (pass.run_out) item.classList.add("run-out");
+
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "secondary";
+      stop.textContent = pass.run_out ? "Take it off the list" : "Stop it";
+      stop.addEventListener("click", () =>
+        whileWorking(stop, "Stopping…", async () => {
+          await call("stop_a_pass", pass.grant, door);
+          announce(`The pass for ${pass.terms.for_whom} has stopped working.`);
+          await loadPasses();
+        }).catch(problem),
+      );
+      item.append(words, stop);
+      return item;
+    }),
+  );
+
+  const doorText = asText(door[0]);
+  const reads = passReads().filter((r) => r.door === doorText);
+  $("no-pass-reads").hidden = reads.length > 0;
+  $("pass-reads").replaceChildren(
+    ...reads.map((read) => {
+      const item = document.createElement("li");
+      item.textContent =
+        `${whenText(read.at)}: ${read.for_whom} read ` +
+        `${read.sections.map(sectionName).join(", ")}.`;
+      return item;
+    }),
+  );
+}
+
+$("pass-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const door = currentRoomCell;
+  const room = roomFor(circle?.cellId);
+  if (!door || !room) return;
+
+  const forWhom = $("pass-for").value.trim();
+  const sections = [...$("pass-sections").querySelectorAll("input:checked")].map(
+    (tick) => tick.value,
+  );
+  if (!sections.length) {
+    announce("Tick at least one part of the record for them to read.");
+    return;
+  }
+  const lasts = document.querySelector('input[name="pass-lasts"]:checked')?.value;
+
+  await whileWorking($("make-pass"), "Making the pass…", async () => {
+    const made = await call(
+      "make_a_pass",
+      {
+        circle: asText(circle.cellId[0]),
+        sections,
+        for_whom: forWhom,
+        until: passRunsOutAt(lasts),
+      },
+      door,
+    );
+    const text = passToText(room, made.secret);
+    $("pass-made-for").textContent = forWhom;
+    $("pass-output").textContent = text;
+    drawAddressCode($("pass-qr"), text);
+    $("pass-made").hidden = false;
+    $("pass-for").value = "";
+    announce(`Pass made for ${forWhom}.`);
+    await loadPasses();
+  }).catch(problem);
+});
+
+wireCopyButton("copy-pass", () => $("pass-output").textContent, "Pass copied");
+
+// The reader's side.
+
+let passInHand = null;
+
+async function readWithThePass() {
+  $("pass-trouble").hidden = true;
+  const pass = textToPass($("pass-in").value);
+  passInHand = pass;
+  const door = await cellForRoom(pass, "A pass");
+  const words = await call(
+    "ask_with_a_pass",
+    { holder: pass.holder, secret: pass.secret },
+    door,
+  );
+
+  $("pass-words-name").textContent = words.name
+    ? `About ${words.name}`
+    : "What they chose to show you";
+  $("pass-words-list").replaceChildren(
+    ...words.sections.flatMap(({ section, words: text }) => {
+      const title = document.createElement("dt");
+      title.textContent = sectionName(section);
+      const body = document.createElement("dd");
+      body.textContent = text.trim() || "Nothing written here yet.";
+      return [title, body];
+    }),
+  );
+  $("pass-reader-form").hidden = true;
+  $("pass-words").hidden = false;
+  $("pass-words-name").focus?.();
+}
+
+/*
+ * What went wrong, in the zome's own words. Those arrive wrapped in the
+ * runtime's: WasmError { ..., error: Guest("the words") }. Kept on screen
+ * rather than announced, because an announcement fades and this is the thing
+ * they need to act on.
+ */
+function passTrouble(error) {
+  console.error(error);
+  const said = String(error?.message ?? error);
+  const guest = said.match(/Guest\("(.*?)"\)/s);
+  $("pass-trouble").textContent = guest ? guest[1] : said;
+  $("pass-trouble").hidden = false;
+}
+
+function aFreshPassReading() {
+  $("pass-trouble").hidden = true;
+  passInHand = null;
+  $("pass-in").value = "";
+  $("pass-reader-form").hidden = false;
+  $("pass-words").hidden = true;
+  $("pass-words-list").replaceChildren();
+}
+
+$("choose-pass").addEventListener("click", () => {
+  aFreshPassReading();
+  show("pass-reader");
+  $("pass-in").focus();
+});
+
+$("pass-reader-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await whileWorking($("read-pass"), "Asking their device…", readWithThePass);
+  } catch (error) {
+    // A pass that has stopped, or a device that is off, is not a crash: say
+    // so on this screen, where they can try again.
+    passTrouble(error);
+  }
+});
+
+$("read-pass-again").addEventListener("click", async () => {
+  if (!passInHand) return;
+  try {
+    await whileWorking($("read-pass-again"), "Asking again…", readWithThePass);
+  } catch (error) {
+    passTrouble(error);
+  }
+});
+
+/*
+ * The camera, for a pass on somebody else's screen. The same rules as the
+ * address scanner: on only when asked, off the moment a pass is read.
+ */
+let scanningPass = null;
+
+function stopScanningPass() {
+  if (!scanningPass) return;
+  cancelAnimationFrame(scanningPass.frame);
+  for (const track of scanningPass.stream.getTracks()) track.stop();
+  scanningPass = null;
+  $("scan-pass-video").srcObject = null;
+  $("scan-pass-area").hidden = true;
+  $("scan-pass").textContent = "Scan a code with the camera";
+}
+
+$("scan-pass").addEventListener("click", async () => {
+  if (scanningPass) return stopScanningPass();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+  } catch (error) {
+    console.error(error);
+    announce("The camera could not be opened. Paste the letters of the pass instead.");
+    return;
+  }
+  const video = $("scan-pass-video");
+  video.srcObject = stream;
+  await video.play();
+  $("scan-pass-area").hidden = false;
+  $("scan-pass").textContent = "Stop the camera";
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  scanningPass = { stream, frame: 0 };
+  const look = () => {
+    if (!scanningPass) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const found = jsQR(image.data, image.width, image.height);
+      if (found?.data && looksLikeAPass(found.data)) {
+        stopScanningPass();
+        $("pass-in").value = found.data;
+        $("pass-reader-form").requestSubmit();
+        return;
+      }
+    }
+    scanningPass.frame = requestAnimationFrame(look);
+  };
+  scanningPass.frame = requestAnimationFrame(look);
+});
+
+// ---------------------------------------------------------------------------
 // The holder's side: who is at the door
 // ---------------------------------------------------------------------------
 
@@ -4474,8 +4890,9 @@ async function loadTheDoor() {
    * survives a reload instead of depending on a button pressed earlier.
    */
   currentRoomCell = roomCell;
+  loadPasses().catch((error) => console.error("Could not list the passes.", error));
 
-  knocking = await orNothingYet(call("get_knocks", null, roomCell), []);
+  knocking =await orNothingYet(call("get_knocks", null, roomCell), []);
 
   // Somebody who has already been answered is not still at the door.
   const waiting = knocking.filter((k) => !k.answered);

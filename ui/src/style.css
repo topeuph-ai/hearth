@@ -882,7 +882,8 @@ legend {
   cursor: pointer;
 }
 
-.choice-row input[type="radio"] {
+.choice-row input[type="radio"],
+.choice-row input[type="checkbox"] {
   width: 1.4rem;
   height: 1.4rem;
   accent-color: var(--accent);
@@ -913,4 +914,50 @@ legend {
   background: var(--notice);
   color: var(--ink);
   border-bottom: 1px solid var(--line);
+}
+
+/* Passes: the outer ring. The pass itself looks like the address, on purpose. */
+#passes fieldset {
+  margin: 1rem 0;
+}
+
+#pass-output {
+  display: block;
+  white-space: pre;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+}
+
+#pass-list li,
+#pass-reads li {
+  margin: 0.5rem 0;
+}
+
+#pass-list .run-out {
+  color: var(--muted);
+}
+
+#scan-pass-video {
+  display: block;
+  width: 100%;
+  max-width: 28rem;
+  border-radius: 6px;
+}
+
+#pass-in {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+
+#pass-words-list dt {
+  font-weight: 600;
+  margin-top: 1.2rem;
+}
+
+#pass-words-list dd {
+  margin: 0.3rem 0 0;
+  white-space: pre-wrap;
 }

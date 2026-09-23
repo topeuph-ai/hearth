@@ -1177,6 +1177,17 @@ pub enum Signal {
         #[serde(default)]
         removed: String,
     },
+    /// Somebody used a pass to read part of the record.
+    ///
+    /// Emitted by the holder's own device to the holder's own screen, never
+    /// sent between devices: it is the holder's device that answered, so it is
+    /// the only one that knows. See `read_with_a_pass`.
+    PassUsed {
+        /// Who the pass was made for, in the holder's words.
+        for_whom: String,
+        sections: Vec<AboutMeField>,
+        at: Timestamp,
+    },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -1234,6 +1245,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Appointed { by, .. }
         | Signal::Answered { by, .. }
         | Signal::Moved { by, .. } => by,
+        // Only ever raised by this device to its own screen. Arriving from
+        // another machine it can only be a forgery, and is dropped.
+        Signal::PassUsed { .. } => return Ok(()),
     };
 
     if claimed != &caller {
@@ -2559,6 +2573,317 @@ pub fn remove_media(item: ActionHash) -> ExternResult<()> {
     }
     delete_entry(item)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A professional passing through — a ward nurse at 2am, a locum, a paramedic —
+// is not a member of anybody's family and should not have to become one. A
+// pass lets them read chosen parts of the record without joining, and without
+// being given a copy of anything. See docs/outer-ring.md.
+//
+// How it works, with nothing added to the rules:
+//
+// - The holder makes a pass in her circle's **door** — the one place anybody
+//   with the address can already reach. It is a Holochain capability grant for
+//   one function, `read_with_a_pass`, and what it allows is written in the
+//   grant's tag.
+// - The reader enters the same door and asks the holder's device, presenting
+//   the pass. Holochain checks it before the function runs at all.
+// - The holder's device reads those sections from the circle, sends back the
+//   words and nothing else, and tells its own screen that the pass was used.
+// - Stopping a pass deletes the grant; the next request is refused by
+//   Holochain itself.
+//
+// The honest cost, not to be buried: **it only works while the holder's device
+// is on and reachable.** A pass has no copy behind it, by design. Anybody who
+// must be able to read this when nobody can answer belongs in the circle.
+
+/// What a pass allows, written into the grant so the holder's device can read
+/// it back when the pass is presented. Nothing here is trusted from the reader.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PassTerms {
+    /// The circle the words come from, as text.
+    pub circle: String,
+    pub sections: Vec<AboutMeField>,
+    /// Who the holder made it for, in her words. Shown back to her; never
+    /// checked, since the pass works for whoever holds it.
+    pub for_whom: String,
+    /// When it stops working, in microseconds, or none for "until I stop it".
+    pub until: Option<i64>,
+    pub made: i64,
+}
+
+/// The name of the function a pass unlocks, and nothing else.
+const PASS_FUNCTION: &str = "read_with_a_pass";
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MakePassInput {
+    /// The circle to read from, as text. Must be one this device holds.
+    pub circle: String,
+    pub sections: Vec<AboutMeField>,
+    pub for_whom: String,
+    /// Microseconds, or none for "until I stop it".
+    pub until: Option<i64>,
+}
+
+/// A pass, as the holder hands it over. The secret is the pass: whoever holds
+/// it can ask, until it runs out or is stopped.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassMade {
+    pub grant: ActionHash,
+    pub secret: CapSecret,
+    pub holder: AgentPubKey,
+}
+
+/// Make a pass. Called in the circle's door, by the person who holds it.
+#[hdk_extern]
+pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
+    let me = agent_info()?.agent_initial_pubkey;
+    match membrane()? {
+        Membrane::WaitingRoom(holder) if holder == me => {}
+        _ => {
+            return Err(wasm_error!(
+                "A pass can only be made at the door of a circle you hold"
+            ))
+        }
+    }
+    if input.sections.is_empty() {
+        return Err(wasm_error!(
+            "Choose at least one part of the record to show"
+        ));
+    }
+    if input.for_whom.trim().is_empty() {
+        return Err(wasm_error!("Say who the pass is for, so you know later"));
+    }
+    DnaHash::try_from(input.circle.trim())
+        .map_err(|_| wasm_error!("That is not a circle this app can read"))?;
+
+    let terms = PassTerms {
+        circle: input.circle.trim().to_string(),
+        sections: input.sections,
+        for_whom: input.for_whom.trim().to_string(),
+        until: input.until,
+        made: sys_time()?.as_micros(),
+    };
+    let tag = yaml_serde::to_string(&terms)
+        .map_err(|e| wasm_error!(format!("Could not write the pass: {e:?}")))?;
+
+    let secret = generate_cap_secret()?;
+    let mut functions = HashSet::new();
+    functions.insert((zome_info()?.name, PASS_FUNCTION.into()));
+
+    let grant = create_cap_grant(CapGrantEntry {
+        tag,
+        // Transferable: it works for whoever holds the secret. The holder does
+        // not know the nurse's key in advance, and cannot be asked to.
+        access: CapAccess::Transferable { secret },
+        functions: GrantedFunctions::Listed(functions),
+    })?;
+
+    Ok(PassMade {
+        grant,
+        secret,
+        holder: me,
+    })
+}
+
+/// One pass this device has made, as the holder's screen shows it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassHere {
+    pub grant: ActionHash,
+    pub terms: PassTerms,
+    pub run_out: bool,
+}
+
+/// Every pass made at this door and not stopped, newest first.
+#[hdk_extern]
+pub fn passes_here(_: ()) -> ExternResult<Vec<PassHere>> {
+    let stopped: BTreeSet<ActionHash> =
+        query(ChainQueryFilter::new().action_type(ActionType::Delete))?
+            .into_iter()
+            .filter_map(|r| match &r.action().data {
+                ActionData::Delete(d) => Some(d.deletes_address.clone()),
+                _ => None,
+            })
+            .collect();
+
+    let now = sys_time()?.as_micros();
+    let mut out: Vec<PassHere> = query(
+        ChainQueryFilter::new()
+            .entry_type(EntryType::CapGrant)
+            .include_entries(true),
+    )?
+    .into_iter()
+    .filter(|r| !stopped.contains(r.action_address()))
+    .filter_map(|r| {
+        let Some(Entry::CapGrant(grant)) = r.entry().as_option() else {
+            return None;
+        };
+        // Only passes: the grant that lets members send signals is not one.
+        let is_pass = matches!(&grant.functions, GrantedFunctions::Listed(f)
+            if f.iter().any(|(_, name)| name.0 == PASS_FUNCTION));
+        if !is_pass {
+            return None;
+        }
+        let terms: PassTerms = yaml_serde::from_str(&grant.tag).ok()?;
+        Some(PassHere {
+            grant: r.action_address().clone(),
+            run_out: terms.until.is_some_and(|until| now > until),
+            terms,
+        })
+    })
+    .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(p.terms.made));
+    Ok(out)
+}
+
+/// "Stop showing it." The next time the pass is presented, Holochain refuses it.
+#[hdk_extern]
+pub fn stop_a_pass(grant: ActionHash) -> ExternResult<ActionHash> {
+    delete_cap_grant(grant)
+}
+
+/// What a pass lets somebody read.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassedWords {
+    /// Whose record this is.
+    pub name: String,
+    pub sections: Vec<PassedSection>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassedSection {
+    pub section: AboutMeField,
+    pub words: String,
+}
+
+/// Answer a pass. Runs on the holder's device, in the door, and only when
+/// Holochain has already checked the pass presented against a live grant.
+#[hdk_extern]
+pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
+    // The grant that let this call through. Its terms are the holder's, written
+    // when she made it, and nothing the reader sends can change them.
+    let terms: PassTerms = match call_info()?.cap_grant {
+        CapGrant::RemoteAgent(grant) => {
+            yaml_serde::from_str(&grant.tag).map_err(|_| wasm_error!("That pass cannot be read"))?
+        }
+        CapGrant::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
+    };
+
+    let now = sys_time()?;
+    if terms.until.is_some_and(|until| now.as_micros() > until) {
+        return Err(wasm_error!("This pass has run out"));
+    }
+
+    let circle = DnaHash::try_from(terms.circle.as_str())
+        .map_err(|_| wasm_error!("That pass names a circle this app cannot read"))?;
+    let me = agent_info()?.agent_initial_pubkey;
+
+    let words: PassedWords = match call(
+        CallTargetCell::OtherCell(CellId::new(circle, me)),
+        zome_info()?.name,
+        "words_for_a_pass".into(),
+        None,
+        terms.sections.clone(),
+    )? {
+        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}")))?,
+        _ => return Err(wasm_error!("The record could not be read just now")),
+    };
+
+    // Tell the holder's own screen. The circle's wider knowledge of who read
+    // what would need a new kind of entry in the rules, and is left for then.
+    let _ = emit_signal(Signal::PassUsed {
+        for_whom: terms.for_whom,
+        sections: terms.sections,
+        at: now,
+    });
+
+    Ok(words)
+}
+
+/// The words of chosen sections, from this circle.
+///
+/// Called only by the same person's own door, through `read_with_a_pass`, which
+/// is the one place a pass is checked. Refused from anybody else, so it can
+/// never be used to read around a pass.
+#[hdk_extern]
+pub fn words_for_a_pass(sections: Vec<AboutMeField>) -> ExternResult<PassedWords> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if call_info()?.provenance != me {
+        return Err(wasm_error!("Only this device's own door may ask this"));
+    }
+    // Only a circle this person holds. Being a member of somebody else's
+    // circle gives nobody the right to hand its words to a stranger.
+    match membrane()? {
+        Membrane::Founder(holder, _) if holder == me => {}
+        _ => return Err(wasm_error!("A pass can only show a record you hold")),
+    }
+
+    let Some(original) = get_circle_about_me(())?.first().cloned() else {
+        return Err(wasm_error!("Nothing has been written yet"));
+    };
+    let about_me = get_current_about_me(original)?
+        .about_me
+        .ok_or_else(|| wasm_error!("The record could not be opened on this device"))?;
+
+    Ok(PassedWords {
+        name: about_me.display_name.clone(),
+        sections: sections
+            .into_iter()
+            .map(|section| PassedSection {
+                words: words_in(&about_me, &section),
+                section,
+            })
+            .collect(),
+    })
+}
+
+fn words_in(about_me: &AboutMe, section: &AboutMeField) -> String {
+    match section {
+        AboutMeField::WhatMattersToMe => &about_me.what_matters_to_me,
+        AboutMeField::PeopleWhoMatter => &about_me.people_who_matter,
+        AboutMeField::HowToCommunicateWithMe => &about_me.how_to_communicate_with_me,
+        AboutMeField::MyWellness => &about_me.my_wellness,
+        AboutMeField::PleaseDoAndPleaseDoNot => &about_me.please_do_and_please_do_not,
+        AboutMeField::HowToSupportMe => &about_me.how_to_support_me,
+        AboutMeField::AlsoWorthKnowing => &about_me.also_worth_knowing,
+    }
+    .clone()
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AskWithPassInput {
+    /// Whose device to ask, as text.
+    pub holder: String,
+    pub secret: CapSecret,
+}
+
+/// Present a pass. Called by the reader, in the door they have entered.
+#[hdk_extern]
+pub fn ask_with_a_pass(input: AskWithPassInput) -> ExternResult<PassedWords> {
+    let holder = AgentPubKey::try_from(input.holder.trim())
+        .map_err(|_| wasm_error!("That pass names nobody this app can read"))?;
+
+    match call_remote(
+        holder,
+        zome_info()?.name,
+        PASS_FUNCTION.into(),
+        Some(input.secret),
+        (),
+    )? {
+        ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}"))),
+        ZomeCallResponse::Unauthorized(..) => Err(wasm_error!(
+            "This pass does not work any more. It may have been stopped, or it may have run out."
+        )),
+        ZomeCallResponse::NetworkError(_) => Err(wasm_error!(
+            "The device that holds this record could not be reached. It may be switched off. \
+             Try again in a little while."
+        )),
+        _ => Err(wasm_error!("The record could not be read just now")),
+    }
 }
 
 // ---------------------------------------------------------------------------

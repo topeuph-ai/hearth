@@ -85,3 +85,30 @@ circle) is built and tested; what is missing is founding the new circle in the
 passes its own checks, but no build has been made and no machine has been
 through an actual upgrade. Nothing here should be trusted until a circle made
 on 0.2.4 has been opened by a later version on two machines.
+
+*Since overtaken: the upgrade was proven on two machines on 22 September, and
+the move across versions was built on 23 September. See docs/upgrades.md.*
+
+### 03 — new code under the same rules
+
+**Without this, a release that changes only the code is ignored** on every
+machine that already has the current rules installed.
+
+Patch 02 makes the app id change only when the rules change. That is right for
+the rules, and it leaves a gap: Kangaroo installs an id once and never again, so
+0.3.0 — new code (passes), same rules — would show the new screens on top of the
+old functions. Pressing *Make a pass* would fail with a function not found.
+
+Holochain can swap a cell's code (its coordinator zome) in place, keeping all
+its data: `update_coordinators`. On every launch, if the current app id is
+already installed, this patch reads the coordinator out of the bundled hApp and
+swaps it into every cell of that app — the lobby, every circle and every door,
+since each clone has a DNA of its own. Once per launch rather than once ever, so
+there is nothing to record and nothing to fall out of step.
+
+**The rules are never swapped this way.** A change to the integrity zome is a
+new app id and a circle carried across, as in 02.
+
+**Written 23 September 2026, built into 0.3.0, not yet run on a machine that
+had 0.2.7.** The first launch of 0.3.0 over 0.2.7 is the test: the log should
+say *Brought the code up to date in N cell(s)*, and *Make a pass* should work.

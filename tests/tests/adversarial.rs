@@ -4241,3 +4241,241 @@ async fn a_removed_member_cannot_open_what_is_written_next() {
         "and his app should say so, rather than showing an empty record"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Passes: the outer ring
+// ---------------------------------------------------------------------------
+//
+// A pass lets somebody passing through — a ward nurse, a paramedic — read
+// chosen sections without joining. It is a capability grant in the circle's
+// door, so nearly every one of these is a test that something is *refused*:
+// the sections not chosen, a pass that was stopped or has run out, a guessed
+// secret, anybody but the holder making one. See docs/outer-ring.md.
+
+/// Alice's circle, with her record written, and her door open on this device.
+/// Nia, a nurse who is in nothing, has entered the same door.
+async fn a_record_and_a_door() -> (SweetConductor, CellId, CellId, CellId, CellId) {
+    let (conductor, alice_cell, bob_cell) = a_circle_with_a_member().await;
+    let _: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+
+    let alice = alice_cell.agent_pubkey().clone();
+    let nia = SweetAgents::one(conductor.keystore()).await;
+    let door = a_waiting_room(&alice).await;
+    let alice_door = join(&conductor, "alice-door", &alice, &door, None)
+        .await
+        .expect("the holder may open her own door");
+    let nia_door = join(&conductor, "nia-door", &nia, &door, None)
+        .await
+        .expect("anybody may stand at a door");
+
+    (conductor, alice_cell, bob_cell, alice_door, nia_door)
+}
+
+fn a_pass_for(circle: &CellId, until: Option<Timestamp>) -> aboutme::MakePassInput {
+    aboutme::MakePassInput {
+        circle: circle.dna_hash().to_string(),
+        sections: vec![
+            aboutme_integrity::AboutMeField::HowToCommunicateWithMe,
+            aboutme_integrity::AboutMeField::PleaseDoAndPleaseDoNot,
+        ],
+        for_whom: "Ward 7".to_string(),
+        until: until.map(|t| t.as_micros()),
+    }
+}
+
+fn seconds_from_now(seconds: u64) -> Timestamp {
+    (Timestamp::now() + std::time::Duration::from_secs(seconds)).expect("a time in range")
+}
+
+async fn ask(
+    conductor: &SweetConductor,
+    nia_door: &CellId,
+    holder: &AgentPubKey,
+    secret: CapSecret,
+) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
+    conductor
+        .call_fallible(
+            &zome(nia_door),
+            "ask_with_a_pass",
+            aboutme::AskWithPassInput {
+                holder: holder.to_string(),
+                secret,
+            },
+        )
+        .await
+}
+
+/// The whole point: the sections chosen, in the holder's words, and nothing
+/// else — and the holder's own screen is told it happened.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pass_reads_what_it_was_made_for_and_nothing_else() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+    let mut alice_hears = conductor.subscribe_to_app_signals("alice-door".to_string());
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(3600))),
+        )
+        .await;
+
+    let words = ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("a live pass, presented by whoever holds it, is answered");
+
+    assert_eq!(words.name, "Alice Bell");
+    assert_eq!(words.sections.len(), 2, "only the sections the pass was made for");
+    assert_eq!(
+        words.sections[0].words,
+        "Speak to my left side, I'm deaf on the right"
+    );
+    assert_eq!(words.sections[1].words, "Please do not move my chair");
+    let everything = format!("{words:?}");
+    assert!(
+        !everything.contains("grandchildren") && !everything.contains("district nurse"),
+        "nothing from a section that was not chosen may travel"
+    );
+
+    let signal = tokio::time::timeout(std::time::Duration::from_secs(30), alice_hears.recv())
+        .await
+        .expect("the holder's screen should hear that the pass was used")
+        .expect("the signal channel should stay open");
+    let Signal::App { signal, .. } = signal else {
+        panic!("expected an app signal");
+    };
+    let decoded: aboutme::Signal = signal.into_inner().decode().expect("one of ours");
+    let aboutme::Signal::PassUsed { for_whom, .. } = decoded else {
+        panic!("expected PassUsed, got {decoded:?}");
+    };
+    assert_eq!(for_whom, "Ward 7");
+}
+
+/// "Stop it" means stopped, by Holochain itself, before any of our code runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_pass_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+    ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("it works before it is stopped");
+
+    let _: ActionHash = conductor
+        .call(&zome(&alice_door), "stop_a_pass", pass.grant.clone())
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "a stopped pass must read nothing"
+    );
+
+    let listed: Vec<aboutme::PassHere> = conductor
+        .call(&zome(&alice_door), "passes_here", ())
+        .await;
+    assert!(listed.is_empty(), "and it is no longer listed as given");
+}
+
+/// A pass with a time on it stops at that time, without anybody doing anything.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pass_that_has_run_out_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(2))),
+        )
+        .await;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "a pass past its time must read nothing"
+    );
+
+    let listed: Vec<aboutme::PassHere> = conductor
+        .call(&zome(&alice_door), "passes_here", ())
+        .await;
+    assert!(listed[0].run_out, "and the holder's list says it has run out");
+}
+
+/// Without the secret there is no pass, whoever you are.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guessed_pass_opens_nothing() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let _: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), [7u8; 64].into())
+            .await
+            .is_err(),
+        "a secret nobody was given must read nothing"
+    );
+}
+
+/// Only the person whose record it is gives it out.
+///
+/// Bob is in Alice's circle and can read everything in it. That does not make
+/// it his to hand to a stranger.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_holder_can_make_a_pass() {
+    let (conductor, alice_cell, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let door = a_waiting_room(alice_cell.agent_pubkey()).await;
+    let bob_at_her_door = join(&conductor, "bob-door", bob_cell.agent_pubkey(), &door, None)
+        .await
+        .expect("anybody may stand at a door");
+    let from_bob: Result<aboutme::PassMade, _> = conductor
+        .call_fallible(
+            &zome(&bob_at_her_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, None),
+        )
+        .await;
+    assert!(from_bob.is_err(), "a member cannot make a pass at her door");
+
+    // Nor inside the circle itself: a pass is made at the door, which is the
+    // only place the person it is given to can reach.
+    let inside: Result<aboutme::PassMade, _> = conductor
+        .call_fallible(&zome(&alice_cell), "make_a_pass", a_pass_for(&alice_cell, None))
+        .await;
+    assert!(inside.is_err(), "a pass is made at the door, not in the circle");
+}
+
+/// The function a pass reaches for the words must not be a way round the pass.
+///
+/// It answers only the device's own agent, and only in a circle that agent
+/// holds — so Bob, calling it in his copy of Alice's circle, gets nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_words_behind_a_pass_are_not_a_back_door() {
+    let (conductor, _, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let bob_asks: Result<aboutme::PassedWords, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "words_for_a_pass",
+            vec![aboutme_integrity::AboutMeField::WhatMattersToMe],
+        )
+        .await;
+    assert!(
+        bob_asks.is_err(),
+        "a member's device cannot hand out a record it does not hold"
+    );
+}
