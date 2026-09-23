@@ -37,19 +37,25 @@ jobs:
   # review, 23 September 2026. It reports and does not block: most of what it
   # finds will be deep in Holochain, where the fix is Holochain's to make, and
   # a check that stops every release for somebody else's problem gets switched
-  # off. Read its output; do not ignore a red one.
+  # off. Read its output; do not ignore a yellow one.
   dependencies:
     runs-on: ubuntu-latest
+    # A second guard, should cargo-audit itself fail to install.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
+      # Yellow, not red. A red mark on every push for a flaw only Holochain
+      # can fix teaches everybody to stop looking at the marks at all - and
+      # this is read by somebody who is not a software engineer. A finding
+      # shows as a warning on the run, with the details in the log.
       - name: The zomes — what ships in every circle
-        run: cargo audit --file Cargo.lock
-      - name: The test harness
-        if: always()
-        run: cargo audit --file tests/Cargo.lock
+        run: |
+          cargo audit --file Cargo.lock || echo "::warning title=Dependency check::The zomes have an advisory against them. Read this step's log."
+      - name: The test harness, which is Holochain's own dependencies
+        run: |
+          cargo audit --file tests/Cargo.lock || echo "::warning title=Dependency check::Holochain's dependencies have advisories against them - see docs/threat-model.md. Read this step's log."
 
   it-compiles:
     runs-on: ubuntu-latest
