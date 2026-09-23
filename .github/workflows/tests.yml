@@ -62,6 +62,15 @@ jobs:
 
   adversarial:
     runs-on: ubuntu-latest
+    # Three runners, each taking every third test. The whole suite in one run
+    # passed two hours in September 2026, because the tests on two devices wait
+    # on real gossip, and a run that long was stopped part-way through with
+    # nothing failed. Every other step repeats on each runner; only the tests
+    # are divided.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -211,4 +220,9 @@ jobs:
       # it is broken.
       - name: Run the adversarial suite
         working-directory: tests
-        run: cargo test --test adversarial -- --nocapture --test-threads=2
+        run: |
+          names=$(cargo test --test adversarial -- --list --format=terse 2>/dev/null             | sed -n "s/: test$//p" | sort)
+          mine=$(echo "$names" | awk -v shard=${{ matrix.shard }} "(NR - 1) % 3 == shard")
+          echo "This runner takes $(echo "$mine" | wc -l) of $(echo "$names" | wc -l) tests."
+          if [ -z "$mine" ]; then echo "::error::No tests found for this runner"; exit 1; fi
+          cargo test --test adversarial -- --nocapture --test-threads=2 --exact $mine
