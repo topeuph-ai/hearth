@@ -979,3 +979,40 @@ legend {
   margin: 0.3rem 0 0;
   white-space: pre-wrap;
 }
+
+/* Calls. The same frame as the other dialogs; the other person large, you small. */
+#incoming-call,
+#in-call {
+  max-width: 40rem;
+  width: calc(100% - 2rem);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+#incoming-call::backdrop,
+#in-call::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#call-remote {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  border-radius: 8px;
+  background: #000;
+}
+
+#call-local {
+  display: block;
+  width: 9rem;
+  margin: 0.5rem 0 0 auto;
+  border-radius: 6px;
+  background: #000;
+}
+
+#call-remote[hidden],
+#call-local[hidden] {
+  display: none;
+}

@@ -376,6 +376,8 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | Carrying across a circle somebody was removed from: they are not invited, and cannot read the new one | — | **not yet tried** (the app leaves them out; untested on machines) |
 | A successor taking over an encrypted circle: they can read it, move it, and the removed stay out | — | **not yet tried** |
 | A pass, read from another machine | — | ✅ 0.3.1, same home network; first try too early |
+| A call between two machines (0.3.5): the holder turns calls on, one member rings another, both see and hear | — | **not yet tried** — the call library connected two peers in one browser, set up as Hearth sets it up |
+| A call between two different networks (different houses) | — | **not yet tried**; expected to fail on some networks, since no call relay is run |
 
 The last rows matter most. "Local discovery" above means the Lightningrod Labs
 build of Holochain (`holochain-0.7.0-mdns.2`), not released Holochain: it is a

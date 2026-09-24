@@ -1188,6 +1188,13 @@ pub enum Signal {
         sections: Vec<AboutMeField>,
         at: Timestamp,
     },
+    /// The holder has turned calls on or off for this circle. Accepted only
+    /// from the holder. See "Calls" below.
+    CallsAllowed { by: AgentPubKey, on: bool },
+    /// One step of setting up a call: an offer, an answer or a network
+    /// address, as the WebRTC library writes it. Opaque here; the call itself
+    /// never passes through Holochain, only this introduction does.
+    CallSignal { by: AgentPubKey, message: String },
 }
 
 /// Allow other members of this circle to deliver signals to us.
@@ -1244,7 +1251,9 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
         | Signal::Admitted { by }
         | Signal::Appointed { by, .. }
         | Signal::Answered { by, .. }
-        | Signal::Moved { by, .. } => by,
+        | Signal::Moved { by, .. }
+        | Signal::CallsAllowed { by, .. }
+        | Signal::CallSignal { by, .. } => by,
         // Only ever raised by this device to its own screen. Arriving from
         // another machine it can only be a forgery, and is dropped.
         Signal::PassUsed { .. } => return Ok(()),
@@ -1252,6 +1261,13 @@ pub fn recv_remote_signal(signal: Signal) -> ExternResult<()> {
 
     if claimed != &caller {
         return Ok(());
+    }
+
+    // Only the holder decides whether this circle has calls.
+    if let Signal::CallsAllowed { .. } = &signal {
+        if !matches!(membrane()?, Membrane::Founder(holder, _) if holder == caller) {
+            return Ok(());
+        }
     }
 
     /*
@@ -1364,6 +1380,85 @@ pub fn tell_them_it_moved(input: MovedInput) -> ExternResult<()> {
         },
         vec![to],
     )
+}
+
+// ---------------------------------------------------------------------------
+// Calls
+// ---------------------------------------------------------------------------
+//
+// Live voice and video between two people in a circle. The call itself goes
+// directly between the two devices, encrypted end to end by the browser's own
+// WebRTC; Holochain only carries the handful of small messages that introduce
+// the two devices to each other. Nothing about a call is written to the circle.
+//
+// **Off until the holder turns them on.** A person who may be confused or
+// distressed by a call they did not expect should not start receiving them
+// because somebody installed an update. The holder's choice is told to each
+// member's device, and each device refuses to ring for a circle whose holder
+// has not said yes — a rule every device keeps for itself, since a call is
+// between two devices and nothing else is involved.
+//
+// No rules change: this is all messages, and the frozen file is not touched.
+
+/// The most a single call message may be. An offer with every address is a
+/// few kilobytes; anything near this is not a call.
+const MOST_BYTES_IN_A_CALL_MESSAGE: usize = 64 * 1024;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CallSignalInput {
+    /// Who to send it to, as text.
+    pub to: String,
+    pub message: String,
+}
+
+/// Pass one call message to one person in this circle.
+#[hdk_extern]
+pub fn send_call_signal(input: CallSignalInput) -> ExternResult<()> {
+    if input.message.len() > MOST_BYTES_IN_A_CALL_MESSAGE {
+        return Err(wasm_error!("That is too large to be part of a call"));
+    }
+    let to = AgentPubKey::try_from(input.to.trim())
+        .map_err(|_| wasm_error!("That is not somebody this circle can call"))?;
+    let me = agent_info()?.agent_initial_pubkey;
+    send_remote_signal(
+        Signal::CallSignal {
+            by: me,
+            message: input.message,
+        },
+        vec![to],
+    )
+}
+
+/// Tell everybody in the circle whether calls are on. The holder only.
+///
+/// Sent again whenever the holder opens the circle, so somebody who was
+/// offline, or has just joined, hears it too. Nobody removed is told anything.
+#[hdk_extern]
+pub fn tell_circle_about_calls(on: bool) -> ExternResult<u32> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if !i_am_the_holder()? {
+        return Err(wasm_error!(
+            "Only the person whose circle this is decides about calls"
+        ));
+    }
+    let removed: BTreeSet<String> = get_departures(())?
+        .into_iter()
+        .filter(|s| s.removed)
+        .map(|s| s.who)
+        .collect();
+    let everyone: BTreeSet<AgentPubKey> = get_members(())?
+        .iter()
+        .map(|r| r.action().author().clone())
+        .filter(|a| a != &me && !removed.contains(&a.to_string()))
+        .collect();
+    let count = everyone.len() as u32;
+    if count > 0 {
+        send_remote_signal(
+            Signal::CallsAllowed { by: me, on },
+            everyone.into_iter().collect(),
+        )?;
+    }
+    Ok(count)
 }
 
 // ---------------------------------------------------------------------------

@@ -1454,6 +1454,27 @@
           <p class="hint">
           How each person describes themselves. Nobody checks any of it.
           </p>
+
+          <!--
+            Calls, off until the holder says. Somebody who may be confused or
+            upset by a call they did not expect should not start getting them
+            because of an update. Only the holder sees this switch.
+          -->
+          <div id="calls-setting" class="notice" hidden>
+          <label class="choice-row">
+          <input type="checkbox" id="calls-on" />
+          Let people in this circle call each other
+          </label>
+          <p class="hint">
+          Voice or video, straight between two devices, never recorded. Works
+          best when both are on the same home or care-home network; between
+          some networks it will not connect. You can turn it off at any time.
+          </p>
+          </div>
+          <p id="calls-off-note" class="hint" hidden>
+          Calls are off in this circle. The person who holds it can turn them
+          on.
+          </p>
           <!--
           Only to the holder, and only where the thing it describes is.
 
@@ -2042,6 +2063,38 @@
           <button type="button" id="go-back">Go back and try again</button>
         </div>
       </section>
+
+      <!--
+        Calls. Outside every screen, so a call can arrive whatever is showing.
+      -->
+      <dialog id="incoming-call" aria-labelledby="incoming-call-who">
+        <h3 id="incoming-call-who">Somebody is calling</h3>
+        <p id="incoming-call-circle" class="hint"></p>
+        <div class="actions">
+          <button type="button" id="answer-video">Answer</button>
+          <button type="button" id="answer-voice" class="secondary">
+            Answer, voice only
+          </button>
+          <button type="button" id="decline-call" class="secondary">
+            Not now
+          </button>
+        </div>
+      </dialog>
+
+      <dialog id="in-call" aria-labelledby="in-call-who">
+        <h3 id="in-call-who">Calling</h3>
+        <p id="in-call-status" class="hint" role="status"></p>
+        <video id="call-remote" autoplay playsinline></video>
+        <video id="call-local" autoplay playsinline muted
+          aria-label="What your camera is showing them"></video>
+        <div class="actions">
+          <button type="button" id="call-mute" class="secondary">Mute</button>
+          <button type="button" id="call-camera" class="secondary">
+            Turn camera off
+          </button>
+          <button type="button" id="hang-up">Hang up</button>
+        </div>
+      </dialog>
     </main>
 
     <script type="module" src="./src/main.js"></script>

@@ -23,6 +23,7 @@ import {
 import { decode } from "@msgpack/msgpack";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
+import { ConnectionManager } from "@lightningrodlabs/webrtc-peer";
 
 /*
  * Identifiers are bytes inside Holochain and text everywhere a person can see
@@ -2076,6 +2077,29 @@ async function start() {
       if (currentRoomCell) await loadPasses().catch(() => {});
       return;
     }
+    // Calls, from whichever circle they concern — a call can come while a
+    // different circle, or none, is on screen. See "Calls".
+    if (payload?.kind === "CallSignal") {
+      await whenACallMessageArrives(
+        signal?.value?.cell_id,
+        asText(payload.by),
+        payload.message,
+      ).catch((error) => console.error("A call message could not be read.", error));
+      return;
+    }
+    if (payload?.kind === "CallsAllowed") {
+      const cellId = signal?.value?.cell_id;
+      rememberCalls(cellId, payload.on);
+      if (circle && asText(circle.cellId?.[0]) === asText(cellId?.[0])) {
+        announce(
+          payload.on
+            ? "Calls have been turned on in this circle."
+            : "Calls have been turned off in this circle.",
+        );
+        renderPeople();
+      }
+      return;
+    }
     if (payload?.kind === "Admitted") {
       announce("You have been let in.");
       await lookForMyAdmission();
@@ -2763,6 +2787,13 @@ function renderPeople() {
    */
   $("people-empty").hidden = members.size > 0;
 
+  // Calls: the holder's switch, or a line for everybody else saying they are off.
+  const callsOn = callsAreOn(circle?.cellId);
+  $("calls-setting").hidden = !isHolder();
+  $("calls-on").checked = callsOn;
+  $("calls-off-note").hidden = isHolder() || callsOn || members.size < 2;
+  retellAboutCalls();
+
   // Only the holder appoints, and only where there is somebody to appoint.
   const amHolder = isHolder();
   // And the invitation to press a name goes quiet once somebody has agreed.
@@ -2781,6 +2812,8 @@ function renderPeople() {
     line.textContent = said ? `${who} — ${said}` : who;
     if (key === asText(me)) line.textContent += " (you)";
     li.append(line);
+
+    if (callsOn && key !== asText(me)) li.append(callButtons(key, who));
 
     const theirs = whoAgrees?.agrees === key;
     if (theirs) li.append(howFarTheAskingHasGot(who, key));
@@ -4948,6 +4981,374 @@ $("scan-pass").addEventListener("click", async () => {
   };
   scanningPass.frame = requestAnimationFrame(look);
 });
+
+// ---------------------------------------------------------------------------
+// Calls
+// ---------------------------------------------------------------------------
+//
+// Voice and video between two people in a circle. The call goes straight
+// between the two devices, encrypted by WebRTC; Holochain carries only the
+// small messages that introduce them, through `send_call_signal`. The WebRTC
+// side is Lightningrod Labs' webrtc-peer, which needs exactly that and nothing
+// else.
+//
+// Off until the holder turns them on. The holder's choice reaches each device
+// as a message, is remembered there, and each device refuses to ring for a
+// circle where it has not heard "on". A call from somebody removed is refused
+// too. Nothing about a call is written anywhere.
+//
+// One address-check ("STUN") server, Nextcloud's, free: it tells a device its
+// own internet address, which calls between different networks need. It sees
+// that address and nothing else — see docs/DPIA.md. Never Google's, which is
+// the library's default.
+
+const CALL_ICE_SERVERS = [{ urls: "stun:stun.nextcloud.com:443" }];
+const RING_FOR = 45_000;
+
+const callsKey = (cellId) => `hearth:calls:${asText(cellId?.[0])}`;
+
+/** "on", "off", or null if the holder has never said. */
+function callsSetting(cellId) {
+  try {
+    return localStorage.getItem(callsKey(cellId));
+  } catch {
+    return null;
+  }
+}
+const callsAreOn = (cellId) => callsSetting(cellId) === "on";
+
+function rememberCalls(cellId, on) {
+  try {
+    localStorage.setItem(callsKey(cellId), on ? "on" : "off");
+  } catch {
+    // Then this device will not ring, which is the safe way round.
+  }
+}
+
+/** The one call this device is in, or about to be in. One at a time. */
+let theCall = null;
+
+const sendCall = (cellId, to, what) =>
+  call("send_call_signal", { to, message: JSON.stringify(what) }, cellId);
+
+/** A gentle two-note ring, until stopped. Silent if the device will not play it. */
+function startRinging() {
+  try {
+    const sound = new AudioContext();
+    sound.resume?.();
+    const note = (hz, at) => {
+      const tone = sound.createOscillator();
+      const level = sound.createGain();
+      tone.frequency.value = hz;
+      level.gain.value = 0.06;
+      tone.connect(level).connect(sound.destination);
+      tone.start(sound.currentTime + at);
+      tone.stop(sound.currentTime + at + 0.35);
+    };
+    const ring = () => {
+      note(523, 0);
+      note(659, 0.45);
+    };
+    ring();
+    const every = setInterval(ring, 2500);
+    return () => {
+      clearInterval(every);
+      sound.close().catch(() => {});
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+async function startMedia(video) {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: video ? { width: { ideal: 640 }, height: { ideal: 480 } } : false,
+    });
+  } catch (error) {
+    // No camera, or it said no: a voice call is still a call.
+    if (video) return startMedia(false);
+    throw error;
+  }
+}
+
+function callStatus(text) {
+  $("in-call-status").textContent = text;
+}
+
+function showCallWindow(title) {
+  $("in-call-who").textContent = title;
+  $("call-remote").hidden = true;
+  $("call-local").hidden = true;
+  $("call-mute").textContent = "Mute";
+  $("call-camera").textContent = "Turn camera off";
+  if (!$("in-call").open) $("in-call").showModal();
+}
+
+/** Connect, once both sides have said yes. */
+async function connectTheCall() {
+  const c = theCall;
+  if (!c) return;
+  c.stream = await startMedia(c.video);
+  const hasVideo = c.stream.getVideoTracks().length > 0;
+  $("call-local").srcObject = c.stream;
+  $("call-local").hidden = !hasVideo;
+  $("call-camera").hidden = !hasVideo;
+
+  c.manager = new ConnectionManager({
+    myAgentId: asText(me),
+    signaling: (to, message) =>
+      sendCall(c.cellId, to, { k: "rtc", m: message }).catch((error) =>
+        console.error("A call message did not go.", error),
+      ),
+  });
+  c.manager.updateConfig({ iceServers: CALL_ICE_SERVERS });
+  c.manager.updateLocalStream(c.stream);
+
+  c.manager.on("remote-stream", ({ data }) => {
+    if (theCall !== c) return;
+    $("call-remote").srcObject = data;
+    $("call-remote").hidden = data.getVideoTracks().length === 0;
+    callStatus("Connected.");
+  });
+  c.manager.on("connection-state-changed", ({ data }) => {
+    if (theCall !== c) return;
+    const phase = data?.toState;
+    if (phase === "connecting" || phase === "signaling") callStatus("Connecting…");
+    else if (phase === "reconnecting") callStatus("The connection dropped. Trying again…");
+    else if (phase === "failed") {
+      endTheCall(
+        "The call could not connect. Calls work best when both of you are on " +
+          "the same home or care-home network; some networks will not allow a " +
+          "direct call.",
+        true,
+      );
+    }
+  });
+
+  // Anything that arrived while this side was still getting its camera ready.
+  for (const m of c.early.splice(0)) c.manager.deliverSignal(c.who, m);
+  c.manager.ensureConnection(c.who);
+  callStatus("Connecting…");
+}
+
+function endTheCall(why, tellThem) {
+  const c = theCall;
+  if (!c) return;
+  theCall = null;
+  c.stopRinging?.();
+  clearTimeout(c.giveUp);
+  if (tellThem) sendCall(c.cellId, c.who, { k: "end" }).catch(() => {});
+  try {
+    c.manager?.closeConnection(c.who, "hung up");
+    c.manager?.destroy();
+  } catch {
+    // Already gone.
+  }
+  for (const track of c.stream?.getTracks() ?? []) track.stop();
+  $("call-remote").srcObject = null;
+  $("call-local").srcObject = null;
+  if ($("in-call").open) $("in-call").close();
+  if ($("incoming-call").open) $("incoming-call").close();
+  if (why) announce(why);
+}
+
+/** Ring somebody in the circle on screen. */
+async function callThem(key, name, video) {
+  if (theCall) {
+    announce("You are already in a call.");
+    return;
+  }
+  theCall = {
+    cellId: circle.cellId,
+    who: key,
+    name,
+    video,
+    early: [],
+    outgoing: true,
+  };
+  showCallWindow(`Calling ${name}`);
+  callStatus("Ringing…");
+  try {
+    await sendCall(circle.cellId, key, { k: "ring", video });
+  } catch (error) {
+    console.error(error);
+    endTheCall(`${name} could not be reached just now.`, false);
+    return;
+  }
+  const c = theCall;
+  c.giveUp = setTimeout(() => {
+    if (theCall === c && !c.manager) endTheCall(`${name} did not answer.`, true);
+  }, RING_FOR);
+}
+
+/** Every call message, from any circle on this device. */
+async function whenACallMessageArrives(cellId, from, raw) {
+  let what;
+  try {
+    what = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+  if (what.k === "ring") {
+    // Refused quietly unless this circle has calls on, and never from
+    // somebody removed from it.
+    if (!callsAreOn(cellId)) return;
+    const standing = await orNothingYet(call("get_departures", null, cellId), []);
+    if (standing.some((s) => s.who === from && s.removed)) return;
+    if (theCall) {
+      sendCall(cellId, from, { k: "busy" }).catch(() => {});
+      return;
+    }
+    const names = await namesIn(cellId);
+    const name = names.get(from)?.name?.trim() || "Somebody in your circle";
+    theCall = {
+      cellId,
+      who: from,
+      name,
+      video: Boolean(what.video),
+      early: [],
+      outgoing: false,
+    };
+    $("incoming-call-who").textContent = `${name} is calling`;
+    $("incoming-call-circle").textContent = `In ${labelFor(cellId, "your circle")}.`;
+    $("answer-video").hidden = !what.video;
+    $("answer-voice").textContent = what.video ? "Answer, voice only" : "Answer";
+    $("incoming-call").showModal();
+    theCall.stopRinging = startRinging();
+    const c = theCall;
+    c.giveUp = setTimeout(() => {
+      if (theCall === c && !c.manager) endTheCall(`You missed a call from ${name}.`, false);
+    }, RING_FOR);
+    return;
+  }
+
+  // Everything else belongs to the call in progress, or to nothing.
+  const c = theCall;
+  if (!c || c.who !== from || asText(c.cellId?.[0]) !== asText(cellId?.[0])) return;
+
+  if (what.k === "rtc") {
+    if (c.manager) c.manager.deliverSignal(from, what.m);
+    else c.early.push(what.m);
+  } else if (what.k === "accept" && c.outgoing && !c.manager) {
+    clearTimeout(c.giveUp);
+    callStatus("Answered. Connecting…");
+    connectTheCall().catch((error) => {
+      console.error(error);
+      endTheCall("Your microphone could not be started, so the call was ended.", true);
+    });
+  } else if (what.k === "decline") {
+    endTheCall(`${c.name} cannot talk just now.`, false);
+  } else if (what.k === "busy") {
+    endTheCall(`${c.name} is already in a call.`, false);
+  } else if (what.k === "end") {
+    endTheCall(c.manager ? `${c.name} has hung up.` : `${c.name} stopped calling.`, false);
+  }
+}
+
+async function answerTheCall(video) {
+  const c = theCall;
+  if (!c || c.outgoing) return;
+  c.stopRinging?.();
+  clearTimeout(c.giveUp);
+  c.video = video;
+  $("incoming-call").close();
+  showCallWindow(`Talking with ${c.name}`);
+  callStatus("Connecting…");
+  try {
+    await sendCall(c.cellId, c.who, { k: "accept" });
+    await connectTheCall();
+  } catch (error) {
+    console.error(error);
+    endTheCall("The call could not be answered. Your microphone may be switched off.", true);
+  }
+}
+
+$("answer-video").addEventListener("click", () => answerTheCall(true));
+$("answer-voice").addEventListener("click", () => answerTheCall(false));
+$("decline-call").addEventListener("click", () => {
+  const c = theCall;
+  if (c) sendCall(c.cellId, c.who, { k: "decline" }).catch(() => {});
+  endTheCall("", false);
+});
+$("hang-up").addEventListener("click", () => endTheCall("Call ended.", true));
+// Escape closes a dialog; for a call that has to mean hanging up, not hiding it.
+$("in-call").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  endTheCall("Call ended.", true);
+});
+$("incoming-call").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  $("decline-call").click();
+});
+$("call-mute").addEventListener("click", () => {
+  const tracks = theCall?.stream?.getAudioTracks() ?? [];
+  const muted = tracks.some((t) => t.enabled);
+  for (const t of tracks) t.enabled = !muted;
+  $("call-mute").textContent = muted ? "Unmute" : "Mute";
+  announce(muted ? "You are muted." : "They can hear you again.");
+});
+$("call-camera").addEventListener("click", () => {
+  const tracks = theCall?.stream?.getVideoTracks() ?? [];
+  const off = tracks.some((t) => t.enabled);
+  for (const t of tracks) t.enabled = !off;
+  $("call-camera").textContent = off ? "Turn camera on" : "Turn camera off";
+});
+
+// The holder's switch.
+$("calls-on").addEventListener("change", async () => {
+  const on = $("calls-on").checked;
+  rememberCalls(circle.cellId, on);
+  try {
+    const told = await call("tell_circle_about_calls", on, circle.cellId);
+    announce(
+      on
+        ? `Calls are on. ${told} ${told === 1 ? "person has" : "people have"} been told.`
+        : "Calls are off. Nobody in this circle can call through Hearth now.",
+    );
+  } catch (error) {
+    console.error(error);
+    announce("Saved on this device, but the others could not be told yet. They will be told next time you open the circle.");
+  }
+  renderPeople();
+});
+
+/*
+ * Said again whenever the holder opens the circle, at most every ten
+ * minutes, so somebody who was offline or has just joined hears it too.
+ */
+const callsLastTold = new Map();
+function retellAboutCalls() {
+  if (!circle || !isHolder()) return;
+  const setting = callsSetting(circle.cellId);
+  if (!setting) return;
+  const key = asText(circle.cellId[0]);
+  if (Date.now() - (callsLastTold.get(key) ?? 0) < 600_000) return;
+  callsLastTold.set(key, Date.now());
+  call("tell_circle_about_calls", setting === "on", circle.cellId).catch(() => {});
+}
+
+/** The call buttons beside one person on the People page. */
+function callButtons(key, name) {
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const video = document.createElement("button");
+  video.type = "button";
+  video.className = "secondary";
+  video.textContent = `Video call`;
+  video.setAttribute("aria-label", `Video call ${name}`);
+  video.addEventListener("click", () => callThem(key, name, true));
+  const voice = document.createElement("button");
+  voice.type = "button";
+  voice.className = "secondary";
+  voice.textContent = `Voice call`;
+  voice.setAttribute("aria-label", `Voice call ${name}`);
+  voice.addEventListener("click", () => callThem(key, name, false));
+  actions.append(video, voice);
+  return actions;
+}
 
 // ---------------------------------------------------------------------------
 // The holder's side: who is at the door
