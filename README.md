@@ -275,6 +275,7 @@ Read the first one before the others.
 | [building-it.md](docs/building-it.md) | Building, running the demo, packaging the desktop app, and every trap already paid for |
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
 | [upgrades.md](docs/upgrades.md) | How a circle survives a new version — and why neither a patch nor a minor release does it today |
+| [holochain-roadmap.md](docs/holochain-roadmap.md) | Holochain's own plans, read 24 September 2026, and what each means for Hearth — 0.7.1 security fixes, 0.8 app upgrades, local discovery not before 1.0 |
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
 | [DPIA.md](docs/DPIA.md) | Data protection assessment |
