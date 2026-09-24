@@ -59,6 +59,19 @@ Two defensible answers, and they lead to different products:
 implementation guidance says about sharing part of a record rather than all
 of it.
 
+**Ceri's idea, 24 September 2026 — noted, not decided:** a second key for
+sensitive parts only, handed to the members the holder chooses. Every device
+still stores those parts (so nothing is lost when devices are off), but only
+people given the second key can open them. The machinery exists already — the
+circle's key is sealed to each member separately, and passes already show
+chosen sections to chosen outsiders — so this is the same thing inside the
+circle. Examples of what might go there: an estranged relative under "people
+who matter", a safeguarding note, the personal parts of "my wellness". The
+costs are the ones above: everybody can see *that* something is hidden, people
+lose track of who can see what, and removing somebody means replacing two keys.
+(Holochain's "sharding" is not the mechanism: it decides where scrambled data
+is stored, not who can read it.)
+
 ## 2. Who has legitimate authority to act for the person?
 
 **Hearth cannot know, and must say so rather than imply otherwise.**
