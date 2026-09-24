@@ -279,6 +279,13 @@ The review's three-way split is the right one:
 Written down in [to-a-product.md](to-a-product.md#2-losing-a-device-loses-the-person-not-the-record);
 elevated here because for this population a lost or replaced phone is routine.
 
+**An idea, 24 September 2026, not a plan:** split the holder's keys between
+trusted people ("secret sharing", such as Shamir's scheme) — say three members
+each hold a piece, and any two together can restore them. Nobody holds the
+whole key, and losing one device loses nothing. It would need Holochain to let
+keys be exported and imported; the nearest thing on its roadmap is key export
+and import in the Android service (see [holochain-roadmap.md](holochain-roadmap.md)).
+
 ## 13. Whose voice wins when the circle disagrees?
 
 **The holder's.** Suggestions let everybody offer, and the holder decides —

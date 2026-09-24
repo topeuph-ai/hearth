@@ -56,6 +56,25 @@ The release aimed squarely at the problem [upgrades.md](upgrades.md) describes.
   problem as carrying a circle across to new rules, which Hearth solves today
   in the app by moving the circle.
 
+## Holochain 0.9
+
+Forty-odd items; the ones that touch Hearth:
+
+- **Sharding** (#4176, #4348, #5372): each device storing only a slice of the
+  network's data. **This is about scale, not security** — it changes who
+  *stores* what, not who can *read* it; what protects Hearth's data is the
+  encryption. The small win for Hearth: a care worker's laptop need not keep
+  copies of a family's photographs. That is already possible on 0.7 (see
+  [latency.md](latency.md)); 0.9 makes it adjustable while running.
+- **A "per-app network infrastructure" workstream** — only one item of it
+  seen, a transport detail (#397 on the board). If it means apps running
+  their own introduction and relay servers, it is the route off Holochain's
+  public test server, which every Hearth install uses today (see
+  [DPIA.md](DPIA.md)). Worth reading properly before relying on it.
+- **Matchable error types instead of strings** (#4270): would let the app tell
+  "their device refused" from "their device could not be reached" properly,
+  instead of reading the words, as passes do today.
+
 ## Holochain 1.0
 
 - **Local discovery: only "re-evaluate mDNS"** (#4527), in a "Local First"
