@@ -401,12 +401,12 @@ signed and only reachable through the membrane, so a circle does not leak to the
 network at large, but anybody in a circle — and afterwards, if they keep their
 copy — has the plain text.
 
-On the `migration-batch` branch that is fixed, and as of 22 September 2026 it has
-run on two real machines. The record, suggestions, photographs, sound, video and
+That is fixed in 0.2.7 onwards (the latest release is 0.3.4), and as of 22
+September 2026 it has run on two real machines. The record, suggestions, photographs, sound, video and
 acknowledgement roles are locked with a key every member holds, and **removing
 somebody starts a new key sealed to everybody but them**, so what the circle
-writes next cannot be read on their device by any software. Proven by 94
-adversarial tests, including two on separate conductors, which is the only way to
+writes next cannot be read on their device by any software. Proven by the
+adversarial tests (102 by 24 September), including two on separate conductors, which is the only way to
 show that a key was never given. See [`encryption.md`](encryption.md).
 
 What it does not do, and cannot: the removed person keeps every key they were

@@ -604,7 +604,7 @@ The limits, stated plainly:
 
 #### Where that leaves the three levels
 
-Both of the first two columns are now built, on the `migration-batch` branch —
+Both of the first two columns are now built, and released from 0.2.7 —
 see [encryption.md](encryption.md) for exactly what is locked and what is not.
 The third is the removed person's own app deleting its copy, which is built as
 well; what it cannot do is reach a device that has been changed to keep it.

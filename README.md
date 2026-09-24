@@ -210,7 +210,16 @@ have no way of knowing at all.
 > "claimed" every single time, and it must keep doing so. A family could
 > reasonably rely on a tick that means more than it does.
 
-There is more detail, including what a red-team review found and what it missed,
+**The holder can remove somebody, and name a successor.** Removing somebody
+changes the circle's key, so they cannot read what is written next. A successor,
+named in advance, can take the circle on if the holder cannot — after a waiting
+period everybody sees, in which the holder can say "I'm still here", and a
+check by somebody else.
+
+**A pass** shows chosen parts of the record to somebody passing through — a ward
+nurse, a paramedic — for as long as the holder chooses, without them joining.
+
+There is more detail, including what the reviews found and what they missed,
 in [docs/how-it-works.md](docs/how-it-works.md).
 
 ---
@@ -219,28 +228,34 @@ in [docs/how-it-works.md](docs/how-it-works.md).
 
 Said here rather than buried, because these are the honest limits.
 
-**Nothing is encrypted where it is stored.** Contents are only reachable by
-people let into a circle, but once somebody is in, they have the plain text on
-their machine. For About Me — no medications, no diagnoses — that is a smaller
-exposure than it sounds. It is still the largest gap.
+**Holding the device is holding the keys.** Since 0.2.7 the record,
+suggestions, photographs, sound and video are locked to the circle, so a copy
+on somebody's disk is unreadable without the circle's key. But the key lives on
+the same device, and the released app does not yet ask for a password. That is
+the largest gap, and it is decided, not yet built. How members describe
+themselves is not locked yet either. See [docs/encryption.md](docs/encryption.md).
 
-**"Remove" does not mean what people expect.** Leaving takes a circle off your
-own device. It does not reach anybody else's copy. Changing who may enter means
-making a new circle and everybody joining again.
-
-That is not evasion, it is arithmetic: once somebody has legitimately read
-something, nobody can un-read it. No system anywhere can do this. Circles are
-cheap to remake, which is why re-forming one is the honest answer.
+**Removing somebody cannot take back what they have read.** The holder can
+remove a person: they get none of what is written afterwards, because a new key
+is made that they are never given. What they already had, they keep. That is not
+evasion, it is arithmetic: once somebody has legitimately read something, nobody
+can un-read it. No system anywhere can do this.
 
 **A stranger cannot find the record.** A paramedic who has never heard of this
-has no way to discover it exists. Paper solved that with a sticker on a fridge
-and we have not solved it at all.
+has no way to discover it exists. A **pass** lets the holder show chosen parts
+to a professional passing through without them joining — but only while the
+holder's device is on, and somebody still has to hand them the pass. Paper
+solved finding it with a sticker on a fridge, and we have not.
 
-**Joining can take about ninety seconds.** Understood, written up in
-[docs/latency.md](docs/latency.md), not yet fixed.
+**Devices in the same house talk to each other through the internet.** Released
+Holochain cannot find a device in the same room, so joining can take a minute
+or two and a video can take ten. A field-test build of Holochain fixes it; see
+[docs/latency.md](docs/latency.md).
 
-**Nothing has had a full security review.** There has been one audit and its
-findings are recorded. Nobody outside this project has looked.
+**Nothing has had a human security review.** Four AI reviews and an audit of
+our own found and fixed real problems — see
+[docs/threat-model.md](docs/threat-model.md). Nobody who does this for a living
+has looked, and that is the review this project most needs.
 
 ---
 

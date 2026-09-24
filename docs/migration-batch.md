@@ -92,6 +92,10 @@ it is a second person, and that it is visible.
 
 ## Progress on the `migration-batch` branch
 
+*Everything below was released in 0.2.7 onwards and merged to `main` on 23
+September 2026; the latest release is 0.3.4. Kept as it was written, as the
+record of how it was built.*
+
 | Item | State |
 | --- | --- |
 | 1. Every write checked wherever it lands | **Built.** Worse than audited: an *update* reached two of the three kinds of device unchecked. Every kind of write now goes through the same rules everywhere, and the catch-all is gone |

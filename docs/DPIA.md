@@ -309,9 +309,9 @@ Entries are held on other members' devices, so "delete everything" is not a sing
 **To do, in order**
 
 1. ~~Encrypt entry contents to circle members, so a device holding a copy cannot
-   read it~~ — built on the `migration-batch` branch for the record,
-   suggestions and media; see [encryption.md](encryption.md). Still to do: the
-   role on an acknowledgement, how members describe themselves, and the
+   read it~~ — built, and released in 0.2.7 onwards, for the record,
+   suggestions, media and acknowledgement roles; see [encryption.md](encryption.md).
+   Still to do: how members describe themselves, and the
    password Hearth should offer at startup so the keys are not simply as safe
    as the device
 2. Document the always-on-device pattern for circles that need overnight availability
