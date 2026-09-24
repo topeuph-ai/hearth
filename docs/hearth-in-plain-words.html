@@ -1,0 +1,554 @@
+<title>Hearth in Plain Words</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+  /* Hearth's own palette (ui/src/style.css), so the guide looks like the app. */
+  :root {
+    --paper: #faf3e6;
+    --card: #fffaf1;
+    --ink: #2b2520;
+    --muted: #5a4e44;
+    --line: #d9ccb6;
+    --accent: #1f4e79;
+    --accent-soft: #e4ecf4;
+    --here: #8a3f22;
+    --here-soft: #f6e4da;
+    --notice: #f2e0c4;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d1b18; --card: #25221e; --ink: #efe7da; --muted: #c9bdad;
+      --line: #4a433b; --accent: #9dc4e8; --accent-soft: #1f2d3a;
+      --here: #e3a17f; --here-soft: #3a2820; --notice: #2c2721;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d1b18; --card: #25221e; --ink: #efe7da; --muted: #c9bdad;
+    --line: #4a433b; --accent: #9dc4e8; --accent-soft: #1f2d3a;
+    --here: #e3a17f; --here-soft: #3a2820; --notice: #2c2721;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+    font-size: 1.15rem;
+    line-height: 1.65;
+    padding-inline: 16px;
+    padding-block: 2rem 4rem;
+  }
+  main { max-width: 44rem; margin: 0 auto; display: grid; gap: 3.2rem; }
+  header { display: grid; gap: 0.6rem; }
+  h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.1; margin: 0; text-wrap: balance; }
+  h2 { font-size: 1.6rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+  h3 { font-size: 1.2rem; margin: 0; }
+  p, ul, ol { margin: 0; }
+  section { display: grid; gap: 1rem; scroll-margin-top: 1rem; }
+  .lede { font-size: 1.3rem; color: var(--muted); }
+  .stamp { font-size: 0.95rem; color: var(--muted); }
+  .stamp strong { color: var(--ink); }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  ul, ol { padding-left: 1.3rem; display: grid; gap: 0.45rem; }
+
+  /* One line, for skimming: what the section says, before it says it. */
+  .gist {
+    background: var(--notice);
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    font-weight: 700;
+  }
+
+  nav ol { font-size: 1.05rem; columns: 2 16rem; display: block; }
+  nav li { margin-bottom: 0.3rem; break-inside: avoid; }
+
+  figure { margin: 0; display: grid; gap: 0.5rem; }
+  .diagram { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem; }
+  .diagram svg { display: block; width: 100%; min-width: 34rem; height: auto; }
+  figcaption { font-size: 0.95rem; color: var(--muted); }
+
+  /* The drawings take every colour from the tokens, so they read in both themes. */
+  svg text { fill: var(--ink); font-family: inherit; }
+  svg .small { font-size: 13px; fill: var(--muted); }
+  svg .label { font-size: 15px; font-weight: 700; }
+  svg .person { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+  svg .org { fill: var(--paper); stroke: var(--muted); stroke-width: 1.5; }
+  svg .centre { fill: var(--here-soft); stroke: var(--here); stroke-width: 2.5; }
+  svg .gap { fill: var(--card); stroke: var(--here); stroke-width: 2; stroke-dasharray: 7 6; }
+  svg .gone { fill: var(--card); stroke: var(--here); stroke-width: 2; stroke-dasharray: 5 4; }
+  svg .here-text { fill: var(--here); }
+  svg .accent-text { fill: var(--accent); }
+  svg .link { stroke: var(--accent); stroke-width: 2; fill: none; }
+  svg .into { stroke: var(--here); stroke-width: 2; fill: none; }
+  svg .faint { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-dasharray: 4 5; }
+  svg .panel { fill: var(--paper); stroke: var(--line); stroke-width: 1.5; }
+  svg .head-accent { fill: var(--accent); }
+  svg .head-here { fill: var(--here); }
+  svg .head-muted { fill: var(--muted); }
+
+  /* Who can do what */
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+  .role { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; display: grid; gap: 0.5rem; align-content: start; }
+  .role h3 { color: var(--accent); }
+  .role ul { font-size: 1.02rem; }
+
+  /* Comparison */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  table { border-collapse: collapse; min-width: 44rem; width: 100%; font-size: 1rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line); }
+  thead th { font-size: 0.95rem; color: var(--muted); }
+  tbody th { font-weight: 700; width: 11rem; }
+  tr:last-child th, tr:last-child td { border-bottom: 0; }
+  td.hearth, th.hearth { background: var(--accent-soft); }
+  thead th.hearth { color: var(--accent); }
+
+  .limits { display: grid; gap: 0.9rem; }
+  .limit { border-left: 4px solid var(--here); padding-left: 0.9rem; }
+  .limit strong { display: block; }
+
+  .coming { border: 2px dashed var(--line); border-radius: 12px; padding: 1rem 1.1rem; display: grid; gap: 0.5rem; }
+  .tag { display: inline-block; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--here); }
+
+  footer { font-size: 0.95rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1rem; display: grid; gap: 0.4rem; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<main>
+  <header>
+    <h1>Hearth in plain words</h1>
+    <p class="lede">A record about a person, held by the people who look after them — and by nobody else.</p>
+    <p class="stamp">For anybody who is not a programmer. Checked against the working app on <strong>24 September 2026</strong>, version <strong>0.3.4</strong>. Where something is not finished, it says so.</p>
+  </header>
+
+  <nav aria-label="Contents">
+    <ol>
+      <li><a href="#short">The short version</a></li>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#answer">Hearth's answer</a></li>
+      <li><a href="#circle">A circle, and how you join</a></li>
+      <li><a href="#who">Who can do what</a></li>
+      <li><a href="#locked">Locked, and taking somebody out</a></li>
+      <li><a href="#pass">A pass, for somebody passing through</a></li>
+      <li><a href="#successor">When the holder can't carry on</a></li>
+      <li><a href="#offline">When the internet goes</a></li>
+      <li><a href="#different">How it is different</a></li>
+      <li><a href="#limits">What it can't do</a></li>
+      <li><a href="#more">Finding out more</a></li>
+    </ol>
+  </nav>
+
+  <section id="short">
+    <h2>The short version</h2>
+    <ul>
+      <li><strong>Hearth holds an "About Me"</strong>: what matters to a person, how to talk with them, what to please do and please not do. It follows a national standard (PRSB About Me). Nothing medical — no medicines, no diagnoses.</li>
+      <li><strong>The record lives on the devices of the people around the person</strong> — family, carers, a nurse. Each has a copy. There is no company or database in the middle.</li>
+      <li><strong>Only the person, or whoever holds the record for them, can change it.</strong> Everybody else can read it, suggest things, and say "I have read this".</li>
+      <li><strong>It is locked.</strong> Only people let into the circle can open it, and somebody taken out cannot open what is written after they left.</li>
+      <li><strong>It keeps working when the internet goes</strong>, between devices that are already talking to each other.</li>
+    </ul>
+  </section>
+
+  <section id="problem">
+    <h2>The problem</h2>
+    <p class="gist">Everybody wants the same information about a person, and nobody wants to be the one who holds it.</p>
+    <p>Take Margaret. She has dementia. A GP, a district nurse, a care agency, a day centre, a hospital ward and her daughter all look after her. Each writes things down in their own system, and those systems do not talk to each other. So Margaret, or her daughter, explains her again, every time: speak to her left side, she is deaf on the right; do not move her chair.</p>
+    <p>The obvious fix is one shared place for her record. But whoever runs that place becomes <strong>the operator</strong> — legally responsible for sensitive information about a vulnerable person, written by half a dozen organisations, and expected to still exist in twenty years. Almost nobody wants that job, and the ones who took it did not always keep it.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 330" role="img" aria-labelledby="d1t d1d">
+          <title id="d1t">Every other way: somebody holds it</title>
+          <desc id="d1d">Six organisations each send information into one operator in the middle, which holds it for everyone and carries the liability.</desc>
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--here)"/></marker>
+          </defs>
+          <text x="20" y="30" class="label head-muted">Every other way: somebody has to hold it</text>
+          <g font-size="15" text-anchor="middle">
+            <rect class="org" x="20" y="60" width="160" height="44" rx="8"/><text x="100" y="88">GP surgery</text>
+            <rect class="org" x="20" y="135" width="160" height="44" rx="8"/><text x="100" y="163">Hospital ward</text>
+            <rect class="org" x="20" y="210" width="160" height="44" rx="8"/><text x="100" y="238">Care agency</text>
+            <rect class="org" x="580" y="60" width="160" height="44" rx="8"/><text x="660" y="88">District nurse</text>
+            <rect class="org" x="580" y="135" width="160" height="44" rx="8"/><text x="660" y="163">Day centre</text>
+            <rect class="org" x="580" y="210" width="160" height="44" rx="8"/><text x="660" y="238">Her daughter</text>
+          </g>
+          <rect class="centre" x="270" y="100" width="220" height="116" rx="10"/>
+          <text x="380" y="134" text-anchor="middle" class="label here-text">THE OPERATOR</text>
+          <text x="380" y="158" text-anchor="middle" class="small">a company or a public body</text>
+          <text x="380" y="178" text-anchor="middle" class="small">holds everybody's copy</text>
+          <text x="380" y="198" text-anchor="middle" class="small">and carries the blame</text>
+          <g class="into" marker-end="url(#ah)">
+            <path d="M184 82 L266 124"/><path d="M184 157 L266 157"/><path d="M184 232 L266 192"/>
+            <path d="M576 82 L494 124"/><path d="M576 157 L494 157"/><path d="M576 232 L494 192"/>
+          </g>
+          <text x="380" y="290" text-anchor="middle" class="small">Microsoft HealthVault was one. It closed in 2019.</text>
+          <text x="380" y="312" text-anchor="middle" class="small">Flanders set up a state-owned company to be another.</text>
+        </svg>
+      </div>
+      <figcaption>Each organisation puts its information into somebody else's system. That somebody carries the responsibility — and can close.</figcaption>
+    </figure>
+  </section>
+
+  <section id="answer">
+    <h2>Hearth's answer: nobody holds it</h2>
+    <p class="gist">The people around the person each keep a copy, and their devices share it with each other directly.</p>
+    <p>In Hearth, the record for Margaret is called <strong>a circle</strong>. Everybody Margaret — or her daughter, acting for her — lets in keeps a full copy on their own phone or computer. When anybody changes something, their device passes it straight to the others.</p>
+    <p>There is <strong>no server that holds the record</strong>, no database, no account and no company. So there is nothing central to buy, run, break into, be forced to hand over, or shut down.</p>
+    <p>Every device also checks the rules for itself — for example, "only Margaret's side may change Margaret's record". So even somebody with a tampered copy of the app cannot write what the rules forbid: every other device would refuse it.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 390" role="img" aria-labelledby="d2t d2d">
+          <title id="d2t">Hearth: nobody holds it</title>
+          <desc id="d2d">Four people — Margaret, her daughter, a district nurse and a support worker — each hold a full copy and share with each other directly. The middle is empty. Off to one side, a public server helps devices find each other but never sees the record.</desc>
+          <defs>
+            <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--accent)"/></marker>
+          </defs>
+          <text x="20" y="30" class="label head-accent">Hearth: nobody holds it</text>
+          <g text-anchor="middle">
+            <rect class="person" x="80" y="60" width="180" height="56" rx="10"/><text x="170" y="84" font-size="16" font-weight="700">Her daughter</text><text x="170" y="104" class="small">full copy, on her phone</text>
+            <rect class="person" x="440" y="60" width="180" height="56" rx="10"/><text x="530" y="84" font-size="16" font-weight="700">District nurse</text><text x="530" y="104" class="small">full copy, on her laptop</text>
+            <rect class="person" x="80" y="230" width="180" height="56" rx="10"/><text x="170" y="254" font-size="16" font-weight="700">Support worker</text><text x="170" y="274" class="small">full copy, on his phone</text>
+            <rect class="person" x="440" y="230" width="180" height="56" rx="10"/><text x="530" y="254" font-size="16" font-weight="700">Margaret</text><text x="530" y="274" class="small">full copy — and she decides</text>
+          </g>
+          <g class="link" marker-start="url(#ab)" marker-end="url(#ab)">
+            <path d="M264 88 L436 88"/><path d="M264 258 L436 258"/>
+            <path d="M170 120 L170 226"/><path d="M530 120 L530 226"/>
+            <path d="M264 112 L436 234"/><path d="M264 234 L436 112"/>
+          </g>
+          <circle class="gap" cx="350" cy="173" r="44"/>
+          <text x="350" y="169" text-anchor="middle" font-size="15" font-weight="700" class="here-text">nothing</text>
+          <text x="350" y="188" text-anchor="middle" font-size="15" font-weight="700" class="here-text">here</text>
+          <rect class="org" x="648" y="140" width="100" height="68" rx="8" stroke-dasharray="4 4"/>
+          <text x="698" y="164" text-anchor="middle" font-size="13" font-weight="700">directory</text>
+          <text x="698" y="182" text-anchor="middle" class="small">helps devices</text>
+          <text x="698" y="198" text-anchor="middle" class="small">find each other</text>
+          <path class="faint" d="M624 160 L646 168"/>
+          <text x="380" y="330" text-anchor="middle" class="small">The directory is a public server run by Holochain. It passes on addresses and locked traffic.</text>
+          <text x="380" y="350" text-anchor="middle" class="small">It never holds the record and cannot read anything in it.</text>
+          <text x="380" y="372" text-anchor="middle" class="small">If it went away, nothing would be lost — devices far apart just could not find each other.</text>
+        </svg>
+      </div>
+      <figcaption>Everybody shares with everybody. The middle stays empty. The only outside help is a directory that lets devices in different places find each other — it never sees what they say.</figcaption>
+    </figure>
+  </section>
+
+  <section id="circle">
+    <h2>A circle, and how you join</h2>
+    <p class="gist">You ask to join; the person who holds the circle lets you in; your device gets its own copy.</p>
+    <p>Every circle has <strong>a holder</strong>: Margaret herself, or somebody she trusts to act for her, often a daughter or a case manager. The holder decides who is in.</p>
+    <p>Joining works like knocking at a door. The holder shares the circle's <strong>address</strong> — as a QR code to scan, or rows of letters to type. Anybody with the address can knock. Nobody gets in until the holder says yes. Having the address shows a stranger nothing about Margaret.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 170" role="img" aria-labelledby="d3t d3d">
+          <title id="d3t">Joining a circle, in four steps</title>
+          <desc id="d3d">One, the holder shares the address. Two, you knock, giving your name. Three, the holder lets you in. Four, your device gets its own copy and joins in.</desc>
+          <defs>
+            <marker id="an" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--muted)"/></marker>
+          </defs>
+          <g text-anchor="middle">
+            <rect class="panel" x="10" y="20" width="165" height="130" rx="10"/>
+            <text x="92" y="52" class="label head-accent">1</text>
+            <text x="92" y="80" font-size="15" font-weight="700">The holder shares</text>
+            <text x="92" y="100" font-size="15" font-weight="700">the address</text>
+            <text x="92" y="126" class="small">a QR code, or letters</text>
+
+            <rect class="panel" x="200" y="20" width="165" height="130" rx="10"/>
+            <text x="282" y="52" class="label head-accent">2</text>
+            <text x="282" y="80" font-size="15" font-weight="700">You knock</text>
+            <text x="282" y="102" class="small">your name, and how you</text>
+            <text x="282" y="120" class="small">know her — sealed so only</text>
+            <text x="282" y="138" class="small">the holder can read it</text>
+
+            <rect class="panel" x="390" y="20" width="165" height="130" rx="10"/>
+            <text x="472" y="52" class="label head-accent">3</text>
+            <text x="472" y="80" font-size="15" font-weight="700">The holder</text>
+            <text x="472" y="100" font-size="15" font-weight="700">lets you in</text>
+            <text x="472" y="126" class="small">or doesn't</text>
+
+            <rect class="person" x="580" y="20" width="170" height="130" rx="10"/>
+            <text x="665" y="52" class="label head-accent">4</text>
+            <text x="665" y="80" font-size="15" font-weight="700">Your device gets</text>
+            <text x="665" y="100" font-size="15" font-weight="700">its own copy</text>
+            <text x="665" y="126" class="small">and the circle's key</text>
+          </g>
+          <g stroke-width="2" style="stroke: var(--muted)" marker-end="url(#an)">
+            <path d="M178 85 L196 85"/><path d="M368 85 L386 85"/><path d="M558 85 L576 85"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>A circle can also be set up so that two people must agree before anybody new comes in.</figcaption>
+    </figure>
+  </section>
+
+  <section id="who">
+    <h2>Who can do what</h2>
+    <p class="gist">One person's words; everybody else's help.</p>
+    <div class="roles">
+      <div class="role">
+        <h3>The holder</h3>
+        <ul>
+          <li>Writes and changes the record</li>
+          <li>Decides who is in the circle, and can take people out</li>
+          <li>Accepts or sets aside suggestions</li>
+          <li>Can give a pass, and name a successor</li>
+        </ul>
+      </div>
+      <div class="role">
+        <h3>Everybody in the circle</h3>
+        <ul>
+          <li>Reads the record, with photographs, recorded voice and short videos</li>
+          <li>Suggests something to add — "her allotment; she talked about it all summer"</li>
+          <li>Says "I have read this version"</li>
+        </ul>
+      </div>
+    </div>
+    <p>"I have read this version" matters more than it sounds: a family can see that the new carer has actually read about Margaret, rather than hoping so. But it proves only that <em>somebody</em> said they read it. Anybody can call themselves "district nurse" — Hearth always shows that as what they said, never as checked.</p>
+  </section>
+
+  <section id="locked">
+    <h2>Locked, and taking somebody out</h2>
+    <p class="gist">The record is locked with a key only the circle has. Take somebody out, and the circle changes the key.</p>
+    <p>Everything in a circle — the record, suggestions, photographs, sound and video — is <strong>locked</strong> before it leaves anybody's device. A copy sitting on somebody's disk is unreadable without the circle's key, and only people let into the circle are given it.</p>
+    <p>When the holder takes somebody out, the circle makes <strong>a new key</strong> and gives it to everybody except that person. Whatever is written afterwards still reaches their device, like everything else — and cannot be opened there.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 250" role="img" aria-labelledby="d4t d4d">
+          <title id="d4t">What taking somebody out does</title>
+          <desc id="d4d">First, everybody in the circle holds key 1. Then the support worker is taken out, and a new key 2 is given to everybody but him. Then something new is written: it reaches his device but cannot be opened there.</desc>
+          <g text-anchor="middle">
+            <rect class="panel" x="10" y="10" width="230" height="200" rx="10"/>
+            <text x="125" y="40" font-size="15" font-weight="700">Everybody in the circle</text>
+            <rect class="person" x="30" y="60" width="92" height="36" rx="6"/><text x="76" y="83" font-size="14">daughter</text>
+            <rect class="person" x="128" y="60" width="92" height="36" rx="6"/><text x="174" y="83" font-size="14">nurse</text>
+            <rect class="person" x="30" y="104" width="92" height="36" rx="6"/><text x="76" y="127" font-size="14">worker</text>
+            <rect class="person" x="128" y="104" width="92" height="36" rx="6"/><text x="174" y="127" font-size="14">Margaret</text>
+            <text x="125" y="180" font-size="15" font-weight="700" class="accent-text">all hold key 1</text>
+
+            <rect class="panel" x="265" y="10" width="230" height="200" rx="10"/>
+            <text x="380" y="40" font-size="15" font-weight="700">The worker is taken out</text>
+            <rect class="person" x="285" y="60" width="92" height="36" rx="6"/><text x="331" y="83" font-size="14">daughter</text>
+            <rect class="person" x="383" y="60" width="92" height="36" rx="6"/><text x="429" y="83" font-size="14">nurse</text>
+            <rect class="gone" x="285" y="104" width="92" height="36" rx="6"/><text x="331" y="127" font-size="14" class="here-text">worker</text>
+            <rect class="person" x="383" y="104" width="92" height="36" rx="6"/><text x="429" y="127" font-size="14">Margaret</text>
+            <text x="380" y="172" font-size="15" font-weight="700" class="accent-text">a new key 2,</text>
+            <text x="380" y="192" font-size="15" font-weight="700" class="accent-text">for everybody but him</text>
+
+            <rect class="panel" x="520" y="10" width="230" height="200" rx="10"/>
+            <text x="635" y="40" font-size="15" font-weight="700">Something new is written</text>
+            <rect class="person" x="545" y="62" width="180" height="48" rx="6"/>
+            <text x="635" y="82" font-size="14">reaches his device,</text>
+            <text x="635" y="100" font-size="14">like everything does</text>
+            <text x="635" y="146" font-size="16" font-weight="700" class="here-text">and cannot be</text>
+            <text x="635" y="166" font-size="16" font-weight="700" class="here-text">opened there</text>
+            <text x="635" y="192" class="small">locked, not just hidden</text>
+          </g>
+          <text x="380" y="238" text-anchor="middle" class="small">What he read before he left, he still has. Nobody, anywhere, can un-read something.</text>
+        </svg>
+      </div>
+      <figcaption>Taking somebody out protects everything written afterwards. It cannot take back what they already saw — no system can.</figcaption>
+    </figure>
+  </section>
+
+  <section id="pass">
+    <h2>A pass, for somebody passing through</h2>
+    <p class="gist">A nurse on a ward doesn't need to join. A pass lets them read chosen parts, for a set time.</p>
+    <p>Not everybody who helps Margaret should keep a copy of her record. A nurse on a hospital ward at two in the morning, a paramedic, a carer covering one shift — they need the basics, once. The holder can give them <strong>a pass</strong>: chosen parts of the record, for just today, a week, or until the holder stops it.</p>
+    <p>The pass is read from the holder's own device each time. <strong>Nothing is copied</strong> onto the reader's device, and the holder sees when it was used ("Ward 7 read this").</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 220" role="img" aria-labelledby="d5t d5d">
+          <title id="d5t">How a pass works</title>
+          <desc id="d5d">The ward nurse shows her pass to the holder's device. The holder's device sends back only the chosen parts, such as how to talk with me and please do and please do not. Nothing is kept on the nurse's device. The holder's device must be switched on.</desc>
+          <defs>
+            <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--accent)"/></marker>
+          </defs>
+          <g text-anchor="middle">
+            <rect class="person" x="20" y="40" width="230" height="110" rx="10"/>
+            <text x="135" y="72" font-size="16" font-weight="700">The holder's device</text>
+            <text x="135" y="96" class="small">has the whole record</text>
+            <text x="135" y="118" class="small">must be switched on,</text>
+            <text x="135" y="136" class="small">with Hearth open</text>
+
+            <rect class="org" x="510" y="40" width="230" height="110" rx="10"/>
+            <text x="625" y="72" font-size="16" font-weight="700">Ward nurse</text>
+            <text x="625" y="96" class="small">not in the circle</text>
+            <text x="625" y="118" class="small">reads it on screen;</text>
+            <text x="625" y="136" class="small">nothing is kept</text>
+          </g>
+          <g class="link" marker-end="url(#ap)">
+            <path d="M506 70 L254 70"/>
+            <path d="M254 124 L506 124"/>
+          </g>
+          <text x="380" y="60" text-anchor="middle" font-size="14">"here is my pass"</text>
+          <text x="380" y="114" text-anchor="middle" font-size="14">only the chosen parts</text>
+          <text x="380" y="146" text-anchor="middle" class="small">How to talk with me · Please do and please do not</text>
+          <text x="380" y="196" text-anchor="middle" class="small">The holder can stop a pass at any time. A stopped or expired pass shows nothing.</text>
+        </svg>
+      </div>
+      <figcaption>The honest limit: a pass only works while the holder's device is on. Anybody who must be able to read the record when that device is off belongs in the circle.</figcaption>
+    </figure>
+  </section>
+
+  <section id="successor">
+    <h2>When the holder can't carry on</h2>
+    <p class="gist">The holder can name a successor in advance. Taking over is slow and visible on purpose.</p>
+    <p>For people with dementia, the day the holder can no longer look after the circle is expected, not unusual. So the holder can name <strong>a successor</strong>, and <strong>a checker</strong> — somebody close enough to check on her in person. They are never the same person.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 760 200" role="img" aria-labelledby="d6t d6d">
+          <title id="d6t">How a successor takes over</title>
+          <desc id="d6d">The holder names a successor and a checker. Later the successor starts to take over. A waiting period follows that the whole circle can see, in which the holder can say I'm still here and stop it. The checker confirms she cannot carry on. Then the successor moves the circle, and everybody's app follows.</desc>
+          <defs>
+            <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" style="fill: var(--muted)"/></marker>
+          </defs>
+          <line x1="40" y1="60" x2="720" y2="60" stroke-width="3" style="stroke: var(--line)"/>
+          <g text-anchor="middle">
+            <circle cx="70" cy="60" r="12" class="person"/>
+            <text x="70" y="100" font-size="14" font-weight="700">Named</text>
+            <text x="70" y="120" class="small">in advance,</text>
+            <text x="70" y="138" class="small">while all is well</text>
+
+            <circle cx="230" cy="60" r="12" class="person"/>
+            <text x="230" y="100" font-size="14" font-weight="700">Starts to</text>
+            <text x="230" y="118" font-size="14" font-weight="700">take over</text>
+            <text x="230" y="138" class="small">everybody sees it</text>
+
+            <circle cx="390" cy="60" r="12" class="centre"/>
+            <text x="390" y="100" font-size="14" font-weight="700" class="here-text">Waiting period</text>
+            <text x="390" y="120" class="small">the holder can say</text>
+            <text x="390" y="138" class="small">"I'm still here" —</text>
+            <text x="390" y="156" class="small">and it stops</text>
+
+            <circle cx="550" cy="60" r="12" class="person"/>
+            <text x="550" y="100" font-size="14" font-weight="700">Checked</text>
+            <text x="550" y="120" class="small">the checker confirms</text>
+            <text x="550" y="138" class="small">she can't carry on</text>
+
+            <circle cx="700" cy="60" r="12" class="person"/>
+            <text x="700" y="100" font-size="14" font-weight="700">Moves</text>
+            <text x="700" y="120" class="small">a new circle;</text>
+            <text x="700" y="138" class="small">everybody follows</text>
+          </g>
+          <text x="380" y="190" text-anchor="middle" class="small">Anybody who had been taken out is not brought back.</text>
+        </svg>
+      </div>
+      <figcaption>Built and tested by the software, not yet tried on two real machines.</figcaption>
+    </figure>
+  </section>
+
+  <section id="offline">
+    <h2>When the internet goes</h2>
+    <p class="gist">Devices that are already talking keep sharing, even with the broadband unplugged.</p>
+    <p>Because nothing depends on a central server, two devices in the same house keep sharing when the internet goes down. This was shown on 14 September 2026 on a desktop and a laptop: the broadband was unplugged, the record was changed on one, and the change appeared on the other.</p>
+    <p><strong>The catch:</strong> if both devices are switched off and on again with no internet, standard Holochain — the software Hearth is built on — cannot find the other device in the same room. A test version of Holochain that looks on the local network fixes that, and found the other machine in about a minute. It also made a two-minute video move quickly instead of taking ten minutes. That version is a field test, so the everyday download does not have it yet.</p>
+  </section>
+
+  <section id="different">
+    <h2>How it is different</h2>
+    <p class="gist">Every other way to share a record names somebody to hold it. Hearth names nobody.</p>
+    <p>Each of these does something well. The difference is in the first row.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col"></th>
+            <th scope="col">Paper passport<br>("This is me")</th>
+            <th scope="col">Each provider's own record</th>
+            <th scope="col">Hosted person-centred apps<br>(e.g. RIX Multi Me, patient portals)</th>
+            <th scope="col">Personal data pods<br>(e.g. Flanders)</th>
+            <th scope="col" class="hearth">Hearth</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Who holds it</th>
+            <td>Whoever has the paper</td>
+            <td>Each organisation</td>
+            <td>The company or provider running it</td>
+            <td>A state-owned company</td>
+            <td class="hearth"><strong>Nobody</strong> — only the people in the circle, on their own devices</td>
+          </tr>
+          <tr>
+            <th scope="row">Crosses between organisations</th>
+            <td>Yes, if it is carried</td>
+            <td>No — it stops at the organisation's walls</td>
+            <td>Yes, for those given access</td>
+            <td>Yes, for those given access</td>
+            <td class="hearth">Yes, for those in the circle</td>
+          </tr>
+          <tr>
+            <th scope="row">In more than one place at once</th>
+            <td>No — one copy</td>
+            <td>Inside that organisation</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td class="hearth">Yes — every member has a copy</td>
+          </tr>
+          <tr>
+            <th scope="row">Without the internet</th>
+            <td>Yes</td>
+            <td>Depends on the system</td>
+            <td>Usually not</td>
+            <td>Usually not</td>
+            <td class="hearth">Yes, between devices already talking; after a restart, only with the test version</td>
+          </tr>
+          <tr>
+            <th scope="row">If whoever runs it stops</th>
+            <td>Nothing to stop</td>
+            <td>The organisation's problem</td>
+            <td>The records go with it (HealthVault closed in 2019)</td>
+            <td>Depends on the state company</td>
+            <td class="hearth">Nothing central to stop; every member keeps their copy</td>
+          </tr>
+          <tr>
+            <th scope="row">Pictures, voice, video</th>
+            <td>Pictures</td>
+            <td>Varies</td>
+            <td>Yes — RIX is strongest here</td>
+            <td>Varies</td>
+            <td class="hearth">Yes</td>
+          </tr>
+          <tr>
+            <th scope="row">Established and in use</th>
+            <td>Yes, widely</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>Being rolled out</td>
+            <td class="hearth">No — an early demonstration, not yet used by anybody for a real person</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The last row matters as much as the first. The others are real services, used by real people. Hearth is a working demonstration that the question "who holds it?" can have the answer "nobody".</p>
+  </section>
+
+  <section id="limits">
+    <h2>What it can't do</h2>
+    <p class="gist">Said here rather than buried.</p>
+    <div class="limits">
+      <p class="limit"><strong>Holding somebody's device is holding the keys.</strong> The released app does not yet ask for a password when it starts. That is decided, and still to be built.</p>
+      <p class="limit"><strong>A stranger cannot find the record.</strong> A paramedic who has never heard of Hearth has no way to know it exists. Paper solved that with a sticker on the fridge; Hearth has not.</p>
+      <p class="limit"><strong>Somebody taken out keeps what they already read.</strong> Only what is written afterwards is protected.</p>
+      <p class="limit"><strong>It needs a device.</strong> Somebody with no phone or computer, and nobody to hold the circle for them, is not helped by this. Windows only, for now.</p>
+      <p class="limit"><strong>Nobody who does security for a living has checked it yet.</strong> Four AI reviews and an audit of our own found and fixed real problems. A human review is what it needs next.</p>
+    </div>
+  </section>
+
+  <section id="more">
+    <h2>Coming next, and finding out more</h2>
+    <div class="coming">
+      <span class="tag">Being tested</span>
+      <p><strong>Calls.</strong> Voice and video between two people in a circle, straight from device to device and never recorded. Off until the holder turns them on, so nobody gets calls they didn't expect.</p>
+    </div>
+    <p>Everything here can be checked. The code, the tests, and a page listing exactly what has and hasn't been shown are at <a href="https://github.com/topeuph-ai/hearth">github.com/topeuph-ai/hearth</a> — start with "what is proven".</p>
+  </section>
+
+  <footer>
+    <p>Hearth is free and open source (Apache 2.0). Built by one person whose field is music, not software: the code is written with AI assistance, and the design decisions are his.</p>
+    <p>It follows the PRSB About Me standard for what it holds. It is not a medical device and holds nothing clinical.</p>
+  </footer>
+</main>
