@@ -6,7 +6,7 @@
 
 ## In one paragraph
 
-About Me lets a person record what matters to them, how to communicate with them and how to support them, and share it with the people who care for them — family and professionals from different organisations. It runs peer-to-peer with **no server and no operator**. Each participant's device holds their own copy. Nothing is uploaded to anyone.
+About Me lets a person record what matters to them, how to communicate with them and how to support them, and share it with the people who care for them — family and professionals from different organisations. It runs peer-to-peer with **no operator**: nobody runs a service that holds the record. Each participant's device holds their own copy. Nothing is uploaded to anyone. Devices do use two kinds of public server to *find and reach* each other, which see internet addresses but never the record — see [Servers the devices talk to](#servers-the-devices-talk-to).
 
 ---
 
@@ -37,13 +37,37 @@ This exclusion is a design decision, not an oversight. It tracks the PRSB *About
 
 Directly between the devices of circle members. There is no cloud service, no database, and no company holding a copy. Members' devices hold copies of each other's entries so the circle still works when someone is offline.
 
+### Servers the devices talk to
+
+*Added 24 September 2026. Missing until then, which was a gap: every
+installation has always done the first of these.*
+
+| Server | Run by | What it sees | What it never sees |
+| --- | --- | --- | --- |
+| **Holochain's public introduction and relay server** (`dev-test-bootstrap2.holochain.org`) | Holochain, as a service for developers | Each device's internet address and the identity of the circles it is in (a hash, not a name); relayed traffic between devices that cannot reach each other directly, encrypted | Anything the devices say to each other: all Holochain traffic is encrypted between the two devices, so a relay passes on bytes it cannot read. The record, suggestions and media are also locked to the circle before they leave the device; members' descriptions of themselves are not yet (see encryption.md) |
+| **A public address-check ("STUN") server, for calls only** (`stun.nextcloud.com`) | Nextcloud, free to use | The caller's internet address, when a call starts, if the holder has turned calls on | The call itself, which is encrypted end to end and goes between the two devices; who is calling whom |
+
+**Both are somebody else's goodwill**, with no agreement behind them. Holochain's
+is described as a development server, not one run for production use. Neither
+holds personal data beyond an internet address, but an internet address is
+personal data under UK GDPR, so both belong here. **[DECISION: whether to rely
+on them for real use, or run Hearth's own — an always-on "edge node" machine
+could run the introduction server, and a call relay, for the cost of
+electricity.]**
+
+**Calls** (from 0.3.5): live voice and video between two members of a circle,
+**off until the holder turns them on** for that circle. Never recorded, never
+stored, encrypted end to end by the browser's own WebRTC. Calls between some
+networks will fail, because no relay for calls is run for Hearth; that is a
+limitation, not a leak.
+
 **Who is in it**
 
 Only people the person, or whoever acts for them, has admitted. Membership is not open.
 
 This is enforced in code, not merely stated. The person's public key is written into the DNA properties, which form part of the DNA hash — so each circle is a cryptographically separate network, and circles cannot see one another. An invitation is that person's signature over the invitee's own key, verified independently by every existing member before the joiner is accepted. Nobody is asked for permission, because there is nobody to ask.
 
-**One caveat while this is a prototype:** a circle created without a founder property is currently open to anyone. That exists only so the base cell is installable during development. It must be made to fail closed before the software is used by anybody, and is marked as such in the source.
+~~**One caveat while this is a prototype:** a circle created without a founder property is currently open to anyone.~~ **Resolved.** A circle with no founder, or one that cannot be read, now admits nobody; only the shared lobby, which holds nothing, is open, and it must be asked for by name. Tested: `a_circle_with_no_founder_admits_nobody`.
 
 ---
 
@@ -103,7 +127,7 @@ What this does *not* settle is the part that was never software: how a proxy com
 |---|---|---|---|
 | **Nobody online when the record is needed** — every device in the circle asleep at 3am | Low–Medium | High | A liveness problem, not a redundancy one. See below |
 | A member's device is lost or stolen and readable | Medium | High | Device encryption; keep the local store encrypted at rest |
-| A member holding a copy reads content not meant for them | Medium | Medium | Contents are locked to circle members at application level — built on `migration-batch`, not yet released. A member who is *in* the circle holds the key, by design; what this stops is a member who has been removed |
+| A member holding a copy reads content not meant for them | Medium | Medium | Contents are locked to circle members at application level — released in 0.2.7 onwards, and in the recommended version since 0.3.4. A member who is *in* the circle holds the key, by design; what this stops is a member who has been removed |
 | Someone is admitted who should not have been | Low | High | Only the person or their proxy can admit |
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
 | A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |
