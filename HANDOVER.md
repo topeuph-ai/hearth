@@ -44,8 +44,9 @@ But not while he is in the middle of walking the demo.
 ## How we work
 
 He walks the interface as a real user and reports what he sees; read the actual
-code before theorising, fix, verify, commit, and push `main` (`migration-batch`
-is kept equal to it). He is not a software engineer — his field is music — and
+code before theorising, fix, verify, commit, and push `main`. There is only
+`main` now; the `migration-batch` branch was retired on 24 September 2026 once
+its work was released. A future rules change can start a branch of its own. He is not a software engineer — his field is music — and
 is dyslexic: lead with the point, strip the jargon, and never hand him an
 opinion as though it were his. Ideas he raises mid-task are to be written down,
 not built, unless he asks.
