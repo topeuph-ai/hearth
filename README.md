@@ -1,14 +1,34 @@
-# About Me, held by the person
+# Hearth
+
+**So that every new carer, nurse and hospital ward knows how to look after
+somebody — in that person's own words — without them having to explain
+themselves all over again.**
 
 [![tests](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml/badge.svg)](https://github.com/topeuph-ai/hearth/actions/workflows/tests.yml)
 
-A care record that belongs to the person it is about, and works across
-organisations that will never share a computer system.
+Margaret has dementia. Her daughter, a district nurse, a support worker and a
+day centre all help look after her. Each time somebody new arrives, the same
+things have to be said again: speak to her left side, she is deaf on the right;
+she settles if you talk about her allotment; please don't move her chair.
 
-**No central service stores or controls the record.** Nobody hosts it, and
-there is no company in the middle. Devices do use public servers to *find*
-each other across the internet — they carry addresses, never records. See
-[the hard questions](docs/hard-questions.md#10-what-does-no-operator-really-mean).
+**Hearth keeps those things in one place, written down once, and shares them
+with the people Margaret chooses.** Her family and carers each keep a copy on
+their own phone or computer. Anybody can suggest something to add; Margaret,
+or whoever looks after the record for her, decides what goes in. There are
+photographs, and recordings of her voice, for the things words don't catch.
+
+**No company holds it.** The record lives only on the devices of the people
+around Margaret — there is no database in the middle for anybody to run, sell,
+lose or shut down. It is locked so only her circle can open it, and it keeps
+working between devices in the same house when the internet goes down.
+
+What it holds follows a national standard for exactly this kind of record,
+[PRSB "About Me"](https://theprsb.org/standards/aboutme/) — what matters to the
+person, how to communicate with them, what to please do and please not do.
+Nothing medical: no medicines, no diagnoses.
+
+*Hearth is an early working demonstration, not yet used for a real person.
+Free and open source.*
 
 > ### 📖 [New to Hearth? Read *Hearth in plain words*](docs/hearth-in-plain-words.pdf)
 >
