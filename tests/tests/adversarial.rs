@@ -4285,6 +4285,7 @@ fn a_pass_for(circle: &CellId, until: Option<Timestamp>) -> aboutme::MakePassInp
             aboutme_integrity::AboutMeField::PleaseDoAndPleaseDoNot,
         ],
         for_whom: "Ward 7".to_string(),
+        purpose: "Hospital admission".to_string(),
         until: until.map(|t| t.as_micros()),
     }
 }
@@ -4331,6 +4332,10 @@ async fn a_pass_reads_what_it_was_made_for_and_nothing_else() {
         .expect("a live pass, presented by whoever holds it, is answered");
 
     assert_eq!(words.name, "Alice Bell");
+    assert_eq!(
+        words.purpose, "Hospital admission",
+        "the reader is told what the pass is for"
+    );
     assert_eq!(words.sections.len(), 2, "only the sections the pass was made for");
     assert_eq!(
         words.sections[0].words,

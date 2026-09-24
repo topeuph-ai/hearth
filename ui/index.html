@@ -196,6 +196,7 @@
 
         <div id="pass-words" hidden>
           <h3 id="pass-words-name"></h3>
+          <p id="pass-words-purpose" hidden></p>
           <p class="notice">
             Read just now from their own device. Nothing has been kept on this
             one, and what you can read is only what they chose to show.
@@ -1901,6 +1902,39 @@
           </p>
 
           <form id="pass-form">
+          <!--
+            Ready-made bundles, so a tired family member at a hospital door
+            presses one thing. Each fills in the choices below, and every
+            choice can still be changed. Idea from Mycelix-Health's care-team
+            templates (docs/prior-art.md).
+          -->
+          <fieldset id="pass-bundles">
+          <legend>What is it for?</legend>
+          <p class="hint">
+          Pick one to fill in the rest for you, or choose everything yourself
+          below. You can change any of it.
+          </p>
+          <div class="actions">
+          <button type="button" class="secondary" id="pass-bundle-hospital">
+          Going into hospital
+          </button>
+          <button type="button" class="secondary" id="pass-bundle-emergency">
+          An emergency
+          </button>
+          <button type="button" class="secondary" id="pass-bundle-cover">
+          A carer covering for a while
+          </button>
+          </div>
+          </fieldset>
+
+          <label for="pass-purpose">What it is for, in a few words (optional)</label>
+          <p class="hint">
+          They will see this when they read it. For example: hospital
+          admission, or covering while Ruth is away.
+          </p>
+          <input id="pass-purpose" type="text" maxlength="120"
+            autocomplete="off" />
+
           <label for="pass-for">Who is it for?</label>
           <p class="hint">
           For you, so you know which pass is which. For example: Ward 7, or
@@ -1912,9 +1946,9 @@
           <fieldset id="pass-sections">
           <legend>What can they read?</legend>
           <p class="hint">
-          The three already ticked are the ones most often needed by
+          Three are ticked to start with: the ones most often needed by
           somebody meeting <span class="about-whom">them</span> for the first
-          time.
+          time. Choosing what it is for, above, changes them.
           </p>
           </fieldset>
 
@@ -1962,7 +1996,7 @@
           <p id="no-passes" class="hint">None yet.</p>
           <ul id="pass-list"></ul>
 
-          <h4>When they were used</h4>
+          <h4>When they were used, or stopped</h4>
           <p id="no-pass-reads" class="hint">
           Nobody has read anything with a pass on this computer yet.
           </p>

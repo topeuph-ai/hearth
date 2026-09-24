@@ -2719,6 +2719,11 @@ pub struct PassTerms {
     /// Who the holder made it for, in her words. Shown back to her; never
     /// checked, since the pass works for whoever holds it.
     pub for_whom: String,
+    /// What it is for, in the holder's words — "hospital admission", say.
+    /// Shown to the reader and back to the holder. Idea from Mycelix-Health's
+    /// consent purposes (docs/prior-art.md). Empty on passes made before 0.3.5.
+    #[serde(default)]
+    pub purpose: String,
     /// When it stops working, in microseconds, or none for "until I stop it".
     pub until: Option<i64>,
     pub made: i64,
@@ -2733,6 +2738,9 @@ pub struct MakePassInput {
     pub circle: String,
     pub sections: Vec<AboutMeField>,
     pub for_whom: String,
+    /// What it is for. Optional.
+    #[serde(default)]
+    pub purpose: String,
     /// Microseconds, or none for "until I stop it".
     pub until: Option<i64>,
 }
@@ -2769,10 +2777,16 @@ pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
     DnaHash::try_from(input.circle.trim())
         .map_err(|_| wasm_error!("That is not a circle this app can read"))?;
 
+    if name_too_long(&input.for_whom) || name_too_long(&input.purpose) {
+        return Err(wasm_error!(
+            "Who a pass is for, and what for, can be up to 200 characters each"
+        ));
+    }
     let terms = PassTerms {
         circle: input.circle.trim().to_string(),
         sections: input.sections,
         for_whom: input.for_whom.trim().to_string(),
+        purpose: input.purpose.trim().to_string(),
         until: input.until,
         made: sys_time()?.as_micros(),
     };
@@ -2859,6 +2873,10 @@ pub fn stop_a_pass(grant: ActionHash) -> ExternResult<ActionHash> {
 pub struct PassedWords {
     /// Whose record this is.
     pub name: String,
+    /// What the holder said the pass is for, so the reader knows why they
+    /// have it. Empty if she said nothing.
+    #[serde(default)]
+    pub purpose: String,
     pub sections: Vec<PassedSection>,
 }
 
@@ -2890,7 +2908,7 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
         .map_err(|_| wasm_error!("That pass names a circle this app cannot read"))?;
     let me = agent_info()?.agent_initial_pubkey;
 
-    let words: PassedWords = match call(
+    let mut words: PassedWords = match call(
         CallTargetCell::OtherCell(CellId::new(circle, me)),
         zome_info()?.name,
         "words_for_a_pass".into(),
@@ -2900,6 +2918,7 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
         ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}")))?,
         _ => return Err(wasm_error!("The record could not be read just now")),
     };
+    words.purpose = terms.purpose.clone();
 
     // Tell the holder's own screen. The circle's wider knowledge of who read
     // what would need a new kind of entry in the rules, and is left for then.
@@ -2939,6 +2958,8 @@ pub fn words_for_a_pass(sections: Vec<AboutMeField>) -> ExternResult<PassedWords
 
     Ok(PassedWords {
         name: about_me.display_name.clone(),
+        // Filled in by `read_with_a_pass`, which has the pass's terms.
+        purpose: String::new(),
         sections: sections
             .into_iter()
             .map(|section| PassedSection {

@@ -1016,3 +1016,20 @@ legend {
 #call-local[hidden] {
   display: none;
 }
+
+/* Stopping a pass: the reason box opens beside the pass it belongs to. */
+.pass-stop-why {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.4rem;
+  max-width: 28rem;
+}
+
+#pass-bundles .actions {
+  margin: 0.5rem 0;
+}
+
+#pass-words-purpose {
+  font-weight: 600;
+  color: var(--muted);
+}

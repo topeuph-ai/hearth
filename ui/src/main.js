@@ -4577,6 +4577,62 @@ const PASS_SECTIONS_TICKED = [
   "HowToSupportMe",
 ];
 
+/*
+ * Ready-made bundles: one press fills in what the pass shows, for how long,
+ * and what it is for. Every choice can still be changed afterwards. The idea
+ * is Mycelix-Health's care-team templates (docs/prior-art.md); the choices
+ * are Hearth's own, and are a starting point, not a rule.
+ */
+const PASS_BUNDLES = {
+  hospital: {
+    purpose: "Going into hospital",
+    lasts: "week",
+    sections: [
+      "HowToCommunicateWithMe",
+      "PleaseDoAndPleaseDoNot",
+      "HowToSupportMe",
+      "PeopleWhoMatter",
+      "MyWellness",
+    ],
+  },
+  emergency: {
+    purpose: "An emergency",
+    lasts: "today",
+    sections: ["HowToCommunicateWithMe", "PleaseDoAndPleaseDoNot", "PeopleWhoMatter"],
+  },
+  cover: {
+    purpose: "A carer covering for a while",
+    lasts: "week",
+    sections: [
+      "WhatMattersToMe",
+      "HowToCommunicateWithMe",
+      "PleaseDoAndPleaseDoNot",
+      "HowToSupportMe",
+      "MyWellness",
+    ],
+  },
+};
+
+function usePassBundle(name) {
+  const bundle = PASS_BUNDLES[name];
+  buildPassSectionChoices();
+  for (const tick of $("pass-sections").querySelectorAll("input")) {
+    tick.checked = bundle.sections.includes(tick.value);
+  }
+  for (const choice of document.querySelectorAll('input[name="pass-lasts"]')) {
+    choice.checked = choice.value === bundle.lasts;
+  }
+  $("pass-purpose").value = bundle.purpose;
+  const shown = bundle.sections.map(sectionName).join(", ");
+  const lasts = { today: "just today", week: "a week", stopped: "until you stop it" }[bundle.lasts];
+  announce(`Filled in for ${bundle.purpose.toLowerCase()}: ${shown}, for ${lasts}. Change anything you like.`);
+  $("pass-for").focus();
+}
+
+$("pass-bundle-hospital").addEventListener("click", () => usePassBundle("hospital"));
+$("pass-bundle-emergency").addEventListener("click", () => usePassBundle("emergency"));
+$("pass-bundle-cover").addEventListener("click", () => usePassBundle("cover"));
+
 function passToText(room, secret) {
   const key = decodeHashFromBase64(room.holder);
   const packed = new Uint8Array(PASS_BYTES);
@@ -4691,6 +4747,7 @@ function rememberPassRead(door, payload) {
   const last = reads[0];
   if (
     last &&
+    !last.stopped &&
     last.door === door &&
     last.for_whom === payload.for_whom &&
     Math.abs(payload.at - last.at) < 60_000_000
@@ -4709,6 +4766,17 @@ function rememberPassRead(door, payload) {
     // The read still happened; only the note of it is lost.
   }
   return true;
+}
+
+/** A pass the holder stopped, and why, in the same history as its readings. */
+function rememberPassStopped(door, forWhom, reason) {
+  const history = passReads();
+  history.unshift({ door, for_whom: forWhom, stopped: true, reason, at: Date.now() * 1000 });
+  try {
+    localStorage.setItem(PASS_READS_KEY, JSON.stringify(history.slice(0, 200)));
+  } catch {
+    // The pass is stopped either way; only the note of why is lost.
+  }
 }
 
 function buildPassSectionChoices() {
@@ -4746,21 +4814,58 @@ async function loadPasses() {
           : `until ${whenText(pass.terms.until)}`
         : "until you stop it";
       const words = document.createElement("span");
-      words.textContent = `${pass.terms.for_whom} — ${what}, ${lasts}. `;
+      const forWhat = pass.terms.purpose?.trim() ? ` (${pass.terms.purpose.trim()})` : "";
+      words.textContent = `${pass.terms.for_whom}${forWhat} — ${what}, ${lasts}. `;
       if (pass.run_out) item.classList.add("run-out");
 
       const stop = document.createElement("button");
       stop.type = "button";
       stop.className = "secondary";
       stop.textContent = pass.run_out ? "Take it off the list" : "Stop it";
-      stop.addEventListener("click", () =>
-        whileWorking(stop, "Stopping…", async () => {
+      /*
+       * Why, before it goes. Optional, and kept only in this device's history
+       * of passes — deleting the permission leaves nowhere else to put it.
+       * Idea from Mycelix-Health's revocation reasons (docs/prior-art.md).
+       * A run-out pass needs no reason: it simply comes off the list.
+       */
+      const why = document.createElement("div");
+      why.hidden = true;
+      why.className = "pass-stop-why";
+      const whyLabel = document.createElement("label");
+      const whyId = `pass-why-${passes.indexOf(pass)}`;
+      whyLabel.htmlFor = whyId;
+      whyLabel.textContent = "Why are you stopping it? (optional)";
+      const whyInput = document.createElement("input");
+      whyInput.type = "text";
+      whyInput.id = whyId;
+      whyInput.maxLength = 120;
+      whyInput.placeholder = "For example: she has come home";
+      const confirm = document.createElement("button");
+      confirm.type = "button";
+      confirm.textContent = "Stop it now";
+      why.append(whyLabel, whyInput, confirm);
+
+      const stopNow = () =>
+        whileWorking(confirm, "Stopping…", async () => {
           await call("stop_a_pass", pass.grant, door);
+          if (!pass.run_out) {
+            rememberPassStopped(asText(door[0]), pass.terms.for_whom, whyInput.value.trim());
+          }
           announce(`The pass for ${pass.terms.for_whom} has stopped working.`);
           await loadPasses();
-        }).catch(problem),
-      );
-      item.append(words, stop);
+        }).catch(problem);
+
+      stop.addEventListener("click", () => {
+        if (pass.run_out) {
+          stopNow();
+          return;
+        }
+        stop.hidden = true;
+        why.hidden = false;
+        whyInput.focus();
+      });
+      confirm.addEventListener("click", stopNow);
+      item.append(words, stop, why);
       return item;
     }),
   );
@@ -4771,9 +4876,11 @@ async function loadPasses() {
   $("pass-reads").replaceChildren(
     ...reads.map((read) => {
       const item = document.createElement("li");
-      item.textContent =
-        `${whenText(read.at)}: ${read.for_whom} read ` +
-        `${read.sections.map(sectionName).join(", ")}.`;
+      item.textContent = read.stopped
+        ? `${whenText(read.at)}: you stopped the pass for ${read.for_whom}` +
+          (read.reason ? ` — ${read.reason}.` : ".")
+        : `${whenText(read.at)}: ${read.for_whom} read ` +
+          `${read.sections.map(sectionName).join(", ")}.`;
       return item;
     }),
   );
@@ -4802,10 +4909,12 @@ $("pass-form").addEventListener("submit", async (event) => {
         circle: asText(circle.cellId[0]),
         sections,
         for_whom: forWhom,
+        purpose: $("pass-purpose").value.trim(),
         until: passRunsOutAt(lasts),
       },
       door,
     );
+    $("pass-purpose").value = "";
     const text = passToText(room, made.secret);
     $("pass-made-for").textContent = forWhom;
     $("pass-output").textContent = text;
@@ -4861,6 +4970,11 @@ async function readWithThePass() {
   $("pass-words-name").textContent = words.name
     ? `About ${words.name}`
     : "What they chose to show you";
+  // Why they have it, in the holder's words, if she gave any.
+  $("pass-words-purpose").textContent = words.purpose?.trim()
+    ? `Shared for: ${words.purpose.trim()}`
+    : "";
+  $("pass-words-purpose").hidden = !words.purpose?.trim();
   $("pass-words-list").replaceChildren(
     ...words.sections.flatMap(({ section, words: text }) => {
       const title = document.createElement("dt");
