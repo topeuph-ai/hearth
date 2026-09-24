@@ -123,5 +123,5 @@
 # machine** — CI checks only linux, and a Windows hash from anywhere else would
 # be a guess.
 
-linux    UNKNOWN-until-the-first-CI-run
+linux    625f48f5fc89440c98a9029ec59f2d82ef65bce7bffcf6bc1992257e22cfef25
 windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
