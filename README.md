@@ -86,8 +86,10 @@ scope entirely.
 > All the work happens in the interface and the coordinator zome. Neither of
 > those affects the fingerprint. CI fails the build if the file moves.
 >
-> If it genuinely has to change one day, that is a migration with everybody
-> re-invited — see [docs/to-a-product.md](docs/to-a-product.md).
+> If it genuinely has to change, that is a planned migration, not an edit: it
+> was done once, in September 2026. The new version installs beside the old one,
+> nobody's circles are lost, and each holder carries their circle across — see
+> [docs/upgrades.md](docs/upgrades.md).
 
 ---
 
