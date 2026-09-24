@@ -77,6 +77,22 @@ hypothesis.
 >    can only change in this migration batch, before release. If a round cannot
 >    move 3 MB in twenty seconds, it may move 512 KB.
 >
+> 4. **A direct side channel, on official Holochain.** *Added 24 September
+>    2026, an idea and not a plan.* Lightningrod Labs published
+>    [`@lightningrodlabs/webrtc-peer`](https://lightningrodlabs.org/blog/webrtc-peer/)
+>    on 23 September: WebRTC connections introduced through Holochain's own
+>    messages, so no introduction server is needed. WebRTC tries each device's
+>    home-network address first, so two machines in one house would likely
+>    connect directly *even on released Holochain*, which cannot find them
+>    itself. A video could then go device to device at wifi speed. The
+>    catches: both devices must be on at once; the media still lives in the
+>    circle's records, so Holochain would copy it again the slow way
+>    afterwards unless the receiving device is told it already has it; and it
+>    is a second networking system to keep working. Worth coming back to only
+>    if the local-discovery build stops being an option. Across different
+>    networks it needs a relay (a "TURN" server) somebody runs, as they say
+>    themselves.
+>
 > The rest of this page stands: it is about a different part of the same
 > journey, and that part behaved well in the same test.
 
