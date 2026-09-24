@@ -90,9 +90,22 @@ pub struct AboutMe {
 /// 1, 2 and 3 and has to know which to reach for. That the circle changed its
 /// key on Tuesday is visible to anybody receiving the circle in any case, and
 /// hiding it would only stop the record opening.
+///
+/// **Which way it was locked.** `version` says how the rest of this was put
+/// together, so that a later way of locking can be told apart from this one
+/// instead of being mistaken for it. There is only one way in these rules:
+/// the content is locked with a note of what it is and where it sits sealed
+/// into the lock — what kind of thing it is, who wrote it, which key, and
+/// which circle. The note is not stored; the reader rebuilds it from what it
+/// can already see, and if any of it differs the lock does not open. So a
+/// locked suggestion copied into somebody else's suggestion, or into another
+/// kind of entry, or into another circle, opens for nobody. Added in the third
+/// version of these rules, 24 September 2026. See docs/encryption.md.
 #[hdk_entry_helper]
 #[derive(Clone, PartialEq)]
 pub struct Locked {
+    /// How this was locked. Always `LOCKED_VERSION` in these rules.
+    pub version: u8,
     pub epoch: u32,
     /// The one-use key for this entry, locked with the circle's key.
     pub sealed_key: XSalsa20Poly1305EncryptedData,
@@ -104,6 +117,14 @@ pub struct Locked {
     pub body: Vec<u8>,
 }
 
+/// The one way of locking these rules know: the content sealed together with
+/// what it is and where it sits. See `Locked`.
+///
+/// There is no version 0 to fall back to. A change to these rules makes a new
+/// network, and a circle comes across to it by being written again, so
+/// nothing locked the older way is ever read under these rules.
+pub const LOCKED_VERSION: u8 = 1;
+
 /// A nonce for the content: 24 bytes, so random ones never collide in practice.
 pub const BYTES_IN_A_NONCE: usize = 24;
 /// The one-use key: 32 bytes.
@@ -113,15 +134,25 @@ const MOST_BYTES_IN_A_SEALED_ONE_USE_KEY: usize = 128;
 
 /// What every device can check about something locked, whatever it is.
 ///
-/// Not the content — no device can read that. Its shape: that it names a key
-/// that could exist, that it carries a nonce of the right size and a sealed
-/// key no bigger than a sealed key, and that the content is not larger than
-/// that kind of content could be.
+/// Not the content — no device can read that. Its shape: that it was locked
+/// the one way these rules know, that it names a key that could exist, that it
+/// carries a nonce of the right size and a sealed key no bigger than a sealed
+/// key, and that the content is not larger than that kind of content could be.
+///
+/// Whether what is sealed into the lock matches where the entry sits cannot be
+/// checked here, because checking it means opening it. Every reader checks it
+/// as it opens; what every device can check is that the entry claims the way
+/// of locking that includes it.
 fn locked_is_the_right_shape(
     locked: &Locked,
     most_bytes: usize,
     too_big: &str,
 ) -> ExternResult<ValidateCallbackResult> {
+    if locked.version != LOCKED_VERSION {
+        return invalid(
+            "That was locked in a way this circle does not use. Everything here is locked the one way",
+        );
+    }
     if locked.epoch == 0 {
         return invalid("Something locked has to say which key locked it");
     }
@@ -2572,5 +2603,39 @@ mod tests {
     fn a_single_version_is_returned_unchanged() {
         let ordered = order_versions(vec![(Timestamp::from_micros(1), hash(7))]);
         assert_eq!(ordered, vec![hash(7)]);
+    }
+
+    /// Something locked, shaped as the app writes it, with the version given.
+    fn locked_as(version: u8) -> Locked {
+        Locked {
+            version,
+            epoch: 1,
+            sealed_key: XSalsa20Poly1305EncryptedData::new(
+                holochain_integrity_types::x_salsa20_poly1305::nonce::XSalsa20Poly1305Nonce::from(
+                    [0u8; 24],
+                ),
+                vec![1u8; 48],
+            ),
+            nonce: vec![0u8; BYTES_IN_A_NONCE],
+            body: vec![1u8; 64],
+        }
+    }
+
+    /// Here and not in the adversarial suite, because the app can only ever
+    /// write the one version: `lock` in the coordinator sets it, and nothing a
+    /// caller sends reaches it. A device running a changed app could send any
+    /// number, and this is the check that would meet it.
+    #[test]
+    fn only_the_one_way_of_locking_is_accepted() {
+        let fine = locked_is_the_right_shape(&locked_as(LOCKED_VERSION), 1_024, "too big");
+        assert!(matches!(fine, Ok(ValidateCallbackResult::Valid)));
+
+        for other in [0u8, 2, 255] {
+            let refused = locked_is_the_right_shape(&locked_as(other), 1_024, "too big");
+            assert!(
+                matches!(refused, Ok(ValidateCallbackResult::Invalid(_))),
+                "version {other} must be refused"
+            );
+        }
     }
 }

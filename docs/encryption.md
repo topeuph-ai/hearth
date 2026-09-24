@@ -321,7 +321,8 @@ rest. Each was checked against the code.
   copy another member's locked suggestion into one of their own. It gains
   them nothing they could not do by retyping it, since they can read it
   anyway. **For the next version of the rules**, cheaply: bind the author and
-  the kind of entry.
+  the kind of entry. **Done on the `rules-3` branch, 24 September 2026** — see
+  "A version on every lock" below. Not on `main` and not released.
 - **Introductions are still in the open** — the item above, already known.
 
 ### From a second outside review, 23 September 2026 (of 0.3.3)
@@ -350,6 +351,41 @@ rest. Each was checked against the code.
   out everybody removed, and the moved circle starts with a key of its own that
   nobody from the old one holds. Not yet tried on two machines; it is in the
   test matrix in [what-is-proven.md](what-is-proven.md).
+
+### A version on every lock, 24 September 2026 (the `rules-3` branch)
+
+The third version of the rules, on a branch of its own. Not on `main`, not
+released, and the desktop app is untouched.
+
+**What changed.** Every locked item now says which way it was locked (a
+version number, 1), and the rules refuse any other number. And the lock now
+seals in what the item is and where it sits: what kind of entry it is (the
+record, a suggestion, a file's name and words, a piece of a file, or the role
+somebody gave when they read the record), who wrote it, which key it was
+locked with, and which circle it is in. None of that is stored a second time.
+The reader rebuilds it from what it can already see — above all from who
+signed the entry, which nobody can choose for somebody else — and if any of it
+differs, nothing opens.
+
+**Why.** It closes the gap the first outside review found: a member copying
+somebody else's locked suggestion into one of their own now gets something
+that opens for nobody. The version number is what makes a change like this
+safe to make again later: an item locked a newer way can be told apart
+instead of being mistaken for this one. The idea comes from Mycelix-Health
+(see [prior-art.md](prior-art.md)); their code was not looked at, and this was
+written from scratch.
+
+**What it costs.** It is a rules change, so it makes a new network. Circles
+made under the previous rules come across by being written again, as every
+rules change does; nothing written the older way is ever read under these
+rules, so there is no path kept for it.
+
+**Tests.** A copied suggestion opening for nobody cannot be shown through the
+app, because the app has no way to write a copy — and it is not being given
+one. So the test shows the step every reader goes through: the same locked
+bytes open as the real author's and not as anybody else's, nor as another kind
+of entry, key or circle. A wrong version number cannot be written through the
+app either, so the rule is tested directly in the rules' own unit tests.
 
 ### One thing the design note got wrong
 

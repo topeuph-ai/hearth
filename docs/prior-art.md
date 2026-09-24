@@ -236,7 +236,9 @@ a design idea, and every one would be written afresh.
   `Locked` has neither. The reviews already asked for the second
   ([encryption.md](encryption.md)); the first is what makes it safe to add,
   because old and new locked items can then be told apart. **For the next
-  rules change** — cheap then, impossible without one.
+  rules change** — cheap then, impossible without one. **Done on the `rules-3`
+  branch, 24 September 2026**, written afresh; see
+  [encryption.md](encryption.md), "A version on every lock".
 - **Pre-authorised emergency access**, which they call break-glass: the patient
   names a person and the categories in advance, it lasts at most 60 minutes,
   a reason is required, and every use leaves a notification the patient sees.

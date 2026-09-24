@@ -6,7 +6,7 @@
 //! which is the thing to resolve before this becomes a product.
 
 use aboutme_integrity::*;
-use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
@@ -644,7 +644,12 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .as_ref()
         .and_then(|r| r.entry().as_option().cloned())
         .and_then(|e| AboutMe::try_from(e).ok());
-    let about_me = written.as_ref().and_then(|w| unlock_about_me(w).ok());
+    // Opened as written by whoever signed this version, which is sealed into
+    // its lock. See `SealedWith`.
+    let about_me = match (&record, &written) {
+        (Some(r), Some(w)) => unlock_about_me(w, r.action().author()).ok(),
+        _ => None,
+    };
     let locked_out = written.is_some() && about_me.is_none();
 
     Ok(CurrentAboutMe {
@@ -675,6 +680,7 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
         about_me: input.about_me.clone(),
         role: String::new(),
         locked: Some(lock(
+            WhatIsLocked::Role,
             ExternIO::encode(&role)
                 .map_err(|e| wasm_error!(format!("Could not pack the role to lock it: {e:?}")))?
                 .into_vec(),
@@ -764,11 +770,12 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<WhoRead>> 
                 .ok()
                 .flatten();
             let (role, locked_out) = match ack.as_ref().and_then(|a| a.locked.as_ref()) {
-                Some(locked) => match unlock(locked).and_then(|w| {
-                    ExternIO::from(w)
-                        .decode::<String>()
-                        .map_err(|e| wasm_error!(format!("{e:?}")))
-                }) {
+                Some(locked) => match unlock(WhatIsLocked::Role, record.action().author(), locked)
+                    .and_then(|w| {
+                        ExternIO::from(w)
+                            .decode::<String>()
+                            .map_err(|e| wasm_error!(format!("{e:?}")))
+                    }) {
                     Ok(role) => (role, false),
                     Err(_) => (String::new(), true),
                 },
@@ -1646,7 +1653,7 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
             .to_app_option::<Suggestion>()
             .ok()
             .flatten()
-            .and_then(|s| unlock_suggestion(&s).ok());
+            .and_then(|s| unlock_suggestion(&s, suggestion.action().author()).ok());
 
         out.push(SuggestionWithOutcome {
             suggestion,
@@ -2502,7 +2509,7 @@ pub fn add_media_piece(bytes: Bytes) -> ExternResult<EntryHash> {
     }
     let piece = MediaPiece {
         bytes: Vec::new(),
-        locked: Some(lock(bytes.0)?),
+        locked: Some(lock(WhatIsLocked::MediaPiece, bytes.0)?),
     };
     let hash = hash_entry(&piece)?;
     create_entry(EntryTypes::MediaPiece(piece))?;
@@ -2551,7 +2558,7 @@ pub fn add_media(input: AddMediaInput) -> ExternResult<Record> {
         seconds: input.seconds,
         pieces: input.pieces,
         size: input.size,
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::MediaWords, words.into_vec())?),
     }))?;
 
     let path = media_path()?;
@@ -2628,11 +2635,13 @@ pub fn get_media(_: ()) -> ExternResult<Vec<MediaHere>> {
             // cannot be read is better than no photo, and the bytes are locked
             // with the same key anyway, so this is not a way round anything.
             if let Some(locked) = media.locked.take() {
-                if let Ok((file_name, in_words)) = unlock(&locked).and_then(|w| {
-                    ExternIO::from(w)
-                        .decode::<(String, String)>()
-                        .map_err(|e| wasm_error!(format!("{e:?}")))
-                }) {
+                if let Ok((file_name, in_words)) =
+                    unlock(WhatIsLocked::MediaWords, r.action().author(), &locked).and_then(|w| {
+                        ExternIO::from(w)
+                            .decode::<(String, String)>()
+                            .map_err(|e| wasm_error!(format!("{e:?}")))
+                    })
+                {
                     media.file_name = file_name;
                     media.in_words = in_words;
                 }
@@ -2657,7 +2666,11 @@ pub fn get_media_piece(hash: EntryHash) -> ExternResult<Bytes> {
         .map_err(|e| wasm_error!(format!("{e:?}")))?
         .ok_or_else(|| wasm_error!("That is not a piece of a file"))?;
     match &piece.locked {
-        Some(locked) => Ok(Bytes(unlock(locked)?)),
+        Some(locked) => Ok(Bytes(unlock(
+            WhatIsLocked::MediaPiece,
+            record.action().author(),
+            locked,
+        )?)),
         // A piece written before encryption. The bytes really are in the open.
         None => Ok(Bytes(piece.bytes)),
     }
@@ -3414,7 +3427,10 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
 /// took to arrive, what a member wrote could be opened on the removed person's
 /// device. Found in review, 23 September 2026. Waiting a moment is the price,
 /// and it is the right way round.
-fn lock(data: Vec<u8>) -> ExternResult<Locked> {
+///
+/// `what` is the kind of entry this is going into. It is sealed into the lock
+/// with who is writing it, the key and the circle — see `SealedWith`.
+fn lock(what: WhatIsLocked, data: Vec<u8>) -> ExternResult<Locked> {
     let holder = i_am_the_holder()?;
 
     // The holder writing the first thing in a circle makes its first key — and
@@ -3459,13 +3475,19 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
     let nonce = random_bytes(BYTES_IN_A_NONCE as u32)?.into_vec();
     let sealed_key = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, one_use.clone().into())?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(&one_use)
-        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
-    let body = cipher
-        .encrypt(XNonce::from_slice(&nonce), data.as_ref())
-        .map_err(|_| wasm_error!("Could not lock what was written"))?;
+    // What this is and where it sits, sealed in with it. The writer is always
+    // this device's own agent: nothing is ever locked on somebody else's behalf.
+    let with = SealedWith {
+        version: LOCKED_VERSION,
+        what,
+        author: agent_info()?.agent_initial_pubkey,
+        epoch,
+        circle: dna_info()?.hash,
+    };
+    let body = seal_content(&one_use, &nonce, &data, &with)?;
 
     Ok(Locked {
+        version: LOCKED_VERSION,
         epoch,
         sealed_key,
         nonce,
@@ -3475,15 +3497,22 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
 
 /// Open something locked with one of the circle's keys.
 ///
-/// Fails rather than returning anything when this device has not got the key.
-/// Every caller treats that as "cannot be read here" and says so; none of them
-/// guesses at what was in it.
-fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
-    // Every device refuses an entry whose nonce is the wrong size, so this
-    // cannot come from the circle. It could come from a build of this app that
-    // once wrote something else, and asking the cipher would panic rather than
-    // say so.
-    if locked.nonce.len() != BYTES_IN_A_NONCE {
+/// Fails rather than returning anything when this device has not got the key,
+/// and equally when the entry is not where it was locked to be: written by
+/// somebody other than `author`, or a different kind of entry from `what`, or
+/// in another circle. Every caller treats that as "cannot be read here" and
+/// says so; none of them guesses at what was in it.
+///
+/// `author` is the author of the action the entry was read from — the one
+/// thing about an entry nobody can choose for somebody else, because it is the
+/// key that signed it.
+fn unlock(what: WhatIsLocked, author: &AgentPubKey, locked: &Locked) -> ExternResult<Vec<u8>> {
+    // Every device refuses an entry whose nonce is the wrong size, or that was
+    // locked any other way than the one these rules know, so neither can come
+    // from the circle. They could come from a build of this app that once
+    // wrote something else, and asking the cipher would panic rather than say
+    // so.
+    if locked.version != LOCKED_VERSION || locked.nonce.len() != BYTES_IN_A_NONCE {
         return Err(wasm_error!(
             "This was not locked in a way this app can open"
         ));
@@ -3493,12 +3522,138 @@ fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
         x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed_key.clone())?
             .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(one_use.as_ref())
-        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    // Rebuilt from what this device can see, never read from the entry: an
+    // entry that carried its own account of where it belongs could say
+    // anything.
+    let with = SealedWith {
+        version: locked.version,
+        what,
+        author: author.clone(),
+        epoch: locked.epoch,
+        circle: dna_info()?.hash,
+    };
+    open_content(one_use.as_ref(), &locked.nonce, &locked.body, &with)
+}
+
+/// What kind of entry something locked is going into, or was read from.
+///
+/// Sealed into the lock so that one kind cannot be passed off as another: the
+/// words of a suggestion copied into a role, say, open for nobody.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatIsLocked {
+    /// The record itself, every version of it.
+    Record,
+    /// What a member offered for the record, and why.
+    Suggestion,
+    /// A photo, sound or video's file name and what it says in words.
+    MediaWords,
+    /// One piece of a photo, sound or video.
+    MediaPiece,
+    /// What somebody said they were when they acknowledged the record.
+    Role,
+}
+
+/// What is sealed into every lock alongside the content, and checked as it is
+/// opened.
+///
+/// None of it is secret, and none of it is stored: every part is something the
+/// reader can already see — the kind of entry it is reading, who signed it,
+/// the key number beside it, and which circle it is in. The cipher is told
+/// them as it locks ("associated data") and has to be told the same again to
+/// open. Tell it anything different and it opens nothing, exactly as it would
+/// for a wrong key.
+///
+/// Why. Without this, nothing tied a locked body to where it sat, so a member
+/// could copy somebody else's locked suggestion into one of their own and it
+/// would open as theirs. It gained them nothing they could not do by retyping
+/// words they could already read — but the rules are meant to be the backstop
+/// that does not rely on that. Asked for by an outside review, 23 September
+/// 2026; the shape of it, a version number and the visible details sealed in,
+/// is an idea from Mycelix-Health, written here afresh. See docs/encryption.md.
+///
+/// Packed with `ExternIO::encode`, the same packing every entry here goes
+/// through, which gives the same bytes for the same fields every time. It
+/// must: a reader that packed it differently would open nothing at all.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SealedWith {
+    /// The way of locking. The same as `Locked::version`.
+    pub version: u8,
+    pub what: WhatIsLocked,
+    /// Who wrote the entry. When locking, this device's own agent; when
+    /// opening, the author of the action it was read from.
+    pub author: AgentPubKey,
+    /// The circle key it was locked with.
+    pub epoch: u32,
+    /// The circle it was written in.
+    pub circle: DnaHash,
+}
+
+impl SealedWith {
+    fn packed(&self) -> ExternResult<Vec<u8>> {
+        Ok(ExternIO::encode(self)
+            .map_err(|e| wasm_error!(format!("Could not pack what this is to lock it: {e:?}")))?
+            .into_vec())
+    }
+}
+
+/// Lock content with a one-use key, sealing `with` into the lock.
+///
+/// The cipher step of `lock` on its own, with no keystore and no host: pure,
+/// so the adversarial tests can show directly that a lock opens only for what
+/// it was sealed with, which no call into the app can show (see
+/// `a_suggestion_copied_to_another_author_opens_for_nobody`). Public for that
+/// reason and no other; it holds no key and can open nothing it is not given
+/// the key to.
+pub fn seal_content(
+    one_use: &[u8],
+    nonce: &[u8],
+    data: &[u8],
+    with: &SealedWith,
+) -> ExternResult<Vec<u8>> {
+    if nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!("That is not a number used once"));
+    }
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use)
+        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
+    let aad = with.packed()?;
     cipher
-        .decrypt(XNonce::from_slice(&locked.nonce), locked.body.as_ref())
-        // Either this device has the wrong key or the bytes were changed on the
-        // way. Not worth telling apart: neither of them gives anything to show.
+        .encrypt(
+            XNonce::from_slice(nonce),
+            Payload {
+                msg: data,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| wasm_error!("Could not lock what was written"))
+}
+
+/// Open content locked by `seal_content`, only if `with` is what it was sealed
+/// with.
+pub fn open_content(
+    one_use: &[u8],
+    nonce: &[u8],
+    body: &[u8],
+    with: &SealedWith,
+) -> ExternResult<Vec<u8>> {
+    if nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!(
+            "This was not locked in a way this app can open"
+        ));
+    }
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use)
+        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    let aad = with.packed()?;
+    cipher
+        .decrypt(
+            XNonce::from_slice(nonce),
+            Payload {
+                msg: body,
+                aad: &aad,
+            },
+        )
+        // The wrong key, bytes changed on the way, or an entry that is not
+        // where it was locked to be. Not worth telling apart: none of them
+        // gives anything to show.
         .map_err(|_| wasm_error!("This could not be opened on this device"))
 }
 
@@ -3574,7 +3729,7 @@ fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
     let words = ExternIO::encode(about_me)
         .map_err(|e| wasm_error!(format!("Could not pack the record to lock it: {e:?}")))?;
     Ok(AboutMe {
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::Record, words.into_vec())?),
         ..nothing_in_the_open()
     })
 }
@@ -3583,11 +3738,14 @@ fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
 ///
 /// A record from before encryption is returned as it is: that is what "in the
 /// open" looks like, and hiding it would only mean showing nothing.
-fn unlock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+///
+/// `author` is who wrote this version: the author of the action it was read
+/// from. It is sealed into the lock, so it has to be the real one.
+fn unlock_about_me(about_me: &AboutMe, author: &AgentPubKey) -> ExternResult<AboutMe> {
     let Some(locked) = &about_me.locked else {
         return Ok(about_me.clone());
     };
-    let words = unlock(locked)?;
+    let words = unlock(WhatIsLocked::Record, author, locked)?;
     let mut opened: AboutMe = ExternIO::from(words)
         .decode()
         .map_err(|e| wasm_error!(format!("The record opened but could not be read: {e:?}")))?;
@@ -3615,21 +3773,27 @@ fn lock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
         field: suggestion.field.clone(),
         text: String::new(),
         because: String::new(),
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::Suggestion, words.into_vec())?),
     })
 }
 
 /// Open a suggestion, where it is locked and this device can.
-fn unlock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+///
+/// `author` is the member who offered it: the author of the action it was read
+/// from. This is what stops somebody else's locked words being passed off as
+/// theirs — copied into a suggestion of their own, they open for nobody.
+fn unlock_suggestion(suggestion: &Suggestion, author: &AgentPubKey) -> ExternResult<Suggestion> {
     let Some(locked) = &suggestion.locked else {
         return Ok(suggestion.clone());
     };
     let (text, because): (String, String) =
-        ExternIO::from(unlock(locked)?).decode().map_err(|e| {
-            wasm_error!(format!(
-                "The suggestion opened but could not be read: {e:?}"
-            ))
-        })?;
+        ExternIO::from(unlock(WhatIsLocked::Suggestion, author, locked)?)
+            .decode()
+            .map_err(|e| {
+                wasm_error!(format!(
+                    "The suggestion opened but could not be read: {e:?}"
+                ))
+            })?;
     Ok(Suggestion {
         field: suggestion.field.clone(),
         text,

@@ -102,5 +102,26 @@
 # Circles made with those are unreachable to builds from this branch until the
 # app can carry them across. Nothing is released until it can.
 
-linux    f6b4c76338add5fa6a80bad83b40c0cdf55cf19b820b02132f863faa0a486b91
+# ---------------------------------------------------------------------------
+# The third version of the rules, 24 September 2026, on the rules-3 branch only.
+# ---------------------------------------------------------------------------
+#
+# One change. Every locked item carries a version number, and what it is and
+# where it sits — the kind of entry, who wrote it, the key and the circle — is
+# sealed into its lock, so a locked body copied somewhere else opens for
+# nobody. The idea is Mycelix-Health's; their code was not looked at, and this
+# was written afresh. See docs/encryption.md.
+#
+# Circles made under the previous rules are carried across by being written
+# again, as with every rules change. Those rules' hashes, the ones on main:
+#
+#   linux    f6b4c76338add5fa6a80bad83b40c0cdf55cf19b820b02132f863faa0a486b91
+#   windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
+#
+# The linux pin below is this version's, from CI. **The windows pin is still
+# the previous version's, left for the maintainer to set on the Windows build
+# machine** — CI checks only linux, and a Windows hash from anywhere else would
+# be a guess.
+
+linux    UNKNOWN-until-the-first-CI-run
 windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
