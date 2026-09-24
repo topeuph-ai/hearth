@@ -115,6 +115,29 @@
 
   footer { font-size: 0.95rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1rem; display: grid; gap: 0.4rem; }
 
+  /* Printing, for the NHS upload: A4, light, nothing cut in half. */
+  @page { size: A4; margin: 16mm 15mm; }
+  @media print {
+    :root, :root[data-theme="dark"] {
+      --paper: #ffffff; --card: #fffaf1; --ink: #2b2520; --muted: #5a4e44;
+      --line: #d9ccb6; --accent: #1f4e79; --accent-soft: #e4ecf4;
+      --here: #8a3f22; --here-soft: #f6e4da; --notice: #f2e0c4;
+      color-scheme: light;
+    }
+    body { font-size: 10.5pt; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    main { max-width: none; gap: 1.6rem; }
+    .lede { font-size: 13pt; }
+    .diagram svg { min-width: 0; }
+    .diagram { overflow: visible; }
+    table { min-width: 0; font-size: 8.5pt; }
+    th, td { padding: 0.4rem 0.45rem; }
+    tbody th { width: auto; }
+    figure, .role, .limit, .coming, .gist, tr { break-inside: avoid; }
+    h2 { break-after: avoid; }
+    nav { display: none; }
+    a { color: inherit; text-decoration: none; }
+  }
+
   @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
   html { scroll-behavior: smooth; }
 </style>
