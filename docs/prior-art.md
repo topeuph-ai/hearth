@@ -210,6 +210,59 @@ that handing this essay to an NHS or council reviewer drags cryptocurrency into
 a conversation about care records. Cite the architecture; do not cite the
 essay.
 
+## Mycelix-Health, read 24 September 2026
+
+[Luminous-Dynamics/mycelix-health](https://github.com/Luminous-Dynamics/mycelix-health),
+active (last change 22 September 2026), AGPL-3.0, on Holochain 0.6. Found by a
+search of GitHub for similar projects; the only other active Holochain health
+project found.
+
+**Not like Hearth.** It is a full clinical record — diagnoses, prescriptions,
+lab results, imaging, insurance, clinical trials — with seventeen zomes, AI
+health advocacy, "data dividends" and differential privacy. The patient owns
+the record alone; there is no circle of family and carers around them. It takes
+on exactly the clinical-safety and liability weight Hearth keeps out of scope
+on purpose.
+
+**Licence: ideas only, never code.** It is AGPL-3.0 and Hearth is Apache-2.0.
+Copying its code would bring the AGPL with it. Nothing below is copied; each is
+a design idea, and every one would be written afresh.
+
+**Worth borrowing:**
+
+- **A version number on every locked item, and the visible details sealed into
+  the lock.** Their `EncryptedRecord` carries an `envelope_version`, and seals
+  the patient, entry type, key fingerprint and time as associated data. Hearth's
+  `Locked` has neither. The reviews already asked for the second
+  ([encryption.md](encryption.md)); the first is what makes it safe to add,
+  because old and new locked items can then be told apart. **For the next
+  rules change** — cheap then, impossible without one.
+- **Pre-authorised emergency access**, which they call break-glass: the patient
+  names a person and the categories in advance, it lasts at most 60 minutes,
+  a reason is required, and every use leaves a notification the patient sees.
+  Enforced in their rules, not only their app. Hearth's passes are close; the
+  pieces Hearth lacks are a *reason* on each use, and a notice the whole circle
+  can see (the "Ward 7 read this" that [outer-ring.md](outer-ring.md) says
+  needs a rules change).
+- **A purpose on every grant, and a reason on every revocation.** A pass could
+  say what it is for ("hospital admission, Ward 7") and a stopped pass why.
+  Coordinator only — no rules change.
+- **Ready-made bundles** ("care-team templates"): a named set of sections and a
+  default length, chosen in one press. Hearth's passes already tick three
+  sections by default; a few named bundles — *hospital admission*, *paramedic*,
+  *respite carer* — would make that one press for a tired family member. App
+  only.
+- **Recovering keys from 24 written-down words.** Their vault key comes from a
+  phrase the patient keeps on paper. Hearth's keys live in Holochain's keystore,
+  so it does not drop in, but it is the plainest answer yet to "can a person
+  recover their identity?" ([hard-questions.md](hard-questions.md), question
+  12). Revisit when Holochain can export and import keys (see
+  [holochain-roadmap.md](holochain-roadmap.md)).
+
+**Not worth borrowing:** the clinical categories, AI, dividends, insurance and
+differential privacy — each drags Hearth over the line
+[medical-device-determination.md](medical-device-determination.md) draws.
+
 ## Still worth doing
 
 - **Search for person-centred rather than IoT-centred Holochain health work.**
