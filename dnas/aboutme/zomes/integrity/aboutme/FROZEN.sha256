@@ -118,10 +118,8 @@
 #   linux    f6b4c76338add5fa6a80bad83b40c0cdf55cf19b820b02132f863faa0a486b91
 #   windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
 #
-# The linux pin below is this version's, from CI. **The windows pin is still
-# the previous version's, left for the maintainer to set on the Windows build
-# machine** — CI checks only linux, and a Windows hash from anywhere else would
-# be a guess.
+# Both pins below are this version's: linux from CI, windows built on the
+# Windows build machine on 25 September 2026 with scripts/build-zomes.mjs.
 
 linux    625f48f5fc89440c98a9029ec59f2d82ef65bce7bffcf6bc1992257e22cfef25
-windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
+windows  965ef3ab8f64d94245dca6cc9e8e671a976b8991668f266b84279650895b51eb
