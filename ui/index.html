@@ -190,6 +190,12 @@
           </div>
           <textarea id="pass-in" rows="6" spellcheck="false"
             autocomplete="off"></textarea>
+          <label for="pass-reason">Why are you reading it? (a few words)</label>
+          <p class="hint">
+            Some passes ask for this, such as one given for an emergency. The
+            family looking after them will see what you write.
+          </p>
+          <input id="pass-reason" type="text" maxlength="200" autocomplete="off" />
           <p id="pass-trouble" class="notice" role="alert" hidden></p>
           <button type="submit" id="read-pass">Read it</button>
         </form>
@@ -1335,6 +1341,20 @@
           </section>
 
           <!--
+            Passes being used, for the whole circle to see. Written by the
+            holder's device each time a pass is read (the third rules
+            version); before, only her own screen knew.
+          -->
+          <section id="pass-reads-circle" hidden>
+            <h3>Read with a pass</h3>
+            <p class="hint">
+              Somebody given a pass read part of the record. Only what the pass
+              allowed; nothing was kept on their device.
+            </p>
+            <ul id="pass-reads-circle-list"></ul>
+          </section>
+
+          <!--
             Adding a photo beside a section (migration batch, item 7).
 
             The picture is shrunk on this device before anything is written,
@@ -1967,6 +1987,15 @@
           Until I stop it
           </label>
           </fieldset>
+
+          <label class="choice-row">
+          <input type="checkbox" id="pass-ask-reason" />
+          Ask them to say why, each time they read it
+          </label>
+          <p class="hint">
+          For an emergency. It won't open until they give a reason, and
+          everybody in the circle sees what they said.
+          </p>
 
           <button type="submit" id="make-pass">Make a pass</button>
           </form>

@@ -1194,6 +1194,9 @@ pub enum Signal {
         for_whom: String,
         sections: Vec<AboutMeField>,
         at: Timestamp,
+        /// Why the reader said they were reading it, if the pass asked.
+        #[serde(default)]
+        reason: String,
     },
     /// The holder has turned calls on or off for this circle. Accepted only
     /// from the holder. See "Calls" below.
@@ -2737,6 +2740,11 @@ pub struct PassTerms {
     /// consent purposes (docs/prior-art.md). Empty on passes made before 0.3.5.
     #[serde(default)]
     pub purpose: String,
+    /// Whoever reads with it must say why, each time — an emergency pass.
+    /// The reason goes into the note of it being used, which the whole circle
+    /// sees. Idea from Mycelix-Health's break-glass access (docs/prior-art.md).
+    #[serde(default)]
+    pub ask_reason: bool,
     /// When it stops working, in microseconds, or none for "until I stop it".
     pub until: Option<i64>,
     pub made: i64,
@@ -2754,6 +2762,9 @@ pub struct MakePassInput {
     /// What it is for. Optional.
     #[serde(default)]
     pub purpose: String,
+    /// Whether whoever reads with it must say why, each time.
+    #[serde(default)]
+    pub ask_reason: bool,
     /// Microseconds, or none for "until I stop it".
     pub until: Option<i64>,
 }
@@ -2800,6 +2811,7 @@ pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
         sections: input.sections,
         for_whom: input.for_whom.trim().to_string(),
         purpose: input.purpose.trim().to_string(),
+        ask_reason: input.ask_reason,
         until: input.until,
         made: sys_time()?.as_micros(),
     };
@@ -2902,7 +2914,7 @@ pub struct PassedSection {
 /// Answer a pass. Runs on the holder's device, in the door, and only when
 /// Holochain has already checked the pass presented against a live grant.
 #[hdk_extern]
-pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
+pub fn read_with_a_pass(ask: PassAsk) -> ExternResult<PassedWords> {
     // The grant that let this call through. Its terms are the holder's, written
     // when she made it, and nothing the reader sends can change them.
     let terms: PassTerms = match call_info()?.cap_grant {
@@ -2917,12 +2929,26 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
         return Err(wasm_error!("This pass has run out"));
     }
 
+    // An emergency pass opens only for somebody who says why, each time.
+    let reason = ask.reason.trim().to_string();
+    if terms.ask_reason && reason.is_empty() {
+        return Err(wasm_error!(
+            "This pass asks you to say why you are reading it. Write a few words, then read it again."
+        ));
+    }
+    if name_too_long(&reason) {
+        return Err(wasm_error!(
+            "Why you are reading it can be up to 200 characters"
+        ));
+    }
+
     let circle = DnaHash::try_from(terms.circle.as_str())
         .map_err(|_| wasm_error!("That pass names a circle this app cannot read"))?;
     let me = agent_info()?.agent_initial_pubkey;
+    let circle_cell = CellId::new(circle, me);
 
     let mut words: PassedWords = match call(
-        CallTargetCell::OtherCell(CellId::new(circle, me)),
+        CallTargetCell::OtherCell(circle_cell.clone()),
         zome_info()?.name,
         "words_for_a_pass".into(),
         None,
@@ -2933,15 +2959,141 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
     };
     words.purpose = terms.purpose.clone();
 
-    // Tell the holder's own screen. The circle's wider knowledge of who read
-    // what would need a new kind of entry in the rules, and is left for then.
+    // Tell the circle: a note, written by this device into the circle, that
+    // every member sees. Since the third rules version. A note that cannot be
+    // written does not stop the reader getting what the pass allows — they
+    // may be at a bedside — but it is said in the log.
+    let noted = call(
+        CallTargetCell::OtherCell(circle_cell),
+        zome_info()?.name,
+        "note_pass_read".into(),
+        None,
+        PassReadWords {
+            for_whom: terms.for_whom.clone(),
+            purpose: terms.purpose.clone(),
+            sections: terms.sections.clone(),
+            reason: reason.clone(),
+        },
+    );
+    if !matches!(noted, Ok(ZomeCallResponse::Ok(_))) {
+        warn!("A pass was used and the note of it could not be written: {noted:?}");
+    }
+
+    // And the holder's own screen, now.
     let _ = emit_signal(Signal::PassUsed {
         for_whom: terms.for_whom,
         sections: terms.sections,
         at: now,
+        reason,
     });
 
     Ok(words)
+}
+
+/// What the reader sends with a pass: only why they are reading, which an
+/// emergency pass requires.
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct PassAsk {
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// What a note of a pass being used says, before it is locked.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PassReadWords {
+    pub for_whom: String,
+    #[serde(default)]
+    pub purpose: String,
+    pub sections: Vec<AboutMeField>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+const PASS_READ_ANCHOR: &str = "pass-reads";
+
+fn pass_read_path() -> ExternResult<TypedPath> {
+    anchored(PASS_READ_ANCHOR, LinkTypes::CircleToPassRead)
+}
+
+/// Write the note that a pass was used, locked, into this circle.
+///
+/// Called only by this device's own door, from `read_with_a_pass` — which is
+/// where the pass was checked — and only in a circle this device holds.
+#[hdk_extern]
+pub fn note_pass_read(words: PassReadWords) -> ExternResult<ActionHash> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if call_info()?.provenance != me {
+        return Err(wasm_error!(
+            "Only this device's own door may note a pass being used"
+        ));
+    }
+    if !i_am_the_holder()? {
+        return Err(wasm_error!(
+            "Only the person whose circle this is notes a pass being used"
+        ));
+    }
+    let packed = ExternIO::encode(&words)
+        .map_err(|e| wasm_error!(format!("Could not pack the note to lock it: {e:?}")))?;
+    let action_hash = create_entry(EntryTypes::PassRead(PassRead {
+        locked: lock(WhatIsLocked::PassRead, packed.into_vec())?,
+    }))?;
+    let path = pass_read_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToPassRead,
+        (),
+    )?;
+    Ok(action_hash)
+}
+
+/// One time a pass was used, as a member's screen shows it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassReadHere {
+    pub at: Timestamp,
+    /// None if this device cannot open it — a key it was never given.
+    pub words: Option<PassReadWords>,
+}
+
+/// Every time somebody read part of the record with a pass, newest first.
+#[hdk_extern]
+pub fn get_pass_reads(_: ()) -> ExternResult<Vec<PassReadHere>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+    let links = get_links(
+        LinkQuery::try_new(
+            pass_read_path()?.path_entry_hash()?,
+            LinkTypes::CircleToPassRead,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::PassRead)?);
+    oldest_first(&mut found);
+
+    let mut out: Vec<PassReadHere> = found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder)
+        .filter_map(|r| {
+            let notice = r.entry().to_app_option::<PassRead>().ok().flatten()?;
+            let words = unlock(WhatIsLocked::PassRead, r.action().author(), &notice.locked)
+                .ok()
+                .and_then(|bytes| ExternIO::from(bytes).decode::<PassReadWords>().ok());
+            Some(PassReadHere {
+                at: r.action().timestamp(),
+                words,
+            })
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
 }
 
 /// The words of chosen sections, from this circle.
@@ -3001,6 +3153,10 @@ pub struct AskWithPassInput {
     /// Whose device to ask, as text.
     pub holder: String,
     pub secret: CapSecret,
+    /// Why they are reading it. Required by an emergency pass; otherwise
+    /// optional, and noted in the circle either way.
+    #[serde(default)]
+    pub reason: String,
 }
 
 /// Present a pass. Called by the reader, in the door they have entered.
@@ -3014,7 +3170,9 @@ pub fn ask_with_a_pass(input: AskWithPassInput) -> ExternResult<PassedWords> {
         zome_info()?.name,
         PASS_FUNCTION.into(),
         Some(input.secret),
-        (),
+        PassAsk {
+            reason: input.reason,
+        },
     )? {
         ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}"))),
         ZomeCallResponse::Unauthorized(..) => Err(wasm_error!(
@@ -3551,6 +3709,8 @@ pub enum WhatIsLocked {
     MediaPiece,
     /// What somebody said they were when they acknowledged the record.
     Role,
+    /// A note that a pass was used: who for, what for, which parts, and why.
+    PassRead,
 }
 
 /// What is sealed into every lock alongside the content, and checked as it is

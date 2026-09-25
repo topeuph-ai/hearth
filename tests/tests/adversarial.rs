@@ -4407,6 +4407,7 @@ fn a_pass_for(circle: &CellId, until: Option<Timestamp>) -> aboutme::MakePassInp
         ],
         for_whom: "Ward 7".to_string(),
         purpose: "Hospital admission".to_string(),
+        ask_reason: false,
         until: until.map(|t| t.as_micros()),
     }
 }
@@ -4421,6 +4422,17 @@ async fn ask(
     holder: &AgentPubKey,
     secret: CapSecret,
 ) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
+    ask_saying(conductor, nia_door, holder, secret, "").await
+}
+
+/// The same, giving a reason, as an emergency pass requires.
+async fn ask_saying(
+    conductor: &SweetConductor,
+    nia_door: &CellId,
+    holder: &AgentPubKey,
+    secret: CapSecret,
+    reason: &str,
+) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
     conductor
         .call_fallible(
             &zome(nia_door),
@@ -4428,6 +4440,7 @@ async fn ask(
             aboutme::AskWithPassInput {
                 holder: holder.to_string(),
                 secret,
+                reason: reason.to_string(),
             },
         )
         .await
@@ -4670,4 +4683,114 @@ async fn a_new_naming_leaves_an_old_claim_behind() {
         state.claim.is_none(),
         "a claim made under an earlier naming does not carry over"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The circle sees a pass being used (the third rules version)
+// ---------------------------------------------------------------------------
+
+/// Read everything the circle has noted about passes, waiting a little for it
+/// to arrive: the note is written by the holder's device and reaches a member's
+/// the ordinary way.
+async fn pass_reads_seen_by(
+    conductor: &SweetConductor,
+    cell: &CellId,
+    enough: usize,
+) -> Vec<aboutme::PassReadHere> {
+    let mut last = Vec::new();
+    for _ in 0..30 {
+        last = conductor.call(&zome(cell), "get_pass_reads", ()).await;
+        if last.len() >= enough {
+            return last;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    last
+}
+
+/// "Ward 7 read this" used to reach only the holder's own screen. Now it is
+/// written into the circle, where every member sees it — locked, like
+/// everything else there.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_circle_sees_a_pass_being_used() {
+    let (conductor, alice_cell, bob_cell, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(3600))),
+        )
+        .await;
+    ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("a live pass is answered");
+
+    let seen = pass_reads_seen_by(&conductor, &bob_cell, 1).await;
+    assert_eq!(seen.len(), 1, "a member of the circle sees the pass was used");
+    let words = seen[0]
+        .words
+        .as_ref()
+        .expect("and can open the note, holding the circle's key");
+    assert_eq!(words.for_whom, "Ward 7");
+    assert_eq!(words.purpose, "Hospital admission");
+    assert_eq!(words.sections.len(), 2, "which parts were read");
+}
+
+/// An emergency pass opens only for somebody who says why, and the reason
+/// goes into the note the circle sees.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_emergency_pass_asks_why_and_the_circle_is_told() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let mut emergency = a_pass_for(&alice_cell, Some(seconds_from_now(3600)));
+    emergency.ask_reason = true;
+    let pass: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", emergency)
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "an emergency pass read without a reason shows nothing"
+    );
+
+    ask_saying(
+        &conductor,
+        &nia_door,
+        alice_cell.agent_pubkey(),
+        pass.secret,
+        "Admitted through A&E, not able to speak",
+    )
+    .await
+    .expect("with a reason, it opens");
+
+    let seen = pass_reads_seen_by(&conductor, &alice_cell, 1).await;
+    let words = seen
+        .first()
+        .and_then(|r| r.words.as_ref())
+        .expect("the reading is noted in the circle");
+    assert_eq!(words.reason, "Admitted through A&E, not able to speak");
+}
+
+/// Only the holder's own device notes a pass being used — a member cannot
+/// write "Ward 7 read this" into somebody's circle.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_note_a_pass_being_used() {
+    let (conductor, _, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let refused: Result<ActionHash, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "note_pass_read",
+            aboutme::PassReadWords {
+                for_whom: "Ward 7".to_string(),
+                purpose: String::new(),
+                sections: vec![aboutme_integrity::AboutMeField::WhatMattersToMe],
+                reason: String::new(),
+            },
+        )
+        .await;
+    assert!(refused.is_err(), "a member cannot note a pass being used");
 }

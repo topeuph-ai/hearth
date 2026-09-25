@@ -473,6 +473,36 @@ pub struct Departure {
 }
 
 // ---------------------------------------------------------------------------
+// A pass was used (the third rules version)
+// ---------------------------------------------------------------------------
+
+/// Somebody read part of the record with a pass.
+///
+/// Passes are answered by the holder's own device, so until this existed only
+/// her screen knew that "Ward 7 read this" — the rest of the circle, who might
+/// have wanted to know a hospital had the record, never did. So her device
+/// now writes it into the circle each time a pass is used, where every member
+/// sees it.
+///
+/// Who the pass was for, what for, which parts were read, and the reason the
+/// reader gave — which an emergency pass asks for — are all locked, like
+/// everything else in the circle. Only the holder writes these, since only
+/// her device answers passes, and they are never changed.
+///
+/// The idea of a notice on every use, and of a reason given at the time,
+/// comes from Mycelix-Health's emergency access (docs/prior-art.md); written
+/// afresh.
+#[hdk_entry_helper]
+#[derive(Clone, PartialEq)]
+pub struct PassRead {
+    pub locked: Locked,
+}
+
+/// Who, what for, which sections and a reason: a few hundred characters,
+/// with room for what locking adds.
+const MOST_BYTES_IN_A_LOCKED_PASS_READ: usize = 8 * 1_024;
+
+// ---------------------------------------------------------------------------
 // Keys, so the record can be locked (migration batch, item 6)
 // ---------------------------------------------------------------------------
 //
@@ -764,6 +794,8 @@ pub enum EntryTypes {
     CheckedOn(CheckedOn),
     BoxKey(BoxKey),
     EpochKey(EpochKey),
+    // The third rules version.
+    PassRead(PassRead),
 }
 
 #[hdk_link_types]
@@ -809,6 +841,9 @@ pub enum LinkTypes {
     CircleToBoxKey,
     /// Anchor -> EpochKey, so each member finds the keys sealed to them.
     CircleToEpochKey,
+    /// Anchor -> PassRead: every time somebody read part of the record with a
+    /// pass. The third rules version.
+    CircleToPassRead,
 }
 
 fn invalid(reason: &str) -> ExternResult<ValidateCallbackResult> {
@@ -1334,52 +1369,24 @@ fn validate_about_me(
     // read them — and must not try, since validation has to reach the same
     // answer on every device forever, and "does this device hold key 3?" does
     // not.
-    if let Some(locked) = &about_me.locked {
-        if !unlocked_part_is_empty(about_me) {
-            return invalid(
-                "A record is either locked or in the open, and this one is partly both",
-            );
-        }
-        return locked_is_the_right_shape(
-            locked,
-            MOST_BYTES_IN_A_LOCKED_RECORD,
-            "That is larger than the whole record could ever be",
-        );
+    //
+    // And only locked. The previous rules accepted a record in the open too,
+    // trusting the app always to lock it; the app always did, but the rules
+    // are the part that is not meant to trust the app. Refused since the third
+    // rules version (outside review, 23 September 2026 — docs/encryption.md).
+    // The word limits the rules used to check on an open record are the app's
+    // to check now, before it locks (`lock_about_me`).
+    let Some(locked) = &about_me.locked else {
+        return invalid("Everything in a circle is locked. This record was not");
+    };
+    if !unlocked_part_is_empty(about_me) {
+        return invalid("A record is either locked or in the open, and this one is partly both");
     }
-
-    if about_me.display_name.trim().is_empty() {
-        return invalid("About Me must have a display name");
-    }
-    if name_too_long(&about_me.display_name) || name_too_long(&about_me.supported_to_write_this_by)
-    {
-        return invalid("A name here can be up to 200 characters");
-    }
-    for section in [
-        &about_me.what_matters_to_me,
-        &about_me.people_who_matter,
-        &about_me.how_to_communicate_with_me,
-        &about_me.my_wellness,
-        &about_me.please_do_and_please_do_not,
-        &about_me.how_to_support_me,
-        &about_me.also_worth_knowing,
-    ] {
-        if too_long(section) {
-            return invalid("Each part of the record holds up to 500 words");
-        }
-    }
-    if about_me.codes.len() > MOST_CODES {
-        return invalid("A record can carry up to 50 coded values");
-    }
-    for coded in &about_me.codes {
-        if coded.code.trim().is_empty()
-            || name_too_long(&coded.system)
-            || name_too_long(&coded.code)
-            || name_too_long(&coded.display)
-        {
-            return invalid("A coded value needs a code, and each part of it is short");
-        }
-    }
-    Ok(ValidateCallbackResult::Valid)
+    locked_is_the_right_shape(
+        locked,
+        MOST_BYTES_IN_A_LOCKED_RECORD,
+        "That is larger than the whole record could ever be",
+    )
 }
 
 /// Links carry meaning here, so they need rules of their own.
@@ -1601,6 +1608,23 @@ fn validate_create_link(
             Ok(ValidateCallbackResult::Valid)
         }
 
+        // Only the holder's device answers passes, so only it says one was
+        // used, and only about its own notices.
+        LinkTypes::CircleToPassRead => {
+            if !is_the_person(author)? {
+                return invalid("Only the person whose circle this is records a pass being used");
+            }
+            // Path anchor scaffolding. See the note under CircleToAboutMe.
+            let Some(target) = as_action_hash(&action.target_address) else {
+                return Ok(ValidateCallbackResult::Valid);
+            };
+            let target_action = must_get_action(target)?;
+            if target_action.action().author() != author {
+                return invalid("You may only point to your own notice");
+            }
+            Ok(ValidateCallbackResult::Valid)
+        }
+
         // Only the holder records who has gone, and only her own decisions.
         LinkTypes::CircleToDeparture => {
             if !is_the_person(author)? {
@@ -1683,25 +1707,21 @@ fn validate_acknowledgement(
     if action.action().author() == author {
         return invalid("An agent cannot acknowledge their own About Me");
     }
-    match &ack.locked {
-        Some(locked) => {
-            if !ack.role.is_empty() {
-                return invalid("A role is either locked or in the open, not partly both");
-            }
-            // A role is 200 characters at most, and locking adds a little.
-            if let ValidateCallbackResult::Invalid(why) = locked_is_the_right_shape(
-                locked,
-                MOST_CHARACTERS_IN_A_NAME * 4 + 1_024,
-                "That is larger than a role could be",
-            )? {
-                return Ok(ValidateCallbackResult::Invalid(why));
-            }
-        }
-        None => {
-            if name_too_long(&ack.role) {
-                return invalid("What you say you are can be up to 200 characters");
-            }
-        }
+    // Locked, always — even a blank role, which the app locks too. Since the
+    // third rules version the rules refuse one in the open.
+    let Some(locked) = &ack.locked else {
+        return invalid("Everything in a circle is locked. This role was not");
+    };
+    if !ack.role.is_empty() {
+        return invalid("A role is either locked or in the open, not partly both");
+    }
+    // A role is 200 characters at most, and locking adds a little.
+    if let ValidateCallbackResult::Invalid(why) = locked_is_the_right_shape(
+        locked,
+        MOST_CHARACTERS_IN_A_NAME * 4 + 1_024,
+        "That is larger than a role could be",
+    )? {
+        return Ok(ValidateCallbackResult::Invalid(why));
     }
 
     let entry_hash = action
@@ -1917,26 +1937,22 @@ fn validate_media_item(
         }
         _ => {}
     }
-    if let Some(locked) = &item.locked {
-        if !item.file_name.is_empty() || !item.in_words.is_empty() {
-            return invalid("A file's words are either locked or in the open, not partly both");
-        }
-        if name_too_long(&item.mime_type) {
-            return invalid("A file type can be up to 200 characters");
-        }
-        return locked_is_the_right_shape(
-            locked,
-            MOST_BYTES_IN_LOCKED_MEDIA_WORDS,
-            "That is larger than a file name and its words could be",
-        );
+    // The file name and what it says in words are locked, always; since the
+    // third rules version the rules refuse them in the open.
+    let Some(locked) = &item.locked else {
+        return invalid("Everything in a circle is locked. This file's words were not");
+    };
+    if !item.file_name.is_empty() || !item.in_words.is_empty() {
+        return invalid("A file's words are either locked or in the open, not partly both");
     }
-    if name_too_long(&item.file_name) || name_too_long(&item.mime_type) {
-        return invalid("A file name can be up to 200 characters");
+    if name_too_long(&item.mime_type) {
+        return invalid("A file type can be up to 200 characters");
     }
-    if too_long(&item.in_words) {
-        return invalid("What it says in words can be up to 500 words");
-    }
-    Ok(ValidateCallbackResult::Valid)
+    locked_is_the_right_shape(
+        locked,
+        MOST_BYTES_IN_LOCKED_MEDIA_WORDS,
+        "That is larger than a file name and its words could be",
+    )
 }
 
 /// A piece of a media file: the holder's, and at most three megabytes.
@@ -1947,22 +1963,21 @@ fn validate_media_piece(
     if !is_the_person(author)? {
         return invalid("Only the person whose circle this is may add a photo, sound or video");
     }
-    if let Some(locked) = &piece.locked {
-        if !piece.bytes.is_empty() {
-            return invalid("A piece is either locked or in the open, not partly both");
-        }
-        // Room above the plain limit for what locking adds: proof the bytes
-        // were not tampered with.
-        return locked_is_the_right_shape(
-            locked,
-            MOST_BYTES_IN_A_PIECE + 1_024,
-            "A piece of a file is at most three megabytes",
-        );
+    // Locked, always; since the third rules version the rules refuse a piece
+    // in the open.
+    let Some(locked) = &piece.locked else {
+        return invalid("Everything in a circle is locked. This piece of a file was not");
+    };
+    if !piece.bytes.is_empty() {
+        return invalid("A piece is either locked or in the open, not partly both");
     }
-    if piece.bytes.is_empty() || piece.bytes.len() > MOST_BYTES_IN_A_PIECE {
-        return invalid("A piece of a file is at most three megabytes");
-    }
-    Ok(ValidateCallbackResult::Valid)
+    // Room above the plain limit for what locking adds: proof the bytes
+    // were not tampered with.
+    locked_is_the_right_shape(
+        locked,
+        MOST_BYTES_IN_A_PIECE + 1_024,
+        "A piece of a file is at most three megabytes",
+    )
 }
 
 /// Anybody in a circle may publish their own encryption key, and only in a
@@ -2218,23 +2233,19 @@ fn validate_member(member: &Member) -> ExternResult<ValidateCallbackResult> {
 fn validate_suggestion(suggestion: &Suggestion) -> ExternResult<ValidateCallbackResult> {
     // Deliberately no check on who the author is. Any member of the circle may
     // offer something; the holder decides what goes in.
-    if let Some(locked) = &suggestion.locked {
-        if !suggestion.text.is_empty() || !suggestion.because.is_empty() {
-            return invalid("A suggestion is either locked or in the open, not partly both");
-        }
-        return locked_is_the_right_shape(
-            locked,
-            MOST_BYTES_IN_A_LOCKED_SUGGESTION,
-            "That is larger than a suggestion and its reason could be",
-        );
+    // Locked, always; since the third rules version the rules refuse a
+    // suggestion in the open. The app checks the words before it locks them.
+    let Some(locked) = &suggestion.locked else {
+        return invalid("Everything in a circle is locked. This suggestion was not");
+    };
+    if !suggestion.text.is_empty() || !suggestion.because.is_empty() {
+        return invalid("A suggestion is either locked or in the open, not partly both");
     }
-    if suggestion.text.trim().is_empty() {
-        return invalid("A suggestion needs something in it");
-    }
-    if too_long(&suggestion.text) || too_long(&suggestion.because) {
-        return invalid("A suggestion, and why, can be up to 500 words each");
-    }
-    Ok(ValidateCallbackResult::Valid)
+    locked_is_the_right_shape(
+        locked,
+        MOST_BYTES_IN_A_LOCKED_SUGGESTION,
+        "That is larger than a suggestion and its reason could be",
+    )
 }
 
 fn validate_outcome(
@@ -2328,7 +2339,23 @@ fn validate_create(
         EntryTypes::CheckedOn(c) => validate_checked_on(&c, author),
         EntryTypes::BoxKey(k) => validate_box_key(&k),
         EntryTypes::EpochKey(k) => validate_epoch_key(&k, author),
+        EntryTypes::PassRead(p) => validate_pass_read(&p, author),
     }
+}
+
+/// A pass was used: written by the holder's device, locked, and small.
+fn validate_pass_read(
+    notice: &PassRead,
+    author: &AgentPubKey,
+) -> ExternResult<ValidateCallbackResult> {
+    if !is_the_person(author)? {
+        return invalid("Only the person whose circle this is records a pass being used");
+    }
+    locked_is_the_right_shape(
+        &notice.locked,
+        MOST_BYTES_IN_A_LOCKED_PASS_READ,
+        "That is larger than a note of a pass being used could be",
+    )
 }
 
 /// Only the author of an entry may delete it. Without this, any member could
@@ -2546,6 +2573,7 @@ fn validate_update(
         EntryTypes::BoxKey(_) | EntryTypes::EpochKey(_) => {
             invalid("A key cannot be changed; publish another")
         }
+        EntryTypes::PassRead(_) => invalid("A note of a pass being used cannot be changed"),
     }
 }
 
@@ -2637,5 +2665,35 @@ mod tests {
                 "version {other} must be refused"
             );
         }
+    }
+
+    /// Since the third rules version, nothing in a circle is written in the
+    /// open. A suggestion is the one kind whose rule needs no running
+    /// Holochain to ask (any member may write one), so it can be checked
+    /// here; the others begin by asking who the holder is, and share the same
+    /// shape of refusal.
+    #[test]
+    fn a_suggestion_in_the_open_is_refused() {
+        let open = Suggestion {
+            field: AboutMeField::WhatMattersToMe,
+            text: "Her allotment".to_string(),
+            because: String::new(),
+            locked: None,
+        };
+        assert!(matches!(
+            validate_suggestion(&open),
+            Ok(ValidateCallbackResult::Invalid(_))
+        ));
+
+        let locked = Suggestion {
+            field: AboutMeField::WhatMattersToMe,
+            text: String::new(),
+            because: String::new(),
+            locked: Some(locked_as(LOCKED_VERSION)),
+        };
+        assert!(matches!(
+            validate_suggestion(&locked),
+            Ok(ValidateCallbackResult::Valid)
+        ));
     }
 }

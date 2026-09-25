@@ -118,8 +118,24 @@
 #   linux    f6b4c76338add5fa6a80bad83b40c0cdf55cf19b820b02132f863faa0a486b91
 #   windows  68f1b6a2f4ca8e27b2fc4f18d39717e03590ecc970aa0ca3341a385a8fda2eae
 #
-# Both pins below are this version's: linux from CI, windows built on the
-# Windows build machine on 25 September 2026 with scripts/build-zomes.mjs.
+# 25 September 2026: two more changes joined it before any release, so that
+# everybody carries their circles across once, not three times. See
+# docs/encryption.md and docs/outer-ring.md.
+#
+#   - Nothing in the open. The record, suggestions, media and acknowledgement
+#     roles were accepted unlocked by the previous rules, trusting the app to
+#     lock them; they are now refused unless locked.
+#   - A note of a pass being used (PassRead, CircleToPassRead), written by the
+#     holder's device into the circle, so the whole circle sees "Ward 7 read
+#     this" — and, for an emergency pass, the reason the reader gave.
+#
+# The hashes of the version-and-seal change alone, never released:
+#
+#   linux    625f48f5fc89440c98a9029ec59f2d82ef65bce7bffcf6bc1992257e22cfef25
+#   windows  965ef3ab8f64d94245dca6cc9e8e671a976b8991668f266b84279650895b51eb
+#
+# Both pins below are this version's: windows built on the Windows build
+# machine with scripts/build-zomes.mjs, linux from CI.
 
-linux    625f48f5fc89440c98a9029ec59f2d82ef65bce7bffcf6bc1992257e22cfef25
-windows  965ef3ab8f64d94245dca6cc9e8e671a976b8991668f266b84279650895b51eb
+linux    0000000000000000000000000000000000000000000000000000000000000000
+windows  2026521594725a598cb547a2f13de1dd56fd7cadec238cd86836c3a30a045cc6
