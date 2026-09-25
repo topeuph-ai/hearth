@@ -137,5 +137,5 @@
 # Both pins below are this version's: windows built on the Windows build
 # machine with scripts/build-zomes.mjs, linux from CI.
 
-linux    0000000000000000000000000000000000000000000000000000000000000000
+linux    399d1b150b2c149b6c282dfecf9321cab6a348f14a41c665290c41f7b4ce009c
 windows  2026521594725a598cb547a2f13de1dd56fd7cadec238cd86836c3a30a045cc6
