@@ -315,7 +315,8 @@ rest. Each was checked against the code.
   nobody can downgrade somebody else. But the rules are meant to be the
   backstop that does not trust the app, and here they trust it. **For the next
   version of the rules:** a circle made under these rules refuses anything in
-  the open.
+  the open. **Done on the `rules-3` branch, 25 September 2026** — see "Nothing
+  in the open" below. Not on `main` and not released.
 - **Nothing ties a locked body to where it sits.** The lock does not use the
   author, the entry type or the epoch as associated data, so a member could
   copy another member's locked suggestion into one of their own. It gains
@@ -386,6 +387,22 @@ one. So the test shows the step every reader goes through: the same locked
 bytes open as the real author's and not as anybody else's, nor as another kind
 of entry, key or circle. A wrong version number cannot be written through the
 app either, so the rule is tested directly in the rules' own unit tests.
+
+### Nothing in the open, 25 September 2026 (rules-3 branch)
+
+Joined the version-and-seal change before any release, so that holders carry
+their circles across once. The record, suggestions, a file's name and words, a
+piece of a file, and the role on an acknowledgement are now **refused unless
+locked**. The previous rules accepted them in the open and trusted the app to
+lock them, which it always did; the rules are the part that is not meant to
+trust the app. The word limits the rules used to check on open content are the
+app's to check before it locks, as they already were for locked content.
+
+Still in the open, and known: how members describe themselves (see above).
+
+Test: `a_suggestion_in_the_open_is_refused`, in the rules' own unit tests; the
+other kinds begin by asking who the holder is, which needs a running Holochain,
+and share the same shape of refusal.
 
 ### One thing the design note got wrong
 

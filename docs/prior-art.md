@@ -245,7 +245,10 @@ a design idea, and every one would be written afresh.
   Enforced in their rules, not only their app. Hearth's passes are close; the
   pieces Hearth lacks are a *reason* on each use, and a notice the whole circle
   can see (the "Ward 7 read this" that [outer-ring.md](outer-ring.md) says
-  needs a rules change).
+  needs a rules change). **Done on the `rules-3` branch, 25 September 2026**,
+  written afresh: an emergency pass asks the reader why, will not open
+  without a reason, and the holder's device writes a locked note of every use
+  into the circle, with the reason, for every member to see.
 - **A purpose on every grant, and a reason on every revocation.** A pass could
   say what it is for ("hospital admission, Ward 7") and a stopped pass why.
   Coordinator only — no rules change.
