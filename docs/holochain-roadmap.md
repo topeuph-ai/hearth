@@ -8,7 +8,63 @@ otherwise. Check the board again before relying on any of it: plans move.
 
 ---
 
-## Holochain 0.7.1 — a security release, next
+## Holochain 0.7.1 — released 14 October 2026
+
+### ⚠️ Checked 16 October: the 24 September plan below no longer holds
+
+0.7.1 turned out to be more than a security release. Its changelog
+(`CHANGELOG.md` at tag `holochain-0.7.1`, entries for 0.7.1-rc.2) has a
+**breaking change to capability grants (#5820)**:
+
+- A grant is now `CapGrantEntry { tag, constraint, capability }` instead of
+  `{ tag, access, functions }`, and the type names change (`CapAccess` →
+  `GrantConstraint`, and so on). Hearth's code makes grants in two places: the
+  open grant for `recv_remote_signal` made at start-up (`lib.rs` ~1213),
+  which every signal in a circle depends on, including calls; and every pass
+  (`lib.rs` ~2800).
+- In the changelog's words: "Capability grants already on a source chain
+  cannot be read by this version and must be re-issued."
+
+So "swap the program, keep Hearth's code as it is" would most likely break
+**passes and signals** on every upgraded device. That is what the changelog
+implies; it has **not been tried**. Lightningrod Labs say the same of Moss
+0.16.0-rc.1: "Tools work only once they are rebuilt for Holochain 0.7.1".
+
+**What moving to 0.7.1 now needs** (not started; for Ceri to decide):
+
+1. Rebuild the coordinator code against hdk 0.7.1, using the new grant shape.
+2. On every launch, make the `recv_remote_signal` grant again if it is missing.
+   `init` runs only once, so an upgraded device would otherwise never get it
+   back.
+3. Passes made before the upgrade stop working. Their holders have to make them
+   again, so the app should tell them.
+4. **Test first: do the rules (integrity) built with hdi 0.8.0 still run on
+   0.7.1** once a grant is written? If they do, circles stay as they are. If
+   they do not, the rules must be rebuilt with hdi 0.8.1, which gives a new
+   DNA, and every circle has to be carried across. In that case, do it
+   **together with the `rules-3` branch**, which needs a carry-across anyway:
+   one move for the holder instead of two.
+5. Test whether a 0.7.0 device and a 0.7.1 device in the same circle can still
+   reach each other while people upgrade at different times.
+
+**Also in 0.7.1 that helps Hearth:**
+- **#6020.** Changes written while no peers can be found were wrongly marked as
+  "sent" and never retried. Fixed. This bears directly on writing offline.
+- **Source-chain restore** (#5800, in rc.1): an existing agent key can rebuild
+  its chain from the network on a new device. That is part of the answer to
+  "can a person recover their identity" ([hard-questions.md](hard-questions.md),
+  question 12), though it still needs the key itself.
+- #5781 and #5994 (below) are in, along with faster database indexes.
+- Direct signals over 8 KiB are fixed (#5937). Hearth's signals use
+  `send_remote_signal`, a different route; the 8 KiB limit on *encryption* in
+  lair is unchanged.
+
+**Kangaroo** `main-0.7` is on 0.7.1-rc.2 (13 October), not yet 0.7.1.
+**Lightningrod Labs' LAN build** is now on 0.7.1 (`holochain-0.7.1-mdns.5`,
+15 October). It also retries peers it used to give up on, and finds the LAN
+when a machine boots with its network down.
+
+---
 
 The first test build (0.7.1-rc.1) came out on 2 September; one more is planned
 before the release itself (#5932, #5933).
@@ -27,7 +83,7 @@ What it fixes that matters here:
 - Probably the `rustls` flaw the dependency check found (see
   [threat-model.md](threat-model.md)); not confirmed.
 
-**What Hearth does, decided 24 September 2026:** move to the 0.7.1 *program*
+**What Hearth does, decided 24 September 2026 (superseded, see above):** move to the 0.7.1 *program*
 and keep Hearth's own code exactly as it is. The fixes are in the program, not
 in the toolkit Hearth's code is built with, so nothing needs rebuilding and no
 circle is split off. Then a two-machine check of passes. Rebuilding Hearth's

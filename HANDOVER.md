@@ -18,7 +18,7 @@ Hearth is and why.
    findings of four outside reviews and our own audit. Start there rather than
    re-auditing.
 3. `docs/holochain-roadmap.md` — what Holochain plans, and what Hearth does
-   about each (next: move to the 0.7.1 program without rebuilding the zomes).
+   about each (next: 0.7.1 changes capability grants, so it needs a coordinator rebuild and a test of the rules first; see docs/holochain-roadmap.md).
 4. `docs/upgrades.md` and `desktop-patches/README.md` — how a circle survives
    a new version, and the three patches to the desktop packaging.
 
