@@ -153,5 +153,5 @@
 # Nobody but the project lead has used Hearth yet, so nobody else loses a
 # circle. See docs/holochain-roadmap.md.
 
-linux    UNKNOWN-until-the-first-CI-run
+linux    275e97e8760aedbaee5d2fb8d0fe20812df721ee859a9d08c81dc2d4aa7f1e08
 windows  e223ef965eea8173c7a31a2197061e831ff0412fb6e8c51c65d538f630ec2fba
