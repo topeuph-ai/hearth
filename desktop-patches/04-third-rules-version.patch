@@ -1,0 +1,24 @@
+--- src/main/const.ts	2026-09-25 21:57:39.117047800 +0100
++++ src/main/const.ts	2026-09-25 21:57:40.113668300 +0100
+@@ -52,13 +52,17 @@
+  * same keystore, and circles are carried across rather than stranded. See
+  * docs/upgrades.md in the Hearth repository.
+  *
+- * 'kangaroo.happ' is what Hearth 0.2.0 to 0.2.4 installed. It stays on disk
+- * holding the circles made under those rules, and must not be reused.
++ * 'kangaroo.happ' is what Hearth 0.2.0 to 0.2.4 installed, and
++ * 'hearth.rules.2' what 0.2.5 to 0.3.x installed. Both stay on disk holding
++ * the circles made under those rules, and must not be reused.
++ *
++ * rules.3: every locked item carries a version and is sealed to where it sits
++ * (desktop-patches/04 in the Hearth repository).
+  */
+-export const HAPP_APP_ID = 'hearth.rules.2';
++export const HAPP_APP_ID = 'hearth.rules.3';
+ 
+ /** Every earlier rules version, newest first. Their circles still exist. */
+-export const HEARTH_PREVIOUS_APP_IDS = ['kangaroo.happ'];
++export const HEARTH_PREVIOUS_APP_IDS = ['hearth.rules.2', 'kangaroo.happ'];
+ 
+ export const UI_DIRECTORY = path.join(RESOURCES_DIRECTORY, 'ui');
+ 

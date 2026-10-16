@@ -236,14 +236,19 @@ a design idea, and every one would be written afresh.
   `Locked` has neither. The reviews already asked for the second
   ([encryption.md](encryption.md)); the first is what makes it safe to add,
   because old and new locked items can then be told apart. **For the next
-  rules change** — cheap then, impossible without one.
+  rules change** — cheap then, impossible without one. **Done on the `rules-3`
+  branch, 24 September 2026**, written afresh; see
+  [encryption.md](encryption.md), "A version on every lock".
 - **Pre-authorised emergency access**, which they call break-glass: the patient
   names a person and the categories in advance, it lasts at most 60 minutes,
   a reason is required, and every use leaves a notification the patient sees.
   Enforced in their rules, not only their app. Hearth's passes are close; the
   pieces Hearth lacks are a *reason* on each use, and a notice the whole circle
   can see (the "Ward 7 read this" that [outer-ring.md](outer-ring.md) says
-  needs a rules change).
+  needs a rules change). **Done on the `rules-3` branch, 25 September 2026**,
+  written afresh: an emergency pass asks the reader why, will not open
+  without a reason, and the holder's device writes a locked note of every use
+  into the circle, with the reason, for every member to see.
 - **A purpose on every grant, and a reason on every revocation.** A pass could
   say what it is for ("hospital admission, Ward 7") and a stopped pass why.
   Coordinator only — no rules change.

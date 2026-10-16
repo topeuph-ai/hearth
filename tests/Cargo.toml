@@ -11,10 +11,10 @@ license = "Apache-2.0"
 # default features include "encryption", which pulls SQLCipher and then a
 # vendored OpenSSL build. That needs a perl toolchain Windows does not have.
 # "sweettest" is the supported feature for this kind of test.
-holochain = { version = "0.7.0", default-features = false, features = ["sweettest", "schema", "wasmer-sys-cranelift"] }
-holochain_types = "0.7.0"
-holochain_zome_types = "0.7.0"
-hdk = "0.7.0"
+holochain = { version = "=0.7.1", default-features = false, features = ["sweettest", "schema", "wasmer-sys-cranelift"] }
+holochain_types = "=0.7.1"
+holochain_zome_types = "=0.7.1"
+hdk = "=0.7.1"
 aboutme_integrity = { path = "../dnas/aboutme/zomes/integrity/aboutme" }
 aboutme = { path = "../dnas/aboutme/zomes/coordinator/aboutme" }
 tokio = { version = "1", features = ["full"] }

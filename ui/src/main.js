@@ -1104,6 +1104,30 @@ function sayWhichAnswersRunLong() {
  * opened with the circle's key by the zome — the role is locked in the circle,
  * so it cannot be read off the entry here.
  */
+/*
+ * Every time a pass was used, for the whole circle to see (the third rules
+ * version). Written by the holder's device; a circle made under earlier rules
+ * has no such list, and the call to it simply finds nothing.
+ */
+async function loadPassReadsForTheCircle() {
+  const reads = await orNothingYet(call("get_pass_reads", null, circle.cellId), []);
+  $("pass-reads-circle").hidden = reads.length === 0;
+  $("pass-reads-circle-list").replaceChildren(
+    ...reads.map(({ at, words }) => {
+      const item = document.createElement("li");
+      if (!words) {
+        item.textContent = `${whenText(at)}: somebody read part of the record with a pass.`;
+        return item;
+      }
+      const forWhat = words.purpose?.trim() ? ` (${words.purpose.trim()})` : "";
+      const parts = words.sections.map(sectionName).join(", ");
+      const said = words.reason?.trim() ? ` They said: "${words.reason.trim()}"` : "";
+      item.textContent = `${whenText(at)}: ${words.for_whom}${forWhat} read ${parts}.${said}`;
+      return item;
+    }),
+  );
+}
+
 function renderReaders(allReads, earlier = []) {
   const section = $("readers");
   const list = $("readers-list");
@@ -1357,6 +1381,7 @@ async function drawTheCircle() {
       : [],
     written && unchangedSinceTheMove ? historyFor(circle.cellId)?.readers ?? [] : [],
   );
+  await loadPassReadsForTheCircle();
 
   await loadMembers();
   await loadSuggestions();
@@ -2072,7 +2097,8 @@ async function start() {
       if (!rememberPassRead(asText(signal?.value?.cell_id?.[0]), payload)) return;
       announce(
         `${payload.for_whom} read ${payload.sections.map(sectionName).join(", ")} ` +
-          `with a pass.`,
+          `with a pass.` +
+          (payload.reason?.trim() ? ` They said: "${payload.reason.trim()}"` : ""),
       );
       if (currentRoomCell) await loadPasses().catch(() => {});
       return;
@@ -4598,6 +4624,8 @@ const PASS_BUNDLES = {
   emergency: {
     purpose: "An emergency",
     lasts: "today",
+    // Whoever reads with it says why, and the circle sees it.
+    askReason: true,
     sections: ["HowToCommunicateWithMe", "PleaseDoAndPleaseDoNot", "PeopleWhoMatter"],
   },
   cover: {
@@ -4623,6 +4651,7 @@ function usePassBundle(name) {
     choice.checked = choice.value === bundle.lasts;
   }
   $("pass-purpose").value = bundle.purpose;
+  $("pass-ask-reason").checked = Boolean(bundle.askReason);
   const shown = bundle.sections.map(sectionName).join(", ");
   const lasts = { today: "just today", week: "a week", stopped: "until you stop it" }[bundle.lasts];
   announce(`Filled in for ${bundle.purpose.toLowerCase()}: ${shown}, for ${lasts}. Change anything you like.`);
@@ -4814,7 +4843,9 @@ async function loadPasses() {
           : `until ${whenText(pass.terms.until)}`
         : "until you stop it";
       const words = document.createElement("span");
-      const forWhat = pass.terms.purpose?.trim() ? ` (${pass.terms.purpose.trim()})` : "";
+      const forWhat =
+        (pass.terms.purpose?.trim() ? ` (${pass.terms.purpose.trim()})` : "") +
+        (pass.terms.ask_reason ? ", asks why" : "");
       words.textContent = `${pass.terms.for_whom}${forWhat} — ${what}, ${lasts}. `;
       if (pass.run_out) item.classList.add("run-out");
 
@@ -4910,6 +4941,7 @@ $("pass-form").addEventListener("submit", async (event) => {
         sections,
         for_whom: forWhom,
         purpose: $("pass-purpose").value.trim(),
+        ask_reason: $("pass-ask-reason").checked,
         until: passRunsOutAt(lasts),
       },
       door,
@@ -4954,7 +4986,7 @@ async function readWithThePass() {
     try {
       words = await call(
         "ask_with_a_pass",
-        { holder: pass.holder, secret: pass.secret },
+        { holder: pass.holder, secret: pass.secret, reason: $("pass-reason").value.trim() },
         door,
       );
       break;
@@ -5005,6 +5037,7 @@ function passTrouble(error) {
 
 function aFreshPassReading() {
   $("pass-trouble").hidden = true;
+  $("pass-reason").value = "";
   passInHand = null;
   $("pass-in").value = "";
   $("pass-reader-form").hidden = false;

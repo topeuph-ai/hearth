@@ -27,7 +27,12 @@ otherwise. Check the board again before relying on any of it: plans move.
 
 So "swap the program, keep Hearth's code as it is" would most likely break
 **passes and signals** on every upgraded device. That is what the changelog
-implies; it has **not been tried**. Lightningrod Labs say the same of Moss
+implies, and Lightningrod Labs have since confirmed it in their
+`holochain-0.7.1-mdns.5` notes: "stock 0.7.1-rc.2 rejects every hdk 0.7.0 zome
+that commits a grant in `init`", which Hearth does. Their LAN build carries a
+fix that upstream has not merged yet (holochain#6042). Hearth is rebuilt
+against hdk 0.7.1 instead, on the `holochain-0.7.1` branch (16 October), so it
+does not depend on that fix. Lightningrod Labs say the same of Moss
 0.16.0-rc.1: "Tools work only once they are rebuilt for Holochain 0.7.1".
 
 **Nobody but Ceri has used Hearth yet (16 October 2026)**, so a clean break

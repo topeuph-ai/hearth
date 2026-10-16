@@ -6,7 +6,7 @@
 //! which is the thing to resolve before this becomes a product.
 
 use aboutme_integrity::*;
-use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hdk::prelude::*;
 use std::collections::BTreeSet;
@@ -644,7 +644,12 @@ pub fn get_current_about_me(original_action_hash: ActionHash) -> ExternResult<Cu
         .as_ref()
         .and_then(|r| r.entry().as_option().cloned())
         .and_then(|e| AboutMe::try_from(e).ok());
-    let about_me = written.as_ref().and_then(|w| unlock_about_me(w).ok());
+    // Opened as written by whoever signed this version, which is sealed into
+    // its lock. See `SealedWith`.
+    let about_me = match (&record, &written) {
+        (Some(r), Some(w)) => unlock_about_me(w, r.action().author()).ok(),
+        _ => None,
+    };
     let locked_out = written.is_some() && about_me.is_none();
 
     Ok(CurrentAboutMe {
@@ -675,6 +680,7 @@ pub fn acknowledge(input: AcknowledgeInput) -> ExternResult<Record> {
         about_me: input.about_me.clone(),
         role: String::new(),
         locked: Some(lock(
+            WhatIsLocked::Role,
             ExternIO::encode(&role)
                 .map_err(|e| wasm_error!(format!("Could not pack the role to lock it: {e:?}")))?
                 .into_vec(),
@@ -764,11 +770,12 @@ pub fn get_acknowledgements(about_me: ActionHash) -> ExternResult<Vec<WhoRead>> 
                 .ok()
                 .flatten();
             let (role, locked_out) = match ack.as_ref().and_then(|a| a.locked.as_ref()) {
-                Some(locked) => match unlock(locked).and_then(|w| {
-                    ExternIO::from(w)
-                        .decode::<String>()
-                        .map_err(|e| wasm_error!(format!("{e:?}")))
-                }) {
+                Some(locked) => match unlock(WhatIsLocked::Role, record.action().author(), locked)
+                    .and_then(|w| {
+                        ExternIO::from(w)
+                            .decode::<String>()
+                            .map_err(|e| wasm_error!(format!("{e:?}")))
+                    }) {
                     Ok(role) => (role, false),
                     Err(_) => (String::new(), true),
                 },
@@ -1187,6 +1194,9 @@ pub enum Signal {
         for_whom: String,
         sections: Vec<AboutMeField>,
         at: Timestamp,
+        /// Why the reader said they were reading it, if the pass asked.
+        #[serde(default)]
+        reason: String,
     },
     /// The holder has turned calls on or off for this circle. Accepted only
     /// from the holder. See "Calls" below.
@@ -1210,11 +1220,11 @@ pub fn init() -> ExternResult<InitCallbackResult> {
     let mut functions = HashSet::new();
     functions.insert((zome_info()?.name, "recv_remote_signal".into()));
 
-    create_cap_grant(CapGrantEntry {
-        tag: "circle-signals".into(),
-        access: CapAccess::Unrestricted,
-        functions: GrantedFunctions::Listed(functions),
-    })?;
+    create_cap_grant(CapGrantEntry::new_zome_call_grant(
+        "circle-signals".into(),
+        GrantConstraint::Unrestricted,
+        GrantedFunctions::Listed(functions),
+    ))?;
 
     Ok(InitCallbackResult::Pass)
 }
@@ -1646,7 +1656,7 @@ pub fn get_suggestions(_: ()) -> ExternResult<Vec<SuggestionWithOutcome>> {
             .to_app_option::<Suggestion>()
             .ok()
             .flatten()
-            .and_then(|s| unlock_suggestion(&s).ok());
+            .and_then(|s| unlock_suggestion(&s, suggestion.action().author()).ok());
 
         out.push(SuggestionWithOutcome {
             suggestion,
@@ -2502,7 +2512,7 @@ pub fn add_media_piece(bytes: Bytes) -> ExternResult<EntryHash> {
     }
     let piece = MediaPiece {
         bytes: Vec::new(),
-        locked: Some(lock(bytes.0)?),
+        locked: Some(lock(WhatIsLocked::MediaPiece, bytes.0)?),
     };
     let hash = hash_entry(&piece)?;
     create_entry(EntryTypes::MediaPiece(piece))?;
@@ -2551,7 +2561,7 @@ pub fn add_media(input: AddMediaInput) -> ExternResult<Record> {
         seconds: input.seconds,
         pieces: input.pieces,
         size: input.size,
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::MediaWords, words.into_vec())?),
     }))?;
 
     let path = media_path()?;
@@ -2628,11 +2638,13 @@ pub fn get_media(_: ()) -> ExternResult<Vec<MediaHere>> {
             // cannot be read is better than no photo, and the bytes are locked
             // with the same key anyway, so this is not a way round anything.
             if let Some(locked) = media.locked.take() {
-                if let Ok((file_name, in_words)) = unlock(&locked).and_then(|w| {
-                    ExternIO::from(w)
-                        .decode::<(String, String)>()
-                        .map_err(|e| wasm_error!(format!("{e:?}")))
-                }) {
+                if let Ok((file_name, in_words)) =
+                    unlock(WhatIsLocked::MediaWords, r.action().author(), &locked).and_then(|w| {
+                        ExternIO::from(w)
+                            .decode::<(String, String)>()
+                            .map_err(|e| wasm_error!(format!("{e:?}")))
+                    })
+                {
                     media.file_name = file_name;
                     media.in_words = in_words;
                 }
@@ -2657,7 +2669,11 @@ pub fn get_media_piece(hash: EntryHash) -> ExternResult<Bytes> {
         .map_err(|e| wasm_error!(format!("{e:?}")))?
         .ok_or_else(|| wasm_error!("That is not a piece of a file"))?;
     match &piece.locked {
-        Some(locked) => Ok(Bytes(unlock(locked)?)),
+        Some(locked) => Ok(Bytes(unlock(
+            WhatIsLocked::MediaPiece,
+            record.action().author(),
+            locked,
+        )?)),
         // A piece written before encryption. The bytes really are in the open.
         None => Ok(Bytes(piece.bytes)),
     }
@@ -2724,6 +2740,11 @@ pub struct PassTerms {
     /// consent purposes (docs/prior-art.md). Empty on passes made before 0.3.5.
     #[serde(default)]
     pub purpose: String,
+    /// Whoever reads with it must say why, each time — an emergency pass.
+    /// The reason goes into the note of it being used, which the whole circle
+    /// sees. Idea from Mycelix-Health's break-glass access (docs/prior-art.md).
+    #[serde(default)]
+    pub ask_reason: bool,
     /// When it stops working, in microseconds, or none for "until I stop it".
     pub until: Option<i64>,
     pub made: i64,
@@ -2741,6 +2762,9 @@ pub struct MakePassInput {
     /// What it is for. Optional.
     #[serde(default)]
     pub purpose: String,
+    /// Whether whoever reads with it must say why, each time.
+    #[serde(default)]
+    pub ask_reason: bool,
     /// Microseconds, or none for "until I stop it".
     pub until: Option<i64>,
 }
@@ -2787,6 +2811,7 @@ pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
         sections: input.sections,
         for_whom: input.for_whom.trim().to_string(),
         purpose: input.purpose.trim().to_string(),
+        ask_reason: input.ask_reason,
         until: input.until,
         made: sys_time()?.as_micros(),
     };
@@ -2797,13 +2822,13 @@ pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
     let mut functions = HashSet::new();
     functions.insert((zome_info()?.name, PASS_FUNCTION.into()));
 
-    let grant = create_cap_grant(CapGrantEntry {
+    let grant = create_cap_grant(CapGrantEntry::new_zome_call_grant(
         tag,
         // Transferable: it works for whoever holds the secret. The holder does
         // not know the nurse's key in advance, and cannot be asked to.
-        access: CapAccess::Transferable { secret },
-        functions: GrantedFunctions::Listed(functions),
-    })?;
+        GrantConstraint::Transferable { secret },
+        GrantedFunctions::Listed(functions),
+    ))?;
 
     Ok(PassMade {
         grant,
@@ -2845,7 +2870,8 @@ pub fn passes_here(_: ()) -> ExternResult<Vec<PassHere>> {
             return None;
         };
         // Only passes: the grant that lets members send signals is not one.
-        let is_pass = matches!(&grant.functions, GrantedFunctions::Listed(f)
+        let is_pass = matches!(&grant.capability,
+            Capability::ZomeCall(ZomeCallGrant { functions: GrantedFunctions::Listed(f) })
             if f.iter().any(|(_, name)| name.0 == PASS_FUNCTION));
         if !is_pass {
             return None;
@@ -2889,14 +2915,14 @@ pub struct PassedSection {
 /// Answer a pass. Runs on the holder's device, in the door, and only when
 /// Holochain has already checked the pass presented against a live grant.
 #[hdk_extern]
-pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
+pub fn read_with_a_pass(ask: PassAsk) -> ExternResult<PassedWords> {
     // The grant that let this call through. Its terms are the holder's, written
     // when she made it, and nothing the reader sends can change them.
     let terms: PassTerms = match call_info()?.cap_grant {
-        CapGrant::RemoteAgent(grant) => {
+        CapAccess::RemoteAgent(grant) => {
             yaml_serde::from_str(&grant.tag).map_err(|_| wasm_error!("That pass cannot be read"))?
         }
-        CapGrant::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
+        CapAccess::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
     };
 
     let now = sys_time()?;
@@ -2904,12 +2930,26 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
         return Err(wasm_error!("This pass has run out"));
     }
 
+    // An emergency pass opens only for somebody who says why, each time.
+    let reason = ask.reason.trim().to_string();
+    if terms.ask_reason && reason.is_empty() {
+        return Err(wasm_error!(
+            "This pass asks you to say why you are reading it. Write a few words, then read it again."
+        ));
+    }
+    if name_too_long(&reason) {
+        return Err(wasm_error!(
+            "Why you are reading it can be up to 200 characters"
+        ));
+    }
+
     let circle = DnaHash::try_from(terms.circle.as_str())
         .map_err(|_| wasm_error!("That pass names a circle this app cannot read"))?;
     let me = agent_info()?.agent_initial_pubkey;
+    let circle_cell = CellId::new(circle, me);
 
     let mut words: PassedWords = match call(
-        CallTargetCell::OtherCell(CellId::new(circle, me)),
+        CallTargetCell::OtherCell(circle_cell.clone()),
         zome_info()?.name,
         "words_for_a_pass".into(),
         None,
@@ -2920,15 +2960,141 @@ pub fn read_with_a_pass(_: ()) -> ExternResult<PassedWords> {
     };
     words.purpose = terms.purpose.clone();
 
-    // Tell the holder's own screen. The circle's wider knowledge of who read
-    // what would need a new kind of entry in the rules, and is left for then.
+    // Tell the circle: a note, written by this device into the circle, that
+    // every member sees. Since the third rules version. A note that cannot be
+    // written does not stop the reader getting what the pass allows — they
+    // may be at a bedside — but it is said in the log.
+    let noted = call(
+        CallTargetCell::OtherCell(circle_cell),
+        zome_info()?.name,
+        "note_pass_read".into(),
+        None,
+        PassReadWords {
+            for_whom: terms.for_whom.clone(),
+            purpose: terms.purpose.clone(),
+            sections: terms.sections.clone(),
+            reason: reason.clone(),
+        },
+    );
+    if !matches!(noted, Ok(ZomeCallResponse::Ok(_))) {
+        warn!("A pass was used and the note of it could not be written: {noted:?}");
+    }
+
+    // And the holder's own screen, now.
     let _ = emit_signal(Signal::PassUsed {
         for_whom: terms.for_whom,
         sections: terms.sections,
         at: now,
+        reason,
     });
 
     Ok(words)
+}
+
+/// What the reader sends with a pass: only why they are reading, which an
+/// emergency pass requires.
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct PassAsk {
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// What a note of a pass being used says, before it is locked.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PassReadWords {
+    pub for_whom: String,
+    #[serde(default)]
+    pub purpose: String,
+    pub sections: Vec<AboutMeField>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+const PASS_READ_ANCHOR: &str = "pass-reads";
+
+fn pass_read_path() -> ExternResult<TypedPath> {
+    anchored(PASS_READ_ANCHOR, LinkTypes::CircleToPassRead)
+}
+
+/// Write the note that a pass was used, locked, into this circle.
+///
+/// Called only by this device's own door, from `read_with_a_pass` — which is
+/// where the pass was checked — and only in a circle this device holds.
+#[hdk_extern]
+pub fn note_pass_read(words: PassReadWords) -> ExternResult<ActionHash> {
+    let me = agent_info()?.agent_initial_pubkey;
+    if call_info()?.provenance != me {
+        return Err(wasm_error!(
+            "Only this device's own door may note a pass being used"
+        ));
+    }
+    if !i_am_the_holder()? {
+        return Err(wasm_error!(
+            "Only the person whose circle this is notes a pass being used"
+        ));
+    }
+    let packed = ExternIO::encode(&words)
+        .map_err(|e| wasm_error!(format!("Could not pack the note to lock it: {e:?}")))?;
+    let action_hash = create_entry(EntryTypes::PassRead(PassRead {
+        locked: lock(WhatIsLocked::PassRead, packed.into_vec())?,
+    }))?;
+    let path = pass_read_path()?;
+    path.ensure()?;
+    create_link(
+        path.path_entry_hash()?,
+        action_hash.clone(),
+        LinkTypes::CircleToPassRead,
+        (),
+    )?;
+    Ok(action_hash)
+}
+
+/// One time a pass was used, as a member's screen shows it.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PassReadHere {
+    pub at: Timestamp,
+    /// None if this device cannot open it — a key it was never given.
+    pub words: Option<PassReadWords>,
+}
+
+/// Every time somebody read part of the record with a pass, newest first.
+#[hdk_extern]
+pub fn get_pass_reads(_: ()) -> ExternResult<Vec<PassReadHere>> {
+    let Membrane::Founder(holder, _) = membrane()? else {
+        return Ok(Vec::new());
+    };
+    let links = get_links(
+        LinkQuery::try_new(
+            pass_read_path()?.path_entry_hash()?,
+            LinkTypes::CircleToPassRead,
+        )?,
+        GetStrategy::Network,
+    )?;
+    let mut found = get_many(
+        links
+            .into_iter()
+            .filter_map(|l| l.target.into_action_hash())
+            .collect(),
+    )?;
+    and_my_own(&mut found, on_my_own_chain(UnitEntryTypes::PassRead)?);
+    oldest_first(&mut found);
+
+    let mut out: Vec<PassReadHere> = found
+        .into_iter()
+        .filter(|r| r.action().author() == &holder)
+        .filter_map(|r| {
+            let notice = r.entry().to_app_option::<PassRead>().ok().flatten()?;
+            let words = unlock(WhatIsLocked::PassRead, r.action().author(), &notice.locked)
+                .ok()
+                .and_then(|bytes| ExternIO::from(bytes).decode::<PassReadWords>().ok());
+            Some(PassReadHere {
+                at: r.action().timestamp(),
+                words,
+            })
+        })
+        .collect();
+    out.reverse();
+    Ok(out)
 }
 
 /// The words of chosen sections, from this circle.
@@ -2988,6 +3154,10 @@ pub struct AskWithPassInput {
     /// Whose device to ask, as text.
     pub holder: String,
     pub secret: CapSecret,
+    /// Why they are reading it. Required by an emergency pass; otherwise
+    /// optional, and noted in the circle either way.
+    #[serde(default)]
+    pub reason: String,
 }
 
 /// Present a pass. Called by the reader, in the door they have entered.
@@ -3001,7 +3171,9 @@ pub fn ask_with_a_pass(input: AskWithPassInput) -> ExternResult<PassedWords> {
         zome_info()?.name,
         PASS_FUNCTION.into(),
         Some(input.secret),
-        (),
+        PassAsk {
+            reason: input.reason,
+        },
     )? {
         ZomeCallResponse::Ok(io) => io.decode().map_err(|e| wasm_error!(format!("{e:?}"))),
         ZomeCallResponse::Unauthorized(..) => Err(wasm_error!(
@@ -3414,7 +3586,10 @@ pub fn keep_keys_up_to_date(_: ()) -> ExternResult<KeysHere> {
 /// took to arrive, what a member wrote could be opened on the removed person's
 /// device. Found in review, 23 September 2026. Waiting a moment is the price,
 /// and it is the right way round.
-fn lock(data: Vec<u8>) -> ExternResult<Locked> {
+///
+/// `what` is the kind of entry this is going into. It is sealed into the lock
+/// with who is writing it, the key and the circle — see `SealedWith`.
+fn lock(what: WhatIsLocked, data: Vec<u8>) -> ExternResult<Locked> {
     let holder = i_am_the_holder()?;
 
     // The holder writing the first thing in a circle makes its first key — and
@@ -3459,13 +3634,19 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
     let nonce = random_bytes(BYTES_IN_A_NONCE as u32)?.into_vec();
     let sealed_key = x_salsa20_poly1305_encrypt(key_ref_for(epoch)?, one_use.clone().into())?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(&one_use)
-        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
-    let body = cipher
-        .encrypt(XNonce::from_slice(&nonce), data.as_ref())
-        .map_err(|_| wasm_error!("Could not lock what was written"))?;
+    // What this is and where it sits, sealed in with it. The writer is always
+    // this device's own agent: nothing is ever locked on somebody else's behalf.
+    let with = SealedWith {
+        version: LOCKED_VERSION,
+        what,
+        author: agent_info()?.agent_initial_pubkey,
+        epoch,
+        circle: dna_info()?.hash,
+    };
+    let body = seal_content(&one_use, &nonce, &data, &with)?;
 
     Ok(Locked {
+        version: LOCKED_VERSION,
         epoch,
         sealed_key,
         nonce,
@@ -3475,15 +3656,22 @@ fn lock(data: Vec<u8>) -> ExternResult<Locked> {
 
 /// Open something locked with one of the circle's keys.
 ///
-/// Fails rather than returning anything when this device has not got the key.
-/// Every caller treats that as "cannot be read here" and says so; none of them
-/// guesses at what was in it.
-fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
-    // Every device refuses an entry whose nonce is the wrong size, so this
-    // cannot come from the circle. It could come from a build of this app that
-    // once wrote something else, and asking the cipher would panic rather than
-    // say so.
-    if locked.nonce.len() != BYTES_IN_A_NONCE {
+/// Fails rather than returning anything when this device has not got the key,
+/// and equally when the entry is not where it was locked to be: written by
+/// somebody other than `author`, or a different kind of entry from `what`, or
+/// in another circle. Every caller treats that as "cannot be read here" and
+/// says so; none of them guesses at what was in it.
+///
+/// `author` is the author of the action the entry was read from — the one
+/// thing about an entry nobody can choose for somebody else, because it is the
+/// key that signed it.
+fn unlock(what: WhatIsLocked, author: &AgentPubKey, locked: &Locked) -> ExternResult<Vec<u8>> {
+    // Every device refuses an entry whose nonce is the wrong size, or that was
+    // locked any other way than the one these rules know, so neither can come
+    // from the circle. They could come from a build of this app that once
+    // wrote something else, and asking the cipher would panic rather than say
+    // so.
+    if locked.version != LOCKED_VERSION || locked.nonce.len() != BYTES_IN_A_NONCE {
         return Err(wasm_error!(
             "This was not locked in a way this app can open"
         ));
@@ -3493,12 +3681,140 @@ fn unlock(locked: &Locked) -> ExternResult<Vec<u8>> {
         x_salsa20_poly1305_decrypt(key_ref_for(locked.epoch)?, locked.sealed_key.clone())?
             .ok_or_else(|| wasm_error!("This device does not have the key this was locked with"))?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(one_use.as_ref())
-        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    // Rebuilt from what this device can see, never read from the entry: an
+    // entry that carried its own account of where it belongs could say
+    // anything.
+    let with = SealedWith {
+        version: locked.version,
+        what,
+        author: author.clone(),
+        epoch: locked.epoch,
+        circle: dna_info()?.hash,
+    };
+    open_content(one_use.as_ref(), &locked.nonce, &locked.body, &with)
+}
+
+/// What kind of entry something locked is going into, or was read from.
+///
+/// Sealed into the lock so that one kind cannot be passed off as another: the
+/// words of a suggestion copied into a role, say, open for nobody.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatIsLocked {
+    /// The record itself, every version of it.
+    Record,
+    /// What a member offered for the record, and why.
+    Suggestion,
+    /// A photo, sound or video's file name and what it says in words.
+    MediaWords,
+    /// One piece of a photo, sound or video.
+    MediaPiece,
+    /// What somebody said they were when they acknowledged the record.
+    Role,
+    /// A note that a pass was used: who for, what for, which parts, and why.
+    PassRead,
+}
+
+/// What is sealed into every lock alongside the content, and checked as it is
+/// opened.
+///
+/// None of it is secret, and none of it is stored: every part is something the
+/// reader can already see — the kind of entry it is reading, who signed it,
+/// the key number beside it, and which circle it is in. The cipher is told
+/// them as it locks ("associated data") and has to be told the same again to
+/// open. Tell it anything different and it opens nothing, exactly as it would
+/// for a wrong key.
+///
+/// Why. Without this, nothing tied a locked body to where it sat, so a member
+/// could copy somebody else's locked suggestion into one of their own and it
+/// would open as theirs. It gained them nothing they could not do by retyping
+/// words they could already read — but the rules are meant to be the backstop
+/// that does not rely on that. Asked for by an outside review, 23 September
+/// 2026; the shape of it, a version number and the visible details sealed in,
+/// is an idea from Mycelix-Health, written here afresh. See docs/encryption.md.
+///
+/// Packed with `ExternIO::encode`, the same packing every entry here goes
+/// through, which gives the same bytes for the same fields every time. It
+/// must: a reader that packed it differently would open nothing at all.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SealedWith {
+    /// The way of locking. The same as `Locked::version`.
+    pub version: u8,
+    pub what: WhatIsLocked,
+    /// Who wrote the entry. When locking, this device's own agent; when
+    /// opening, the author of the action it was read from.
+    pub author: AgentPubKey,
+    /// The circle key it was locked with.
+    pub epoch: u32,
+    /// The circle it was written in.
+    pub circle: DnaHash,
+}
+
+impl SealedWith {
+    fn packed(&self) -> ExternResult<Vec<u8>> {
+        Ok(ExternIO::encode(self)
+            .map_err(|e| wasm_error!(format!("Could not pack what this is to lock it: {e:?}")))?
+            .into_vec())
+    }
+}
+
+/// Lock content with a one-use key, sealing `with` into the lock.
+///
+/// The cipher step of `lock` on its own, with no keystore and no host: pure,
+/// so the adversarial tests can show directly that a lock opens only for what
+/// it was sealed with, which no call into the app can show (see
+/// `a_suggestion_copied_to_another_author_opens_for_nobody`). Public for that
+/// reason and no other; it holds no key and can open nothing it is not given
+/// the key to.
+pub fn seal_content(
+    one_use: &[u8],
+    nonce: &[u8],
+    data: &[u8],
+    with: &SealedWith,
+) -> ExternResult<Vec<u8>> {
+    if nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!("That is not a number used once"));
+    }
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use)
+        .map_err(|_| wasm_error!("Could not make a key for this entry"))?;
+    let aad = with.packed()?;
     cipher
-        .decrypt(XNonce::from_slice(&locked.nonce), locked.body.as_ref())
-        // Either this device has the wrong key or the bytes were changed on the
-        // way. Not worth telling apart: neither of them gives anything to show.
+        .encrypt(
+            XNonce::from_slice(nonce),
+            Payload {
+                msg: data,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| wasm_error!("Could not lock what was written"))
+}
+
+/// Open content locked by `seal_content`, only if `with` is what it was sealed
+/// with.
+pub fn open_content(
+    one_use: &[u8],
+    nonce: &[u8],
+    body: &[u8],
+    with: &SealedWith,
+) -> ExternResult<Vec<u8>> {
+    if nonce.len() != BYTES_IN_A_NONCE {
+        return Err(wasm_error!(
+            "This was not locked in a way this app can open"
+        ));
+    }
+    let cipher = XChaCha20Poly1305::new_from_slice(one_use)
+        .map_err(|_| wasm_error!("The key for this entry is not the size a key is"))?;
+    let aad = with.packed()?;
+    cipher
+        .decrypt(
+            XNonce::from_slice(nonce),
+            Payload {
+                msg: body,
+                aad: &aad,
+            },
+        )
+        // The wrong key, bytes changed on the way, or an entry that is not
+        // where it was locked to be. Not worth telling apart: none of them
+        // gives anything to show.
         .map_err(|_| wasm_error!("This could not be opened on this device"))
 }
 
@@ -3574,7 +3890,7 @@ fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
     let words = ExternIO::encode(about_me)
         .map_err(|e| wasm_error!(format!("Could not pack the record to lock it: {e:?}")))?;
     Ok(AboutMe {
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::Record, words.into_vec())?),
         ..nothing_in_the_open()
     })
 }
@@ -3583,11 +3899,14 @@ fn lock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
 ///
 /// A record from before encryption is returned as it is: that is what "in the
 /// open" looks like, and hiding it would only mean showing nothing.
-fn unlock_about_me(about_me: &AboutMe) -> ExternResult<AboutMe> {
+///
+/// `author` is who wrote this version: the author of the action it was read
+/// from. It is sealed into the lock, so it has to be the real one.
+fn unlock_about_me(about_me: &AboutMe, author: &AgentPubKey) -> ExternResult<AboutMe> {
     let Some(locked) = &about_me.locked else {
         return Ok(about_me.clone());
     };
-    let words = unlock(locked)?;
+    let words = unlock(WhatIsLocked::Record, author, locked)?;
     let mut opened: AboutMe = ExternIO::from(words)
         .decode()
         .map_err(|e| wasm_error!(format!("The record opened but could not be read: {e:?}")))?;
@@ -3615,21 +3934,27 @@ fn lock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
         field: suggestion.field.clone(),
         text: String::new(),
         because: String::new(),
-        locked: Some(lock(words.into_vec())?),
+        locked: Some(lock(WhatIsLocked::Suggestion, words.into_vec())?),
     })
 }
 
 /// Open a suggestion, where it is locked and this device can.
-fn unlock_suggestion(suggestion: &Suggestion) -> ExternResult<Suggestion> {
+///
+/// `author` is the member who offered it: the author of the action it was read
+/// from. This is what stops somebody else's locked words being passed off as
+/// theirs — copied into a suggestion of their own, they open for nobody.
+fn unlock_suggestion(suggestion: &Suggestion, author: &AgentPubKey) -> ExternResult<Suggestion> {
     let Some(locked) = &suggestion.locked else {
         return Ok(suggestion.clone());
     };
     let (text, because): (String, String) =
-        ExternIO::from(unlock(locked)?).decode().map_err(|e| {
-            wasm_error!(format!(
-                "The suggestion opened but could not be read: {e:?}"
-            ))
-        })?;
+        ExternIO::from(unlock(WhatIsLocked::Suggestion, author, locked)?)
+            .decode()
+            .map_err(|e| {
+                wasm_error!(format!(
+                    "The suggestion opened but could not be read: {e:?}"
+                ))
+            })?;
     Ok(Suggestion {
         field: suggestion.field.clone(),
         text,
