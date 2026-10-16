@@ -13,7 +13,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  HOLOCHAIN_VERSION: 0.7.0
+  HOLOCHAIN_VERSION: 0.7.1
 
 jobs:
   # Does the test suite still compile?

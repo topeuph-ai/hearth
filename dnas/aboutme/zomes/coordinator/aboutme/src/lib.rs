@@ -1220,11 +1220,11 @@ pub fn init() -> ExternResult<InitCallbackResult> {
     let mut functions = HashSet::new();
     functions.insert((zome_info()?.name, "recv_remote_signal".into()));
 
-    create_cap_grant(CapGrantEntry {
-        tag: "circle-signals".into(),
-        access: CapAccess::Unrestricted,
-        functions: GrantedFunctions::Listed(functions),
-    })?;
+    create_cap_grant(CapGrantEntry::new_zome_call_grant(
+        "circle-signals".into(),
+        GrantConstraint::Unrestricted,
+        GrantedFunctions::Listed(functions),
+    ))?;
 
     Ok(InitCallbackResult::Pass)
 }
@@ -2822,13 +2822,13 @@ pub fn make_a_pass(input: MakePassInput) -> ExternResult<PassMade> {
     let mut functions = HashSet::new();
     functions.insert((zome_info()?.name, PASS_FUNCTION.into()));
 
-    let grant = create_cap_grant(CapGrantEntry {
+    let grant = create_cap_grant(CapGrantEntry::new_zome_call_grant(
         tag,
         // Transferable: it works for whoever holds the secret. The holder does
         // not know the nurse's key in advance, and cannot be asked to.
-        access: CapAccess::Transferable { secret },
-        functions: GrantedFunctions::Listed(functions),
-    })?;
+        GrantConstraint::Transferable { secret },
+        GrantedFunctions::Listed(functions),
+    ))?;
 
     Ok(PassMade {
         grant,
@@ -2870,7 +2870,8 @@ pub fn passes_here(_: ()) -> ExternResult<Vec<PassHere>> {
             return None;
         };
         // Only passes: the grant that lets members send signals is not one.
-        let is_pass = matches!(&grant.functions, GrantedFunctions::Listed(f)
+        let is_pass = matches!(&grant.capability,
+            Capability::ZomeCall(ZomeCallGrant { functions: GrantedFunctions::Listed(f) })
             if f.iter().any(|(_, name)| name.0 == PASS_FUNCTION));
         if !is_pass {
             return None;
@@ -2918,10 +2919,10 @@ pub fn read_with_a_pass(ask: PassAsk) -> ExternResult<PassedWords> {
     // The grant that let this call through. Its terms are the holder's, written
     // when she made it, and nothing the reader sends can change them.
     let terms: PassTerms = match call_info()?.cap_grant {
-        CapGrant::RemoteAgent(grant) => {
+        CapAccess::RemoteAgent(grant) => {
             yaml_serde::from_str(&grant.tag).map_err(|_| wasm_error!("That pass cannot be read"))?
         }
-        CapGrant::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
+        CapAccess::ChainAuthor(_) => return Err(wasm_error!("A pass is for somebody else to use")),
     };
 
     let now = sys_time()?;
