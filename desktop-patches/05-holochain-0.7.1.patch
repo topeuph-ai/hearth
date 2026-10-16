@@ -1,0 +1,120 @@
+--- kangaroo.config.ts
++++ kangaroo.config.ts
+@@ -1,48 +1,48 @@
+-import { defineConfig } from './src/main/defineConfig';
+-
+-export default defineConfig({
+-  appId: 'uk.topeuph.hearth',
+-  productName: 'Hearth',
+-  version: '0.3.5',
+-  macOSCodeSigning: false,
+-  windowsEVCodeSigning: false,
+-  fallbackToIndexHtml: true,
+-  autoUpdates: false,
+-  systray: true,
+-  passwordMode: 'password-optional',
+-  bootstrapUrl: 'https://dev-test-bootstrap2.holochain.org/',
+-  relayUrl: 'https://dev-test-bootstrap2.holochain.org/',
+-  bins: {
+-    holochainVersion: '0.7.0',
+-    compatibleDeps: {
+-      '0.7': {
+-        '@holochain/client': '0.21',
+-        '@holochain/hc-spin-rust-utils': '0.700',
+-      },
+-    },
+-    holochain: {
+-      sha256: {
+-        'x86_64-unknown-linux-gnu':
+-          'ffa40a0c6fab5ce062c4af76328dfe2de143256ddf791a504d72bca698a9ba20',
+-        'aarch64-unknown-linux-gnu':
+-          'a01a6b0be4a6fa52276fb0aca94559a05457bbad495bdd01802208d3f3649e51',
+-        'x86_64-pc-windows-msvc.exe':
+-          '5d9bd8cf28c45645158d56198cfec38d04ac4cf620ba89ca37db2f7c46d7b3d2',
+-        'x86_64-apple-darwin': '53d48d0f92fdfb2d70cd302a3782df142ab324c023943319d2c33226a79dea0c',
+-        'aarch64-apple-darwin': 'fa44e56402294221cad34933bfe12e079460aa22acf98723f5b4e68e3e33cc3b',
+-      },
+-    },
+-    lair: {
+-      sha256: {
+-        'x86_64-unknown-linux-gnu':
+-          '7a77822ab5e0020d0f3c358030d4ccfa8c6c144407a5c075d302c7b0fcf670c1',
+-        'aarch64-unknown-linux-gnu':
+-          'efb5894d76ee8d58845445e1b6a3ff18d721345943e545457331825fb799b08c',
+-        'x86_64-pc-windows-msvc.exe':
+-          '2c1fded6eb7c6ec4b3d033c6a310d7c2cc916d6e0ac10c2f71047ebb6b623f6b',
+-        'x86_64-apple-darwin': 'afcaefac4f93828e59566f185d7398b7d5d7afaa43ef4b95bd9c42f0b967d7b8',
+-        'aarch64-apple-darwin': 'e8fcdf26c0b1a51e5ab93a82333b5db92f0a8a6effb8494fdbb0dc000856ded8',
+-      },
+-    },
+-  },
+-});
++import { defineConfig } from './src/main/defineConfig';
++
++export default defineConfig({
++  appId: 'uk.topeuph.hearth',
++  productName: 'Hearth',
++  version: '0.4.0',
++  macOSCodeSigning: false,
++  windowsEVCodeSigning: false,
++  fallbackToIndexHtml: true,
++  autoUpdates: false,
++  systray: true,
++  passwordMode: 'password-optional',
++  bootstrapUrl: 'https://dev-test-bootstrap2.holochain.org/',
++  relayUrl: 'https://dev-test-bootstrap2.holochain.org/',
++  bins: {
++    holochainVersion: '0.7.1',
++    compatibleDeps: {
++      '0.7': {
++        '@holochain/client': '0.21',
++        '@holochain/hc-spin-rust-utils': '0.700',
++      },
++    },
++    holochain: {
++      sha256: {
++        'x86_64-unknown-linux-gnu':
++          '0c14700874349c8417c4bfebfe845e7ab036757442e4388e50dd622bb3c89974',
++        'aarch64-unknown-linux-gnu':
++          'dcf9ad7f90ae32b2a3dab6b6bae560760403c5bba94d7c02da608930c42cb2fa',
++        'x86_64-pc-windows-msvc.exe':
++          '59261119a3ad3e51cd33d996be3110d39a5c4d1cc7c34c173a28efec137bb5b1',
++        'x86_64-apple-darwin': '9fcbcb770ef7d60bd6c6a8ca94a4a715ffd24d8b4daf43fb1b76a162b0493a40',
++        'aarch64-apple-darwin': '5a2a4b1db5e2aa2cfa6b2b480c12633de92a20850852a2c58a97721a19771ad6',
++      },
++    },
++    lair: {
++      sha256: {
++        'x86_64-unknown-linux-gnu':
++          '87c7a02556d47d950f0d4284bfdb4e37737b0bc98afe038955817793606d669a',
++        'aarch64-unknown-linux-gnu':
++          '69a96c3b06eec29a288f04ecf0210bb281697423a3ee10bc393ceea0d712c823',
++        'x86_64-pc-windows-msvc.exe':
++          '16750b08e5ddd50a04f493142bc85b33cc6bfaf0ef7c7fe9cb215129787a923f',
++        'x86_64-apple-darwin': '34a40c1b4324801db1c028dafaf82ea3276c808971c6ad1830fcf445e6f35419',
++        'aarch64-apple-darwin': '1e074d8587b8bc2125d9a379a443c27363b8e60955cad5faa8638d653dd19289',
++      },
++    },
++  },
++});
+--- package.json
++++ package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "uk.topeuph.hearth",
+-  "version": "0.3.5",
++  "version": "0.4.0",
+   "license": "CAL-1.0",
+   "main": "./out/main/index.js",
+   "scripts": {
+@@ -26,8 +26,8 @@
+   "dependencies": {
+     "@electron-toolkit/preload": "^3.0.2",
+     "@electron-toolkit/utils": "^4.0.0",
+-    "@holochain/client": "^0.21.0",
+-    "@holochain/hc-spin-rust-utils": "0.700.0",
++    "@holochain/client": "^0.21.1",
++    "@holochain/hc-spin-rust-utils": "0.700.1-rc.2",
+     "@matthme/electron-updater": "6.3.0-alpha.2",
+     "@msgpack/msgpack": "^3.1.3",
+     "adm-zip": "0.5.18",

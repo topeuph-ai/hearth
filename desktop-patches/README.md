@@ -113,9 +113,9 @@ new app id and a circle carried across, as in 02.
 had 0.2.7.** The first launch of 0.3.0 over 0.2.7 is the test: the log should
 say *Brought the code up to date in N cell(s)*, and *Make a pass* should work.
 
-### 04 — the third rules version (rules-3 branch only)
+### 04 — the third rules version (rules-3 and holochain-0.7.1 branches)
 
-**Apply only when building an installer from the `rules-3` branch.** Never to a
+**Apply only when building an installer from the `rules-3` or `holochain-0.7.1` branch.** Never to a
 build from `main`: that would install the current rules under the new id,
 beside the same rules already installed, and the install would fail.
 
@@ -133,4 +133,29 @@ as "made with an older version" and can be carried across.
 git apply -p0 /path/to/hearth/desktop-patches/04-third-rules-version.patch
 ```
 
-**Written 25 September 2026, not yet built into an installer or run.**
+**Written 25 September 2026. First built into an installer 16 October 2026 (0.4.0, with 05); started on a throwaway profile, installed as `hearth.rules.3` and enabled. Not yet tried on two machines.**
+
+### 05 — Holochain 0.7.1 (holochain-0.7.1 branch, with 04)
+
+Moves the desktop app to the Holochain 0.7.1 program, and the app to 0.4.0.
+The checksums are the ones GitHub lists for the `holochain-0.7.1` release
+assets, for both Holochain and lair (lair is still 0.7.1, but the release
+ships its own build of it, with a different checksum). The JavaScript client
+goes to 0.21.1, and `@holochain/hc-spin-rust-utils` to `0.700.1-rc.2`,
+matching Kangaroo's own `main-0.7` branch.
+
+```bash
+git apply -p0 /path/to/hearth/desktop-patches/05-holochain-0.7.1.patch
+npx yarn@1 fetch:binaries   # build:win does NOT do this: without it the old program is packed
+```
+
+⚠️ **`build:win` packs whatever is in `resources/bins/`.** The first 0.4.0
+build on 16 October carried the 0.7.0 program, because the old binary was
+still there. Delete it, run `fetch:binaries`, and check with
+`--version` on the file under `dist/win-unpacked` before handing it over.
+
+**The LAN build** takes 04 and 05 too, but its Holochain is Lightningrod Labs'
+`holochain-0.7.1-mdns.5` (Windows checksum `0a74a345…`), put into
+`resources/bins/` by hand as `holochain-v0.7.1-uk.topeuph.exe`. Do not run
+`fetch:binaries` there: it would fetch stock Holochain.
+
