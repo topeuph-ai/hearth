@@ -90,8 +90,9 @@ What it fixes that matters here:
 - **#5995.** Changes how the permission records called capability grants are
   looked up. **Passes are built on those**, so passes must be tried again on
   0.7.1.
-- Probably the `rustls` flaw the dependency check found (see
-  [threat-model.md](threat-model.md)); not confirmed.
+- ~~Probably the `rustls` flaw the dependency check found~~ **No: checked
+  16 October, 0.7.1 ships `rustls` 0.23.43 and the fix is in 0.23.45** (see
+  [threat-model.md](threat-model.md)).
 
 **What Hearth does, decided 24 September 2026 (superseded, see above):** move to the 0.7.1 *program*
 and keep Hearth's own code exactly as it is. The fixes are in the program, not
