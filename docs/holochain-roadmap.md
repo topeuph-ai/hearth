@@ -30,6 +30,11 @@ So "swap the program, keep Hearth's code as it is" would most likely break
 implies; it has **not been tried**. Lightningrod Labs say the same of Moss
 0.16.0-rc.1: "Tools work only once they are rebuilt for Holochain 0.7.1".
 
+**Nobody but Ceri has used Hearth yet (16 October 2026)**, so a clean break
+costs nobody anything. Steps 2, 3 and 5 below protect existing installs and
+matter only once there are real users. The simplest route now is one rebuild
+on 0.7.1 that includes `rules-3`.
+
 **What moving to 0.7.1 now needs** (not started; for Ceri to decide):
 
 1. Rebuild the coordinator code against hdk 0.7.1, using the new grant shape.
