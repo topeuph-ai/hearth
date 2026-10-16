@@ -203,7 +203,13 @@ way round the pass.
 - **Only the holder's own screen sees a pass being used**, and only on that
   computer. Decision 4 wanted the *circle* to see it. That needs a new kind of
   entry in the circle — a change to the frozen rules — so it belongs in the
-  migration batch rather than being faked here.
+  migration batch rather than being faked here. **Done on the `rules-3`
+  branch, 25 September 2026, not released:** the holder's device writes a
+  locked note into the circle each time a pass is used, and every member sees
+  it under "Read with a pass". A pass can also be made to **ask the reader
+  why**, each time, for an emergency; it will not open without a reason, and
+  the reason goes into the note. Ideas from Mycelix-Health (see
+  [prior-art.md](prior-art.md)), written afresh.
 - **The name on the pass is the holder's label, not a checked identity.** "Ward
   7" is what she typed. A pass works for whoever holds it, like a key.
 - **A pass is shown once.** If it is lost, stop it and make another.

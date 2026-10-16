@@ -112,3 +112,25 @@ new app id and a circle carried across, as in 02.
 **Written 23 September 2026, built into 0.3.0, not yet run on a machine that
 had 0.2.7.** The first launch of 0.3.0 over 0.2.7 is the test: the log should
 say *Brought the code up to date in N cell(s)*, and *Make a pass* should work.
+
+### 04 — the third rules version (rules-3 branch only)
+
+**Apply only when building an installer from the `rules-3` branch.** Never to a
+build from `main`: that would install the current rules under the new id,
+beside the same rules already installed, and the install would fail.
+
+The integrity zome changed on `rules-3` (every locked item carries a version,
+and is sealed to where it sits — see docs/encryption.md), so the app id moves
+on as 02 says it must: `hearth.rules.2` becomes `hearth.rules.3`, and
+`hearth.rules.2` joins `kangaroo.happ` on the list of earlier versions, newest
+first. Nothing else changes: the agent key is reused from whichever earlier
+version is installed, the data directory stays pinned by 01, and 03 keeps the
+new app's code up to date on later launches. The interface already connects to
+every earlier version on the list, so circles made under both older rules show
+as "made with an older version" and can be carried across.
+
+```bash
+git apply -p0 /path/to/hearth/desktop-patches/04-third-rules-version.patch
+```
+
+**Written 25 September 2026, not yet built into an installer or run.**

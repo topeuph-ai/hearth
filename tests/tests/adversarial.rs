@@ -4150,6 +4150,127 @@ async fn a_suggestion_is_written_locked() {
     assert_eq!(words.because, "I am her son.");
 }
 
+/// A locked suggestion copied into somebody else's suggestion opens for nobody.
+///
+/// The attack, from an outside review of 23 September 2026: Carol takes Bob's
+/// locked suggestion and writes it again as a suggestion of her own. Before
+/// the third version of the rules it opened, as Carol's. Now who wrote it is
+/// sealed into the lock (see `SealedWith` in the coordinator), and every reader
+/// supplies the author of the entry it is actually reading, so a copy is
+/// opened as Carol's, does not match, and opens for nobody.
+///
+/// **What this test cannot do, and why.** Nothing in the app will write a copy.
+/// `suggest` takes the words as typed and locks them itself; a `locked` field
+/// sent with it is thrown away. That is as it should be — the app does not
+/// carry the tool for this attack, and it is not going to be given one so a
+/// test can use it. Somebody who wanted to do it would be running a changed
+/// app. So this tests the nearest thing reachable: the very step every reader
+/// goes through, `open_content`, which `unlock` calls with what it rebuilt from
+/// the entry in front of it. It is shown the same locked bytes twice — once as
+/// Bob's, where they open, and once as Carol's, where they do not — and the
+/// same for another kind of entry, another key number and another circle.
+/// That the app's own reads pass the real author is shown by every test above
+/// that reads back something written by one person and opened by another.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_suggestion_copied_to_another_author_opens_for_nobody() {
+    use aboutme::{open_content, seal_content, SealedWith, WhatIsLocked};
+
+    let bob = AgentPubKey::from_raw_36(vec![0xb0; 36]);
+    let carol = AgentPubKey::from_raw_36(vec![0xca; 36]);
+    let circle = DnaHash::from_raw_36(vec![0x01; 36]);
+
+    // A one-use key and a nonce, as `lock` makes them. Fixed here, because
+    // nothing about this depends on them being random.
+    let one_use = [7u8; aboutme_integrity::BYTES_IN_A_ONE_USE_KEY];
+    let nonce = [9u8; aboutme_integrity::BYTES_IN_A_NONCE];
+
+    let as_bob = SealedWith {
+        version: aboutme_integrity::LOCKED_VERSION,
+        what: WhatIsLocked::Suggestion,
+        author: bob.clone(),
+        epoch: 1,
+        circle: circle.clone(),
+    };
+    let words = b"Her allotment. She talked about it all summer.";
+    let body = seal_content(&one_use, &nonce, words, &as_bob).expect("it locks");
+
+    // Read where it was written, it opens.
+    let opened = open_content(&one_use, &nonce, &body, &as_bob).expect("Bob's own opens");
+    assert_eq!(opened, words.to_vec());
+
+    // The same bytes, read as Carol's suggestion. Nothing opens.
+    let as_carol = SealedWith {
+        author: carol,
+        ..as_bob.clone()
+    };
+    assert!(
+        open_content(&one_use, &nonce, &body, &as_carol).is_err(),
+        "somebody else's locked words, copied into a suggestion of hers, must not open"
+    );
+
+    // And the same for everything else sealed in with it.
+    let elsewhere = [
+        SealedWith {
+            what: WhatIsLocked::Role,
+            ..as_bob.clone()
+        },
+        SealedWith {
+            epoch: 2,
+            ..as_bob.clone()
+        },
+        SealedWith {
+            circle: DnaHash::from_raw_36(vec![0x02; 36]),
+            ..as_bob.clone()
+        },
+        SealedWith {
+            version: aboutme_integrity::LOCKED_VERSION + 1,
+            ..as_bob.clone()
+        },
+    ];
+    for other in elsewhere {
+        assert!(
+            open_content(&one_use, &nonce, &body, &other).is_err(),
+            "copied anywhere it was not locked to be, it must not open: {other:?}"
+        );
+    }
+}
+
+/// Something locked any other way than the one these rules know is refused.
+///
+/// **Not reachable through the app, so tested where it can be.** `lock` in the
+/// coordinator writes the version itself, and nothing a caller sends reaches
+/// it, so no call made here can put a wrong version into the circle. The rule
+/// is tested directly instead, beside it in the integrity zome:
+/// `only_the_one_way_of_locking_is_accepted`, run by `cargo test -p
+/// aboutme_integrity` in CI. What is checked here is the other half: that
+/// what the app does write carries the version the rules require.
+#[tokio::test(flavor = "multi_thread")]
+async fn everything_locked_says_how_it_was_locked() {
+    let (conductor, alice_cell, _) = a_circle_with_a_member().await;
+
+    let created: Record = conductor
+        .call(
+            &zome(&alice_cell),
+            "create_about_me",
+            an_about_me("Alice Bell"),
+        )
+        .await;
+    let written = AboutMe::try_from(
+        created
+            .entry()
+            .as_option()
+            .cloned()
+            .expect("the record has an entry"),
+    )
+    .expect("and it is an About Me");
+
+    assert_eq!(
+        written.locked.expect("the record is locked").version,
+        aboutme_integrity::LOCKED_VERSION,
+        "the app writes the one way of locking these rules accept"
+    );
+}
+
 /// Somebody removed cannot read what the circle writes afterwards.
 ///
 /// The whole of what encryption adds over the everyday removal. Everything else
@@ -4286,6 +4407,7 @@ fn a_pass_for(circle: &CellId, until: Option<Timestamp>) -> aboutme::MakePassInp
         ],
         for_whom: "Ward 7".to_string(),
         purpose: "Hospital admission".to_string(),
+        ask_reason: false,
         until: until.map(|t| t.as_micros()),
     }
 }
@@ -4300,6 +4422,17 @@ async fn ask(
     holder: &AgentPubKey,
     secret: CapSecret,
 ) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
+    ask_saying(conductor, nia_door, holder, secret, "").await
+}
+
+/// The same, giving a reason, as an emergency pass requires.
+async fn ask_saying(
+    conductor: &SweetConductor,
+    nia_door: &CellId,
+    holder: &AgentPubKey,
+    secret: CapSecret,
+    reason: &str,
+) -> holochain::conductor::api::error::ConductorApiResult<aboutme::PassedWords> {
     conductor
         .call_fallible(
             &zome(nia_door),
@@ -4307,6 +4440,7 @@ async fn ask(
             aboutme::AskWithPassInput {
                 holder: holder.to_string(),
                 secret,
+                reason: reason.to_string(),
             },
         )
         .await
@@ -4549,4 +4683,114 @@ async fn a_new_naming_leaves_an_old_claim_behind() {
         state.claim.is_none(),
         "a claim made under an earlier naming does not carry over"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The circle sees a pass being used (the third rules version)
+// ---------------------------------------------------------------------------
+
+/// Read everything the circle has noted about passes, waiting a little for it
+/// to arrive: the note is written by the holder's device and reaches a member's
+/// the ordinary way.
+async fn pass_reads_seen_by(
+    conductor: &SweetConductor,
+    cell: &CellId,
+    enough: usize,
+) -> Vec<aboutme::PassReadHere> {
+    let mut last = Vec::new();
+    for _ in 0..30 {
+        last = conductor.call(&zome(cell), "get_pass_reads", ()).await;
+        if last.len() >= enough {
+            return last;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    last
+}
+
+/// "Ward 7 read this" used to reach only the holder's own screen. Now it is
+/// written into the circle, where every member sees it — locked, like
+/// everything else there.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_circle_sees_a_pass_being_used() {
+    let (conductor, alice_cell, bob_cell, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let pass: aboutme::PassMade = conductor
+        .call(
+            &zome(&alice_door),
+            "make_a_pass",
+            a_pass_for(&alice_cell, Some(seconds_from_now(3600))),
+        )
+        .await;
+    ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+        .await
+        .expect("a live pass is answered");
+
+    let seen = pass_reads_seen_by(&conductor, &bob_cell, 1).await;
+    assert_eq!(seen.len(), 1, "a member of the circle sees the pass was used");
+    let words = seen[0]
+        .words
+        .as_ref()
+        .expect("and can open the note, holding the circle's key");
+    assert_eq!(words.for_whom, "Ward 7");
+    assert_eq!(words.purpose, "Hospital admission");
+    assert_eq!(words.sections.len(), 2, "which parts were read");
+}
+
+/// An emergency pass opens only for somebody who says why, and the reason
+/// goes into the note the circle sees.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_emergency_pass_asks_why_and_the_circle_is_told() {
+    let (conductor, alice_cell, _, alice_door, nia_door) = a_record_and_a_door().await;
+
+    let mut emergency = a_pass_for(&alice_cell, Some(seconds_from_now(3600)));
+    emergency.ask_reason = true;
+    let pass: aboutme::PassMade = conductor
+        .call(&zome(&alice_door), "make_a_pass", emergency)
+        .await;
+
+    assert!(
+        ask(&conductor, &nia_door, alice_cell.agent_pubkey(), pass.secret)
+            .await
+            .is_err(),
+        "an emergency pass read without a reason shows nothing"
+    );
+
+    ask_saying(
+        &conductor,
+        &nia_door,
+        alice_cell.agent_pubkey(),
+        pass.secret,
+        "Admitted through A&E, not able to speak",
+    )
+    .await
+    .expect("with a reason, it opens");
+
+    let seen = pass_reads_seen_by(&conductor, &alice_cell, 1).await;
+    let words = seen
+        .first()
+        .and_then(|r| r.words.as_ref())
+        .expect("the reading is noted in the circle");
+    assert_eq!(words.reason, "Admitted through A&E, not able to speak");
+}
+
+/// Only the holder's own device notes a pass being used — a member cannot
+/// write "Ward 7 read this" into somebody's circle.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_cannot_note_a_pass_being_used() {
+    let (conductor, _, bob_cell, _, _) = a_record_and_a_door().await;
+
+    let refused: Result<ActionHash, _> = conductor
+        .call_fallible(
+            &zome(&bob_cell),
+            "note_pass_read",
+            aboutme::PassReadWords {
+                for_whom: "Ward 7".to_string(),
+                purpose: String::new(),
+                sections: vec![aboutme_integrity::AboutMeField::WhatMattersToMe],
+                reason: String::new(),
+            },
+        )
+        .await;
+    assert!(refused.is_err(), "a member cannot note a pass being used");
 }
