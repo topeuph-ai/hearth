@@ -870,6 +870,37 @@ with any assistive technology.
 This is real code work and it is listed last only because everything above can
 strand a record, and this cannot.
 
+### Speaking as a way of writing (idea, not built)
+
+The record is text first, which disadvantages exactly the people it is for, as
+the [EHIA](EHIA.md) says. Recorded speech helps, but a recording is not
+something a busy carer can skim. The EHIA already suggests on-device
+speech-to-text, so that **speaking is a way of writing**: the person, or a
+tired family member, says what matters, and their own device turns it into
+words they can check before saving.
+
+**Somebody on Holochain has now built it.** Lightningrod Labs added local
+speech-to-text to Moss in October 2026 ("Local AI, together", Eric
+Harris-Braun, hAppenings newsletter, 16 October 2026). It runs whisper.cpp
+with a roughly 141 MB English model on the user's own computer, the audio never
+leaves the device, and it is off until the person switches it on. In a group
+call, each person's machine transcribes only their own voice, so every line is
+already labelled with who said it, and each person decides for themselves.
+
+**What it would mean for Hearth:**
+- A "speak instead of typing" button on each section. The words land in the
+  box for the person to read and correct, and nothing is saved until they do.
+- Nothing leaves the device, which keeps it inside the DPIA as it stands. A
+  cloud speech service would not.
+- It suits the people Hearth is for: anybody who finds typing or spelling
+  hard.
+- The costs: a model of about 141 MB to download, English only to start
+  (which the EHIA already lists as an adverse impact), and speech-to-text
+  makes mistakes, so the person must always see and confirm the words.
+
+Not decided and not designed. Moss's code would need reading before borrowing
+anything, including its licence.
+
 ---
 
 ## Finding each other without the internet
