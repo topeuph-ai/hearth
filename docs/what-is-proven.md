@@ -44,9 +44,10 @@ being done, not as a substitute for the review above.
 
 ### The rules hold up against somebody trying to break them
 
-**101 tests, all passing on 23 September 2026**, run in CI on every push, in
-[`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 3 unit tests
-on the ordering rule. They are written as attacks rather than as feature checks.
+**107 tests, all passing on 16 October 2026 on Holochain 0.7.1** (Hearth
+0.4.0), run in CI on every push, in
+[`tests/tests/adversarial.rs`](../tests/tests/adversarial.rs), plus 5 unit tests
+in the rules themselves. They are written as attacks rather than as feature checks.
 Among them:
 
 - An uninvited agent cannot join a circle.
@@ -359,6 +360,10 @@ passes. Each part has tests of its own; **nobody has yet run them together on
 real machines**, and that is where a design like this holds or falls apart.
 The matrix to work through, with released Holochain unless it says otherwise:
 
+> **Hearth 0.4.0 (16 October 2026) is a fresh start on Holochain 0.7.1, with
+> new rules.** Nothing in this table has been repeated on it yet. The ticks in
+> the right-hand column were on 0.3.1; for 0.4.0 every row is to test again.
+
 | Test | Earlier (0.2.4 to 0.2.6) | 0.2.7 / 0.3.0 |
 | --- | --- | --- |
 | Two machines online | ✅ | to test |
@@ -376,11 +381,12 @@ The matrix to work through, with released Holochain unless it says otherwise:
 | Carrying across a circle somebody was removed from: they are not invited, and cannot read the new one | — | **not yet tried** (the app leaves them out; untested on machines) |
 | A successor taking over an encrypted circle: they can read it, move it, and the removed stay out | — | **not yet tried** |
 | A pass, read from another machine | — | ✅ 0.3.1, same home network; first try too early |
-| A call between two machines (0.3.5): the holder turns calls on, one member rings another, both see and hear | — | **not yet tried** — the call library connected two peers in one browser, set up as Hearth sets it up |
+| A call between two machines (built for 0.3.5, released in 0.4.0): the holder turns calls on, one member rings another, both see and hear | — | **not yet tried** — the call library connected two peers in one browser, set up as Hearth sets it up |
 | A call between two different networks (different houses) | — | **not yet tried**; expected to fail on some networks, since no call relay is run |
 
 The last rows matter most. "Local discovery" above means the Lightningrod Labs
-build of Holochain (`holochain-0.7.0-mdns.2`), not released Holochain: it is a
+build of Holochain (`holochain-0.7.0-mdns.2`, and `holochain-0.7.1-mdns.5` from
+Hearth 0.4.0), not released Holochain: it is a
 Holochain feature Hearth makes use of, not a Hearth feature.
 
 ### Joining a circle can take about ninety seconds
@@ -393,16 +399,17 @@ in front of a screen wondering whether something has gone wrong.
 
 ## Not built
 
-### The record is not encrypted — **in the released version**
+### Encryption: in every release since 0.2.7, required by the rules from 0.4.0
 
-**Built and tested, and not in anybody's hands yet.** The released 0.2.4 stores
-the contents in the clear on every member's machine: entries are validated,
+**This section was written before encryption was released.** Then, the
+released 0.2.4 stored the contents in the clear on every member's machine: entries are validated,
 signed and only reachable through the membrane, so a circle does not leak to the
 network at large, but anybody in a circle — and afterwards, if they keep their
 copy — has the plain text.
 
-That is fixed in 0.2.7 onwards (the latest release is 0.3.4), and as of 22
-September 2026 it has run on two real machines. The record, suggestions, photographs, sound, video and
+That is fixed in 0.2.7 onwards (the latest release is 0.4.0), and as of 22
+September 2026 it has run on two real machines. From 0.4.0 the rules also
+**refuse** anything left unlocked, rather than trusting the app to lock it. The record, suggestions, photographs, sound, video and
 acknowledgement roles are locked with a key every member holds, and **removing
 somebody starts a new key sealed to everybody but them**, so what the circle
 writes next cannot be read on their device by any software. Proven by the

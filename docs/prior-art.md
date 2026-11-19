@@ -236,8 +236,8 @@ a design idea, and every one would be written afresh.
   `Locked` has neither. The reviews already asked for the second
   ([encryption.md](encryption.md)); the first is what makes it safe to add,
   because old and new locked items can then be told apart. **For the next
-  rules change** — cheap then, impossible without one. **Done on the `rules-3`
-  branch, 24 September 2026**, written afresh; see
+  rules change** — cheap then, impossible without one. **Done 24 September 2026,
+  released in Hearth 0.4.0**, written afresh; see
   [encryption.md](encryption.md), "A version on every lock".
 - **Pre-authorised emergency access**, which they call break-glass: the patient
   names a person and the categories in advance, it lasts at most 60 minutes,
@@ -245,18 +245,21 @@ a design idea, and every one would be written afresh.
   Enforced in their rules, not only their app. Hearth's passes are close; the
   pieces Hearth lacks are a *reason* on each use, and a notice the whole circle
   can see (the "Ward 7 read this" that [outer-ring.md](outer-ring.md) says
-  needs a rules change). **Done on the `rules-3` branch, 25 September 2026**,
-  written afresh: an emergency pass asks the reader why, will not open
+  needs a rules change). **Done 25 September 2026, released in Hearth
+  0.4.0**, written afresh: an emergency pass asks the reader why, will not open
   without a reason, and the holder's device writes a locked note of every use
   into the circle, with the reason, for every member to see.
 - **A purpose on every grant, and a reason on every revocation.** A pass could
   say what it is for ("hospital admission, Ward 7") and a stopped pass why.
-  Coordinator only — no rules change.
+  Coordinator only — no rules change. **Done 24 September 2026, released in
+  Hearth 0.4.0.**
 - **Ready-made bundles** ("care-team templates"): a named set of sections and a
   default length, chosen in one press. Hearth's passes already tick three
   sections by default; a few named bundles — *hospital admission*, *paramedic*,
   *respite carer* — would make that one press for a tired family member. App
-  only.
+  only. **Done 24 September 2026, released in Hearth 0.4.0**, as three bundles:
+  going into hospital, an emergency (which asks the reader why), and a carer
+  covering for a while.
 - **Recovering keys from 24 written-down words.** Their vault key comes from a
   phrase the patient keeps on paper. Hearth's keys live in Holochain's keystore,
   so it does not drop in, but it is the plainest answer yet to "can a person

@@ -166,7 +166,7 @@ of it:
   need to be walked across by hand or by export. *(Overtaken, 23 September
   2026: installing 0.2.5 or later over 0.2.4 keeps every circle, marks them
   "made with an older version", and lets the holder carry each one across.
-  Shown on two machines with 0.2.5 and 0.3.1. The latest release is 0.3.4.)*
+  Shown on two machines with 0.2.5 and 0.3.1. The latest release is 0.4.0.)*
 - The next release has to carry the packaging fixes, and should say in its notes
   exactly what it does to existing circles.
 - **Test it with two machines before it goes out**, with a circle made on the

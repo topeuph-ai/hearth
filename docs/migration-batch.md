@@ -93,7 +93,7 @@ it is a second person, and that it is visible.
 ## Progress on the `migration-batch` branch
 
 *Everything below was released in 0.2.7 onwards and merged to `main` on 23
-September 2026; the latest release is 0.3.4. Kept as it was written, as the
+September 2026; the latest release is now 0.4.0. Kept as it was written, as the
 record of how it was built.*
 
 | Item | State |

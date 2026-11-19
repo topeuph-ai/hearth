@@ -40,7 +40,9 @@ costs nobody anything. Steps 2, 3 and 5 below protect existing installs and
 matter only once there are real users. The simplest route now is one rebuild
 on 0.7.1 that includes `rules-3`.
 
-**What moving to 0.7.1 now needs** (not started; for Ceri to decide):
+**Done: released as Hearth 0.4.0 on 16 October 2026**, as one rebuild that
+includes `rules-3`; 107 of 107 tests pass on 0.7.1. Not yet tried on two
+machines. What the move needed, as planned:
 
 1. Rebuild the coordinator code against hdk 0.7.1, using the new grant shape.
 2. On every launch, make the `recv_remote_signal` grant again if it is missing.
@@ -106,7 +108,8 @@ test "Carry this circle to the new version" on two machines, which a rebuild
 makes necessary anyway.
 
 The LAN build stays on 0.7.0 until Lightningrod Labs rebuild their version on
-0.7.1. That is theirs to do.
+0.7.1. That is theirs to do. *(They did: `holochain-0.7.1-mdns.5`, 15 October,
+which the Hearth 0.4.0 LAN build uses.)*
 
 ## Holochain 0.8 — "stabilize the HDK and support app upgrades"
 

@@ -55,7 +55,7 @@ on them for real use, or run Hearth's own — an always-on "edge node" machine
 could run the introduction server, and a call relay, for the cost of
 electricity.]**
 
-**Calls** (from 0.3.5): live voice and video between two members of a circle,
+**Calls** (released in 0.4.0; built for 0.3.5, which was never published): live voice and video between two members of a circle,
 **off until the holder turns them on** for that circle. Never recorded, never
 stored, encrypted end to end by the browser's own WebRTC. Calls between some
 networks will fail, because no relay for calls is run for Hearth; that is a
@@ -127,7 +127,7 @@ What this does *not* settle is the part that was never software: how a proxy com
 |---|---|---|---|
 | **Nobody online when the record is needed** — every device in the circle asleep at 3am | Low–Medium | High | A liveness problem, not a redundancy one. See below |
 | A member's device is lost or stolen and readable | Medium | High | Device encryption; keep the local store encrypted at rest |
-| A member holding a copy reads content not meant for them | Medium | Medium | Contents are locked to circle members at application level — released in 0.2.7 onwards, and in the recommended version since 0.3.4. A member who is *in* the circle holds the key, by design; what this stops is a member who has been removed |
+| A member holding a copy reads content not meant for them | Medium | Medium | Contents are locked to circle members at application level — released in 0.2.7 onwards, and from 0.4.0 the rules refuse anything left unlocked. A member who is *in* the circle holds the key, by design; what this stops is a member who has been removed |
 | Someone is admitted who should not have been | Low | High | Only the person or their proxy can admit |
 | Data cannot be erased once distributed to peers | Medium | Medium | Genuine tension with the right to erasure — see below |
 | A person lacks capacity to decide who joins | Medium | High | Partly answered — see *Holder and subject* below. **[DECISION: the offline arrangement, not the software]** |

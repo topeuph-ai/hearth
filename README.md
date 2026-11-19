@@ -107,7 +107,8 @@ scope entirely.
 > those affects the fingerprint. CI fails the build if the file moves.
 >
 > If it genuinely has to change, that is a planned migration, not an edit: it
-> was done once, in September 2026. The new version installs beside the old one,
+> was done in September 2026, and again in October 2026 for Hearth 0.4.0. The new
+> version installs beside the old one,
 > nobody's circles are lost, and each holder carries their circle across — see
 > [docs/upgrades.md](docs/upgrades.md).
 
@@ -120,7 +121,7 @@ scope entirely.
 > **This is an early demo.** It exists to show the idea is possible, not to be
 > relied on. Please do not put real information about a real person into it.
 
-One file, about 115MB. Everything it needs is inside — no Rust, no Node, no
+One file, about 120MB. Everything it needs is inside — no Rust, no Node, no
 separate downloads, no server to run.
 
 **Windows only for now.** For Mac or Linux, see
@@ -145,7 +146,7 @@ worth saying so — it is a cost, not a fault.
 Nothing happens, or Windows says *"Access is denied"*. The file is not deleted
 and not quarantined.
 
-Your antivirus is holding the file open while it scans it, and 115MB takes a
+Your antivirus is holding the file open while it scans it, and 120MB takes a
 moment. **Wait a minute and try again.** That is exactly what happened here on
 9 September 2026, and it cleared on its own.
 
@@ -247,6 +248,11 @@ check by somebody else.
 
 **A pass** shows chosen parts of the record to somebody passing through — a ward
 nurse, a paramedic — for as long as the holder chooses, without them joining.
+Each use of a pass is noted where the whole circle can see it, and an emergency
+pass asks the reader to say why, every time (from 0.4.0).
+
+**Calls.** Two members of a circle can talk by voice or video, once the holder
+has switched calls on. Built, and not yet tried between two machines.
 
 There is more detail, including what the reviews found and what they missed,
 in [docs/how-it-works.md](docs/how-it-works.md).
@@ -258,7 +264,8 @@ in [docs/how-it-works.md](docs/how-it-works.md).
 Said here rather than buried, because these are the honest limits.
 
 **Holding the device is holding the keys.** Since 0.2.7 the record,
-suggestions, photographs, sound and video are locked to the circle, so a copy
+suggestions, photographs, sound and video are locked to the circle, and from
+0.4.0 the rules refuse them if they are not, so a copy
 on somebody's disk is unreadable without the circle's key. But the key lives on
 the same device, and the released app does not yet ask for a password. That is
 the largest gap, and it is decided, not yet built. How members describe
@@ -295,11 +302,12 @@ has looked, and that is the review this project most needs.
 | `dnas/aboutme/zomes/integrity/` | the rules — **frozen, see above** |
 | `dnas/aboutme/zomes/coordinator/` | the functions the app calls |
 | `ui/` | the interface |
-| `tests/tests/adversarial.rs` | 41 tests written as attacks, run on every push |
+| `tests/tests/adversarial.rs` | 107 tests, most written as attacks, run on every push |
 | `docs/` | everything below |
 
-**Built with Holochain 0.7.0** (hdk 0.7.0, hdi 0.8.0), read from the source at
-tag `holochain-0.7.0` rather than from documentation, which lags badly.
+**Built with Holochain 0.7.1** (hdk 0.7.1, hdi 0.8.1) since Hearth 0.4.0, read
+from the source at the release tag rather than from documentation, which lags
+badly.
 
 ---
 
@@ -320,7 +328,7 @@ Read the first one before the others.
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
 | [upgrades.md](docs/upgrades.md) | How a circle survives a new version — and why neither a patch nor a minor release does it today |
 | [hearth-in-plain-words.pdf](docs/hearth-in-plain-words.pdf) ([web page](docs/hearth-in-plain-words.html)) | **For anybody who is not a programmer.** How Hearth works in plain words, with diagrams, and how it differs from other ways of sharing a care record |
-| [holochain-roadmap.md](docs/holochain-roadmap.md) | Holochain's own plans, read 24 September 2026, and what each means for Hearth — 0.7.1 security fixes, 0.8 app upgrades, local discovery not before 1.0 |
+| [holochain-roadmap.md](docs/holochain-roadmap.md) | Holochain's own plans, and what each means for Hearth — 0.7.1 (released 14 October 2026, and why it meant a fresh start), 0.8 app upgrades, local discovery not before 1.0 |
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |
 | [DPIA.md](docs/DPIA.md) | Data protection assessment |

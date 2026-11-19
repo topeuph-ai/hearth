@@ -1,6 +1,7 @@
 # Threat model
 
-**One page, 23 September 2026 (Hearth 0.3.4).** Asked for by two outside
+**One page, 23 September 2026 (Hearth 0.3.4); brought up to date for Hearth
+0.4.0 on 19 November 2026.** Asked for by two outside
 reviews, which each had to piece it together from a dozen other documents.
 What is at risk, who might go after it, what stands in the way, and what is
 left. Where the defence is a rule every device checks, it says so; where it is
@@ -25,8 +26,8 @@ a security specialist yet — that is the first thing this page asks for.
 | **A member forges an invitation, or passes theirs on** | Invitations are signed and name the one key they are for | — | Rule; tested |
 | **Somebody removed reads what is written afterwards** | A new key on every removal; nothing is locked with an older key | They keep everything they had already seen. No design can take that back | Tested; one gap found in review and fixed (0.3.1) |
 | **A lost, stolen or seized device** | The keystore | **The biggest practical risk.** The released app does not yet ask for a password, so holding the device is holding the keys. Decided; not built — it needs a careful test so existing installs are not locked out | Known gap |
-| **Somebody reads the content as it passes through the network** | Content is locked to the circle's keys before it leaves the device | Who wrote something, and when, can be seen by peers — not what it says | Built; not independently reviewed |
-| **A professional given a pass reads more than they should** | The holder's device reads the pass's terms from what it wrote itself, never from the reader; Holochain refuses a stopped pass before our code runs | A pass works for whoever holds it, like a key | Tested |
+| **Somebody reads the content as it passes through the network** | Content is locked to the circle's keys before it leaves the device. From 0.4.0 every device refuses content that is not locked, and each lock is sealed to what the item is, who wrote it and which circle it is in, so a locked item copied elsewhere opens for nobody | Who wrote something, and when, can be seen by peers — not what it says | Built; not independently reviewed |
+| **A professional given a pass reads more than they should** | The holder's device reads the pass's terms from what it wrote itself, never from the reader; Holochain refuses a stopped pass before our code runs. From 0.4.0 every use is noted in the circle for all members to see, and an emergency pass will not open without a reason, which is noted too | A pass works for whoever holds it, like a key | Tested |
 | **Somebody claims the holder has gone, to take over** | A successor must be named in advance; a waiting period the whole circle sees; the holder can say "I am still here"; a named checker confirms | Coercion of the checker or the successor | Rule; not yet tried on machines. An old claim that could come back to life was found in our own audit and fixed (0.3.4) |
 | **A door flooded with knocks** | Ten knocks per key, checked by every device; a button to give the door a new address (0.3.4) | Keys cost nothing, so a determined flood can use many; the answer is to leave the door. A stranger can also send "somebody is asking to join" without knocking — held to a trickle on screen since 0.3.4 | Rule and app |
 | **Unreadable entries clogging a circle** | Each entry is opened on its own; one that cannot be opened is skipped (fixed 0.3.4) | A member can write things nobody can read; they gain nothing by it | App |

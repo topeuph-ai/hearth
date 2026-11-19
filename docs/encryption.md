@@ -315,15 +315,15 @@ rest. Each was checked against the code.
   nobody can downgrade somebody else. But the rules are meant to be the
   backstop that does not trust the app, and here they trust it. **For the next
   version of the rules:** a circle made under these rules refuses anything in
-  the open. **Done on the `rules-3` branch, 25 September 2026** — see "Nothing
-  in the open" below. Not on `main` and not released.
+  the open. **Done 25 September 2026, released in Hearth 0.4.0** — see "Nothing
+  in the open" below.
 - **Nothing ties a locked body to where it sits.** The lock does not use the
   author, the entry type or the epoch as associated data, so a member could
   copy another member's locked suggestion into one of their own. It gains
   them nothing they could not do by retyping it, since they can read it
   anyway. **For the next version of the rules**, cheaply: bind the author and
-  the kind of entry. **Done on the `rules-3` branch, 24 September 2026** — see
-  "A version on every lock" below. Not on `main` and not released.
+  the kind of entry. **Done 24 September 2026, released in Hearth 0.4.0** — see
+  "A version on every lock" below.
 - **Introductions are still in the open** — the item above, already known.
 
 ### From a second outside review, 23 September 2026 (of 0.3.3)
@@ -353,10 +353,11 @@ rest. Each was checked against the code.
   nobody from the old one holds. Not yet tried on two machines; it is in the
   test matrix in [what-is-proven.md](what-is-proven.md).
 
-### A version on every lock, 24 September 2026 (the `rules-3` branch)
+### A version on every lock, 24 September 2026 (released in 0.4.0)
 
-The third version of the rules, on a branch of its own. Not on `main`, not
-released, and the desktop app is untouched.
+The third version of the rules. It was written on a branch of its own, and
+released in Hearth 0.4.0 on 16 October 2026, together with the move to
+Holochain 0.7.1.
 
 **What changed.** Every locked item now says which way it was locked (a
 version number, 1), and the rules refuse any other number. And the lock now
@@ -388,7 +389,7 @@ bytes open as the real author's and not as anybody else's, nor as another kind
 of entry, key or circle. A wrong version number cannot be written through the
 app either, so the rule is tested directly in the rules' own unit tests.
 
-### Nothing in the open, 25 September 2026 (rules-3 branch)
+### Nothing in the open, 25 September 2026 (released in 0.4.0)
 
 Joined the version-and-seal change before any release, so that holders carry
 their circles across once. The record, suggestions, a file's name and words, a

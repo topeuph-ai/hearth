@@ -13,13 +13,15 @@ that nobody rediscovers them.
 ## Versions
 
 Read from `crates/hdk/Cargo.toml` and `crates/hdi/Cargo.toml` at tag
-`holochain-0.7.0` — not from documentation, which is out of date.
+`holochain-0.7.1` — not from documentation, which is out of date. Hearth moved
+from 0.7.0 to 0.7.1 in release 0.4.0 (October 2026); why it had to is in
+[holochain-roadmap.md](holochain-roadmap.md).
 
 | | |
 |---|---|
-| Holochain | **0.7.0** (released 30 July 2026) |
-| hdk | **0.7.0** |
-| hdi | **0.8.0** |
+| Holochain | **0.7.1** (released 14 October 2026) |
+| hdk | **0.7.1** |
+| hdi | **0.8.1** |
 | holochain_serialized_bytes | **=0.0.57** |
 
 `rust-toolchain.toml` pins the Rust compiler to **1.98.0**, and that pin is
@@ -29,18 +31,19 @@ load-bearing. See [Different builds are different networks](#different-builds-ar
 
 ## Getting the binaries
 
-No nix needed. They come straight from the Holochain 0.7.0 GitHub release
+No nix needed. They come straight from the Holochain 0.7.1 GitHub release
 (the `holochain/binaries` repo publishes them per platform, MPL-2.0):
 
 ```bash
 for a in hc holochain lair-keystore kitsune2-bootstrap-srv; do
-  gh release download holochain-0.7.0 --repo holochain/holochain \
+  gh release download holochain-0.7.1 --repo holochain/holochain \
      --pattern "${a}-x86_64-pc-windows-msvc.exe" -O "bin/${a}.exe"
 done
 ```
 
-`bin/` is gitignored. Verified versions: hc 0.7.0, holochain 0.7.0,
-lair-keystore 0.7.1, kitsune2-bootstrap-srv 0.5.0.
+`bin/` is gitignored. Verified versions (16 October 2026): hc 0.7.1,
+holochain 0.7.1, lair-keystore 0.7.1, and the bootstrap server from the same
+release.
 
 ---
 
