@@ -63,7 +63,9 @@ machines. What the move needed, as planned:
 - **#6020.** Changes written while no peers can be found were wrongly marked as
   "sent" and never retried. Fixed. This bears directly on writing offline.
 - **Source-chain restore** (#5800, in rc.1): an existing agent key can rebuild
-  its chain from the network on a new device. That is part of the answer to
+  its chain from the network on a new device. *(Flowsta found that a restore
+  can come back short without saying so; see
+  [ecosystem-watch.md](ecosystem-watch.md#4-recovering-a-persons-identity-on-a-new-computer).)* That is part of the answer to
   "can a person recover their identity" ([hard-questions.md](hard-questions.md),
   question 12), though it still needs the key itself.
 - #5781 and #5994 (below) are in, along with faster database indexes.

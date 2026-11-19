@@ -328,6 +328,7 @@ Read the first one before the others.
 | [how-it-works.md](docs/how-it-works.md) | The membrane, revocation, and why offline is not a failure |
 | [upgrades.md](docs/upgrades.md) | How a circle survives a new version — and why neither a patch nor a minor release does it today |
 | [hearth-in-plain-words.pdf](docs/hearth-in-plain-words.pdf) ([web page](docs/hearth-in-plain-words.html)) | **For anybody who is not a programmer.** How Hearth works in plain words, with diagrams, and how it differs from other ways of sharing a care record |
+| [ecosystem-watch.md](docs/ecosystem-watch.md) | What others building on Holochain have done that Hearth could learn from — a phone route with an open licence, a fix for slow joins, adding a password later, recovering an identity (19 November 2026) |
 | [holochain-roadmap.md](docs/holochain-roadmap.md) | Holochain's own plans, and what each means for Hearth — 0.7.1 (released 14 October 2026, and why it meant a fresh start), 0.8 app upgrades, local discovery not before 1.0 |
 | [to-a-product.md](docs/to-a-product.md) | What stands between this and something usable, in the order it blocks |
 | [standard-and-gap.md](docs/standard-and-gap.md) | Field by field against the PRSB About Me standard |

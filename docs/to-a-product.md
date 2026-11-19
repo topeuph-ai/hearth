@@ -656,6 +656,14 @@ open-source licence, or explicit terms that allow it.
 
 Watched by the monthly check (see below).
 
+**Update, 19 November 2026: a different plugin, with an open licence.**
+Holochain's own [`android-service-runtime`](https://github.com/holochain/android-service-runtime)
+now has an in-process `tauri-plugin-holochain` (0.3.0, desktop and mobile),
+written from scratch with no darksoil code, and its workspace declares
+`MIT OR Apache-2.0`. Volla Messages runs on it. It is still on Holochain 0.7.0,
+and the repository has no separate LICENSE file yet. Details in
+[ecosystem-watch.md](ecosystem-watch.md#1-holochains-own-tauri-plugin-open-source-licensed).
+
 ### What distributing Holochain inside the app asks of us
 
 **Read 17 September 2026 and written up in [licensing.md](licensing.md).**
